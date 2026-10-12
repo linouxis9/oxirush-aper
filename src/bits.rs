@@ -335,8 +335,10 @@ impl<'a> BitString<'a> {
         }
     }
 
-    /// The same string, with octets that it owns: they are copied when they were
-    /// borrowed.
+    /// The same string, with octets that it owns, kept as long as it is needed:
+    /// `BitString<'static>` is the type to write in a struct. The octets are copied
+    /// when they were borrowed.
+    #[doc(alias("to_owned", "owned", "keep"))]
     pub fn into_owned(self) -> BitString<'static> {
         BitString(match self.0 {
             Held::Short { octets, length } => Held::Short { octets, length },

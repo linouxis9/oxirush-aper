@@ -698,6 +698,16 @@ impl Bindings {
         Ok(bindings)
     }
 
+    /// Whether a value of a kind is one field: a number, a string, an open type, or a
+    /// name for one of these.
+    fn is_field(&self, kind: &Kind) -> bool {
+        match kind {
+            Kind::List { .. } => false,
+            Kind::Named(name) => self.copied.contains(name),
+            _ => true,
+        }
+    }
+
     fn borrows(&self, kind: &Kind) -> bool {
         match kind {
             Kind::Octets(_) | Kind::BitString(_) | Kind::Text { .. } | Kind::Open => true,
@@ -835,7 +845,7 @@ impl Bindings {
                 }
                 writeln!(out, "}} }}")?;
                 if borrows {
-                    self.owned_doc(out)?;
+                    self.owned_doc(out, name)?;
                     writeln!(
                         out,
                         "pub fn into_owned(self) -> {name}<'static> {{ {name} {{"
@@ -864,7 +874,7 @@ impl Bindings {
                 writeln!(out, "}}")?;
                 if borrows {
                     writeln!(out, "impl{life} {declared} {{")?;
-                    self.owned_doc(out)?;
+                    self.owned_doc(out, name)?;
                     writeln!(
                         out,
                         "pub fn into_owned(self) -> {name}<'static> {{ match self {{"
@@ -929,7 +939,7 @@ impl Bindings {
                 writeln!(out, "pub struct {declared}(pub {ty});")?;
                 if borrows {
                     writeln!(out, "impl{life} {declared} {{")?;
-                    self.owned_doc(out)?;
+                    self.owned_doc(out, name)?;
                     let owned = self.owned(kind, "self.0");
                     writeln!(
                         out,
@@ -965,13 +975,35 @@ impl Bindings {
                         from(out, "&'a str", "Cow::Borrowed(value)")?;
                         from(out, "alloc::string::String", "Cow::Owned(value)")?;
                     }
+                    // A short string of one size is written by the number that its bits
+                    // are: the type has the size.
+                    Kind::Bits(range) => {
+                        if let (Some(lower), Some(upper)) = (range.lower, range.upper)
+                            && lower == upper
+                        {
+                            writeln!(
+                                out,
+                                "impl {name} {{\n/// The string of the {upper} bits of `value`, \
+                                 the most significant first.\n///\n/// # Errors\n///\n/// An \
+                                 error of the kind `Argument` for a value that {upper} bits do \
+                                 not hold.\npub fn new(value: u64) -> Result<Self, Error> {{ \
+                                 Bits::new(value, {upper}).map(Self) }}\n}}"
+                            )?;
+                        }
+                    }
                     _ => {}
                 }
                 self.asn_type(out, &named, &definition.asn)?;
+                // A name for one field is that field where the name is read and
+                // written: a list is a loop, which stays a function.
+                let inline = match kind {
+                    Kind::List { .. } => "",
+                    _ => "#[inline]\n",
+                };
                 writeln!(out, "impl<'a> Decode<'a> for {declared} {{")?;
                 writeln!(
                     out,
-                    "fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {{"
+                    "{inline}fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {{"
                 )?;
                 let value = self.decode(kind, &|result| format!("{result}?"))?;
                 writeln!(out, "Ok(Self({value}))")?;
@@ -979,7 +1011,7 @@ impl Bindings {
                 writeln!(out, "impl Encode for {named} {{")?;
                 writeln!(
                     out,
-                    "fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {{"
+                    "{inline}fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {{"
                 )?;
                 self.encode(out, kind, "self.0", false)?;
                 writeln!(out, "Ok(())")?;
@@ -1003,12 +1035,16 @@ impl Bindings {
         Ok(())
     }
 
-    fn owned_doc(&self, out: &mut String) -> Result<()> {
+    /// The documentation of `into_owned` of the type `name`. A value that is kept is
+    /// what a caller looks for by other words, which find it in the documentation.
+    fn owned_doc(&self, out: &mut String, name: &str) -> Result<()> {
         writeln!(
             out,
-            "/// The same value, which borrows nothing: what it borrowed from the octets that \
-             it was decoded from is copied."
+            "/// The same value, which borrows nothing and is kept as long as it is needed: \
+             a `{name}<'static>`, which is the type to write in a struct. What the value \
+             borrowed from the octets that it was decoded from is copied."
         )?;
+        writeln!(out, "#[doc(alias(\"to_owned\", \"owned\", \"keep\"))]")?;
         Ok(())
     }
 
@@ -1065,10 +1101,17 @@ impl Bindings {
             optional.len() <= 64,
             "more than 64 members that may be absent"
         );
+        // A SEQUENCE of a few fields, none of which is a value with members of its
+        // own, is read and written where it is used: the field of a protocol IE
+        // container is one, and a message is a list of them.
+        let inline = match members.iter().all(|member| self.is_field(&member.kind)) {
+            true => "#[inline]\n",
+            false => "",
+        };
         writeln!(out, "impl<'a> Decode<'a> for {declared} {{")?;
         writeln!(
             out,
-            "fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {{"
+            "{inline}fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {{"
         )?;
         if definition.extensible {
             writeln!(out, "let extended = reader.bit()?;")?;
@@ -1109,7 +1152,7 @@ impl Bindings {
         writeln!(out, "impl Encode for {named} {{")?;
         writeln!(
             out,
-            "fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {{"
+            "{inline}fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {{"
         )?;
         if definition.extensible {
             writeln!(out, "writer.bit(false);")?;

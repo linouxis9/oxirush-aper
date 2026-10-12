@@ -67,7 +67,9 @@ impl<'a> Octets<'a> {
         }
     }
 
-    /// The same octets, owned: they are copied when they were borrowed.
+    /// The same octets, owned and kept as long as they are needed: `Octets<'static>`
+    /// is the type to write in a struct. They are copied when they were borrowed.
+    #[doc(alias("to_owned", "owned", "keep"))]
     pub fn into_owned(self) -> Octets<'static> {
         Octets(Cow::Owned(self.0.into_owned()))
     }
