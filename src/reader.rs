@@ -306,23 +306,25 @@ impl<'a> Reader<'a> {
     }
 
     /// A whole number after the unconstrained length of its octets: in two's
-    /// complement when it is `signed`. A number of more than 64 bits is an error, and
-    /// octets that only extend the sign are not counted.
+    /// complement when it is `signed`.
+    ///
+    /// A writer gives a number the least octets that hold it (X.691 §11.3.6, §11.4.6).
+    /// A reader takes octets that only extend the sign before them, as long as the
+    /// octets are no more than a number of 64 bits may have: eight, and nine in two's
+    /// complement, where a number of 2^63 or more has a zero octet first. More octets
+    /// are refused whatever they hold.
     fn whole_number(&mut self, signed: bool) -> Result<i128, Error> {
         let octets = self.open_type()?;
-        // The least number of octets that hold a number is one (X.691 §11.3.6,
-        // §11.4.6).
         if octets.is_empty() {
             return Err(Error::decode("a whole number has no octet"));
         }
-        let negative = signed && octets.first().is_some_and(|first| first & 0x80 != 0);
-        let fill = if negative { 0xff } else { 0x00 };
-        let significant = octets.iter().skip_while(|octet| **octet == fill);
-        if significant.clone().count() > 9 {
+        if octets.len() > if signed { 9 } else { 8 } {
             return Err(Error::does_not_fit(64));
         }
+        let negative = signed && octets[0] & 0x80 != 0;
         let start: i128 = if negative { -1 } else { 0 };
-        Ok(significant.fold(start, |number, octet| number << 8 | i128::from(*octet)))
+        let number = octets.iter();
+        Ok(number.fold(start, |number, octet| number << 8 | i128::from(*octet)))
     }
 
     /// A normally small non-negative whole number (X.691 §11.6): the index of an

@@ -189,14 +189,19 @@ fn an_integer_with_an_extension_marker_has_a_bit_before_it() {
     let large = [0x80, 0x09, 0x01, 0, 0, 0, 0, 0, 0, 0, 0];
     assert!(Reader::new(&large).unsigned_extensible(0, 255).is_err());
     assert!(Reader::new(&large).signed_extensible(0, 255).is_err());
-    // Octets that only extend the sign are not counted.
+    // The largest number of 64 bits has a zero octet first in two's complement: nine
+    // octets, and one more is refused.
+    let largest = [
+        0x80, 0x09, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    ];
+    assert_eq!(
+        Reader::new(&largest).unsigned_extensible(0, 255).unwrap(),
+        u64::MAX
+    );
     let padded = [
         0x80, 0x0a, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     ];
-    assert_eq!(
-        Reader::new(&padded).unsigned_extensible(0, 255).unwrap(),
-        u64::MAX
-    );
+    assert!(Reader::new(&padded).unsigned_extensible(0, 255).is_err());
 }
 
 #[test]
@@ -263,6 +268,41 @@ fn a_whole_number_without_an_upper_bound_has_its_length_before_it() {
         let octets = written(|w| w.small(value));
         assert_eq!(Reader::new(&octets).small().unwrap(), value);
     }
+
+    // A writer gives a number its least octets (§11.3.6, §11.4.6). A reader takes
+    // octets that only extend the sign before them, up to the octets that a number of
+    // 64 bits may have: eight, and nine in two's complement.
+    assert_eq!(Reader::new(&[0x02, 0x00, 0x05]).unconstrained().unwrap(), 5);
+    assert_eq!(
+        Reader::new(&[0x02, 0xff, 0xfb]).unconstrained().unwrap(),
+        -5
+    );
+    let mut padded = [0x00; 10];
+    padded[0] = 0x09;
+    padded[9] = 0x05;
+    assert_eq!(Reader::new(&padded).unconstrained().unwrap(), 5);
+    padded[0] = 0x08;
+    let eight = Reader::new(&padded[..9]).semi_constrained_unsigned(0);
+    assert_eq!(eight.unwrap(), 0);
+    // More octets are refused whatever they hold: zero in ten octets of two's
+    // complement, and in nine octets of a number without a sign.
+    let ten = [0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let nine = [0x09, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for error in [
+        Reader::new(&ten).unconstrained().unwrap_err(),
+        Reader::new(&nine).semi_constrained_unsigned(0).unwrap_err(),
+        // The index of an addition, after its two bits.
+        Reader::new(&[0xc0, 0x09, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .enumerated(3, 2, true)
+            .unwrap_err(),
+    ] {
+        assert_eq!(
+            error.to_string(),
+            "the octets do not decode: the number does not fit in 64 bits"
+        );
+    }
+    let eight = [0xc0, 0x08, 0, 0, 0, 0, 0, 0, 0, 1];
+    assert_eq!(Reader::new(&eight).enumerated(3, 2, true).unwrap(), 4);
 }
 
 #[test]
