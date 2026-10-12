@@ -255,8 +255,7 @@ constraint, and octets after a complete encoding.
 
 ## What it does not do
 
-- The unaligned variant, and the canonical variants as such: the writer gives
-  the encoding that a canonical one has for the types below.
+- The unaligned variant.
 - `REAL`, the time types, `SET` and `SET OF`, `BMPString`, `UniversalString`,
   `NumericString`, and a permitted alphabet constraint.
 - `DEFAULT` members and extension addition groups: a caller writes the bits of

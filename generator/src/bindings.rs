@@ -628,6 +628,9 @@ struct Bindings {
     /// The types whose values are copied: numbers, arrays and short bit strings with a
     /// name, and the values of an ENUMERATED.
     copied: BTreeSet<String>,
+    /// The SEQUENCE types whose members are all plain fields: their codec is read and
+    /// written where it is used.
+    plain: BTreeSet<String>,
 }
 
 impl Bindings {
@@ -652,6 +655,7 @@ impl Bindings {
         let mut bindings = Self {
             borrowing: BTreeSet::new(),
             copied: BTreeSet::new(),
+            plain: BTreeSet::new(),
         };
         // The types that hold a type that borrows borrow too: until none is added.
         loop {
@@ -695,6 +699,13 @@ impl Bindings {
                 break;
             }
         }
+        for definition in definitions() {
+            if let Shape::Sequence(members) = &definition.shape
+                && members.iter().all(|member| bindings.is_field(&member.kind))
+            {
+                bindings.plain.insert(definition.name.clone());
+            }
+        }
         Ok(bindings)
     }
 
@@ -705,6 +716,14 @@ impl Bindings {
             Kind::List { .. } => false,
             Kind::Named(name) => self.copied.contains(name),
             _ => true,
+        }
+    }
+
+    /// Whether a value of a kind is one field, or a SEQUENCE of them.
+    fn is_plain(&self, kind: &Kind) -> bool {
+        match kind {
+            Kind::Named(name) if self.plain.contains(name) => true,
+            kind => self.is_field(kind),
         }
     }
 
@@ -846,6 +865,9 @@ impl Bindings {
                 writeln!(out, "}} }}")?;
                 if borrows {
                     self.owned_doc(out, name)?;
+                    if self.plain.contains(name) {
+                        writeln!(out, "#[inline]")?;
+                    }
                     writeln!(
                         out,
                         "pub fn into_owned(self) -> {name}<'static> {{ {name} {{"
@@ -875,6 +897,9 @@ impl Bindings {
                 if borrows {
                     writeln!(out, "impl{life} {declared} {{")?;
                     self.owned_doc(out, name)?;
+                    if members.iter().all(|member| self.is_plain(&member.kind)) {
+                        writeln!(out, "#[inline]")?;
+                    }
                     writeln!(
                         out,
                         "pub fn into_owned(self) -> {name}<'static> {{ match self {{"
@@ -941,6 +966,9 @@ impl Bindings {
                     writeln!(out, "impl{life} {declared} {{")?;
                     self.owned_doc(out, name)?;
                     let owned = self.owned(kind, "self.0");
+                    if !matches!(kind, Kind::List { .. }) {
+                        writeln!(out, "#[inline]")?;
+                    }
                     writeln!(
                         out,
                         "pub fn into_owned(self) -> {name}<'static> {{ {name}({owned}) }}"
@@ -1104,7 +1132,7 @@ impl Bindings {
         // A SEQUENCE of a few fields, none of which is a value with members of its
         // own, is read and written where it is used: the field of a protocol IE
         // container is one, and a message is a list of them.
-        let inline = match members.iter().all(|member| self.is_field(&member.kind)) {
+        let inline = match self.plain.contains(&definition.name) {
             true => "#[inline]\n",
             false => "",
         };
@@ -1200,6 +1228,12 @@ impl Bindings {
             "an addition without a marker"
         );
         let extensible = definition.extensible;
+        // A CHOICE between plain fields and SEQUENCEs of plain fields is read and
+        // written where it is used, as they are: a PDU is one.
+        let inline = match members.iter().all(|member| self.is_plain(&member.kind)) {
+            true => "#[inline]\n",
+            false => "",
+        };
         writeln!(out, "impl<'a> Decode<'a> for {declared} {{")?;
         // A CHOICE of one alternative has the index of its extension marker all the
         // same, and is written as the others are.
@@ -1208,7 +1242,7 @@ impl Bindings {
         }
         writeln!(
             out,
-            "fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {{"
+            "{inline}fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {{"
         )?;
         writeln!(
             out,
@@ -1255,7 +1289,7 @@ impl Bindings {
         writeln!(out, "impl Encode for {named} {{")?;
         writeln!(
             out,
-            "fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {{"
+            "{inline}fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {{"
         )?;
         writeln!(out, "match self {{")?;
         for (index, member) in members.iter().enumerate() {
