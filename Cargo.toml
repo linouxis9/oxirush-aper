@@ -1,0 +1,41 @@
+[package]
+name = "oxirush-aper"
+version = "0.1.0"
+edition = "2024"
+description = "Aligned PER (ITU-T X.691) runtime for generated bindings of 3GPP-style ASN.1: readers, writers and value types"
+license = "Apache-2.0"
+repository = "https://github.com/linouxis9/oxirush-aper"
+authors = ["Valentin D'Emmanuele"]
+rust-version = "1.88"
+keywords = ["asn1", "aper", "per", "3gpp", "codec"]
+categories = ["encoding", "parser-implementations", "network-programming", "no-std"]
+readme = "README.md"
+include = [
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+]
+
+[features]
+# The JSON forms of a value, as `serde_json` values.
+inspect = ["dep:serde_json"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+# cargo-fuzz sets `fuzzing`.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+[dependencies]
+serde_json = { version = "1.0.106", optional = true, default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# The oracle of the tests: the codec of another implementation.
+rasn = { version = "0.29.0", default-features = false, features = ["bytes"] }
+
+[[test]]
+name = "json"
+required-features = ["inspect"]
