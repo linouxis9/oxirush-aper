@@ -41,6 +41,7 @@ pub struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     /// A reader at the first bit of `octets`.
+    #[inline]
     pub fn new(octets: &'a [u8]) -> Self {
         // The position is a count of bits.
         let most = usize::MAX / 8;
@@ -49,22 +50,26 @@ impl<'a> Reader<'a> {
     }
 
     /// How many bits are read.
+    #[inline]
     pub fn position(&self) -> usize {
         self.at
     }
 
     /// How many bits are left.
+    #[inline]
     pub fn remaining(&self) -> usize {
         self.octets.len() * 8 - self.at
     }
 
     /// The octets that are left, from the next octet boundary.
+    #[inline]
     pub fn rest(&self) -> &'a [u8] {
         &self.octets[self.at.div_ceil(8)..]
     }
 
     /// The end of a complete encoding (X.691 §11.1.4): no octet follows the value,
     /// whose last octet may have padding bits. An encoding of no bit is one zero octet.
+    #[inline]
     pub fn finish(&self) -> Result<(), Error> {
         let rest = self.rest();
         if rest.is_empty() || (self.at == 0 && self.octets == [0]) {
@@ -97,10 +102,16 @@ impl<'a> Reader<'a> {
             return Err(Error::ended());
         }
         self.at += count;
+        // Bits within one octet, as the index of an ENUMERATED and the bits of a
+        // preamble are: the octet is there, as the bits are.
+        if shift + count <= 8 {
+            let octet = self.octets.get(first).copied().unwrap_or(0);
+            let (wide, mask) = (u16::from(octet), (1u16 << count) - 1);
+            return Ok(u64::from(wide >> (8 - shift - count) & mask));
+        }
         // Eight octets hold the bits, unless they start late in the first one.
         if let Some(word) = self.octets.get(first..first + 8)
             && shift + count <= 64
-            && count > 0
         {
             let word = u64::from_be_bytes([
                 word[0], word[1], word[2], word[3], word[4], word[5], word[6], word[7],
@@ -110,23 +121,23 @@ impl<'a> Reader<'a> {
         Ok(self.bits_near_the_end(first, shift, count))
     }
 
-    /// `count` bits from the bit `shift` of the octet `first`, which are there.
-    #[cold]
+    /// `count` bits from the bit `shift` of the octet `first`, which are there and are
+    /// in more than one octet: those near the end of the octets, and 64 bits that
+    /// start within an octet.
     fn bits_near_the_end(&self, first: usize, shift: usize, count: usize) -> u64 {
-        if count == 0 {
-            return 0;
-        }
         let last = (first * 8 + shift + count).div_ceil(8);
         let held = &self.octets[first..last];
-        let all = held
-            .iter()
-            .fold(0u128, |all, octet| all << 8 | u128::from(*octet));
-        let after = held.len() * 8 - shift - count;
-        let mask = match count {
-            64 => u128::from(u64::MAX),
-            count => (1u128 << count) - 1,
-        };
-        (all >> after & mask) as u64
+        // Nine octets at most: eight of them in a word, and the bits of the ninth.
+        let (whole, rest) = held.split_at(held.len().min(8));
+        let mut word = [0; 8];
+        word[..whole.len()].copy_from_slice(whole);
+        let word = u64::from_be_bytes(word);
+        match rest.first() {
+            None => (word << shift) >> (64 - count),
+            // The 64 bits from `shift`, of which the last `shift` are in the ninth
+            // octet, then the first `count` of them.
+            Some(ninth) => (word << shift | u64::from(*ninth) >> (8 - shift)) >> (64 - count),
+        }
     }
 
     /// Skip the bits up to the next octet boundary: the padding of an octet-aligned

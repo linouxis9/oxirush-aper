@@ -36,17 +36,20 @@ pub struct Writer<'a> {
 
 impl<'a> Writer<'a> {
     /// A writer that appends to `octets`, from an octet boundary.
+    #[inline]
     pub fn new(octets: &'a mut Vec<u8>) -> Self {
         Self { octets, free: 0 }
     }
 
     /// How many octets the writer and its caller have written, with the one that is
     /// not full.
+    #[inline]
     pub fn len(&self) -> usize {
         self.octets.len()
     }
 
     /// Whether nothing is written.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.octets.is_empty()
     }
