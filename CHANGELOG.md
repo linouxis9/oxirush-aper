@@ -25,3 +25,6 @@ and S1AP (TS 36.413) uses.
 - The `inspect` feature: `json`, with which bindings write and read their
   values as `serde_json` values in the form of the JSON Encoding Rules.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
+- In the repository and not in the crate: `generator/`, the library that
+  writes the bindings of a protocol on this crate, fuzz targets and
+  benchmarks.

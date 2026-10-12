@@ -1,0 +1,21 @@
+# The generator of the bindings on oxirush-aper: what the generators of oxirush-ngap
+# and oxirush-s1ap share, each of which adds the names of its protocol. A package of
+# its own, which is not published: the crate has no dependency for it.
+[package]
+name = "oxirush-aper-generator"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+name = "generator"
+
+[dependencies]
+anyhow = "1"
+quote = "1"
+regex = "1"
+syn = { version = "=2.0.98", features = ["full"] }
+
+# Not a member of a workspace that the crate may be in.
+[workspace]

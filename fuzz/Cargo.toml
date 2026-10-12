@@ -1,0 +1,38 @@
+# The fuzz targets of oxirush-aper, for cargo-fuzz. A package of its own, which
+# is not published.
+[package]
+name = "oxirush-aper-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# What the targets do, which the programs call.
+[lib]
+name = "targets"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+oxirush-aper = { path = ".." }
+# The other implementation that the `value` target compares the crate with.
+rasn = { version = "0.29.0", default-features = false, features = ["bytes"] }
+
+# Not part of any parent workspace.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fields"
+path = "fuzz_targets/fields.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "value"
+path = "fuzz_targets/value.rs"
+test = false
+doc = false
+bench = false

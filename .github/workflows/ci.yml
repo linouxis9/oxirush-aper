@@ -67,6 +67,40 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # The packages beside the crate: the generator of the bindings, and the benchmarks.
+  packages:
+    name: Generator and benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            generator
+            benches
+      - run: cargo test --manifest-path generator/Cargo.toml
+      - run: cargo clippy --manifest-path generator/Cargo.toml --all-targets -- -D warnings
+      - run: cargo clippy --manifest-path benches/Cargo.toml --all-targets -- -D warnings
+      - run: cargo bench --manifest-path benches/Cargo.toml --no-run
+
+  # `value` compares the crate with rasn, another implementation, on the octets that
+  # it finds.
+  fuzz:
+    name: Fuzz the fields, and a value against rasn (2 minutes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - run: cargo fuzz run fields -- -max_total_time=60 -max_len=512
+      - run: cargo fuzz run value -- -max_total_time=60 -max_len=512
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -76,3 +110,6 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+      - run: cargo fmt --check --manifest-path generator/Cargo.toml
+      - run: cargo fmt --check --manifest-path benches/Cargo.toml
+      - run: cargo fmt --check --manifest-path fuzz/Cargo.toml

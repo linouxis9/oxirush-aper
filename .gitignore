@@ -1,5 +1,6 @@
 /target/
 /benches/target/
+/generator/target/
 /fuzz/target/
 /fuzz/corpus/
 /fuzz/artifacts/

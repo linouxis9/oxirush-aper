@@ -246,11 +246,12 @@ oxirush-aper = { version = "0.1", features = ["inspect"] }
 ## What the reader accepts
 
 A writer gives one encoding to a value. A reader takes what has one meaning:
-padding bits that are not zero, a length in a longer form than it needs, a
-number with leading zero octets, and an arc of an object identifier that
-starts with an octet that holds nothing. It refuses a number of no octet, a
-number, a size or an index outside its constraint, and octets after a complete
-encoding.
+padding bits that are not zero, a length in a longer form than it needs, an
+arc of an object identifier that starts with an octet that holds nothing, and
+a number with octets that only extend its sign, up to the octets that a
+number of 64 bits may have. It refuses a number of no octet, a number of more
+octets than that whatever they hold, a number, a size or an index outside its
+constraint, and octets after a complete encoding.
 
 ## What it does not do
 
@@ -269,11 +270,40 @@ The worked examples of X.691 Annex A are reproduced octet for octet, each
 field is tested against its clause, and each is compared with
 [`rasn`](https://crates.io/crates/rasn) on generated values: `tests/rasn.rs`
 names the clause of each field where rasn 0.29 reads or writes otherwise.
-`fuzz/` has the targets, which compare the two on arbitrary octets.
 
 ```sh
 cargo test --all-features
 ```
+
+`fuzz/` has two [cargo-fuzz](https://crates.io/crates/cargo-fuzz) targets.
+`fields` reads fields that the octets choose, with constraints that they
+choose, and writes them back: they are read again as the same, from octets
+that are written again as the same. `value` reads a value of one type with
+the crate and with rasn: both read the same value and write the same octets,
+or neither reads one.
+
+```sh
+cargo +nightly fuzz run fields -- -max_total_time=60 -max_len=512
+cargo +nightly fuzz run value -- -max_total_time=60 -max_len=512
+```
+
+## Benchmarks
+
+`benches/` is a package of its own, so that criterion is no dependency of the
+crate. It times the fields that a message of NGAP or S1AP is made of.
+
+```sh
+cd benches
+cargo bench --bench fields -- read/
+```
+
+## The generator
+
+`generator/` is the library that the generators of `oxirush-ngap` and
+`oxirush-s1ap` share: it writes the bindings of a protocol on this crate from
+what [`rasn-compiler`](https://crates.io/crates/rasn-compiler) resolves of its
+ASN.1, and the same types with the codec of rasn, which are the oracle of
+their tests. It is not published.
 
 ## OxiRush crates
 
