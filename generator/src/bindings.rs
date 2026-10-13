@@ -150,7 +150,13 @@ pub struct Keys<'a> {
 }
 
 /// The bindings on oxirush-aper of the description that rasn-compiler gave.
-pub fn bindings(description: &str, keys: Keys<'_>) -> Result<Written> {
+///
+/// `plmns` names the types that are a PLMN identity, in the three octets of the
+/// application protocols. Such a type prints as its MCC and its MNC, `208-93`, and
+/// converts to and from the `Plmn` of oxirush-utils, which the crate of the bindings
+/// then depends on. Every other type that is a fixed number of octets prints them in
+/// hexadecimal.
+pub fn bindings(description: &str, keys: Keys<'_>, plmns: &[&str]) -> Result<Written> {
     let file = syn::parse_file(description).context("parse the resolved bindings")?;
     let mut modules = Vec::new();
     for item in &file.items {
@@ -166,7 +172,7 @@ pub fn bindings(description: &str, keys: Keys<'_>) -> Result<Written> {
             entries: entries(items).with_context(|| format!("in {}", module.ident))?,
         });
     }
-    let bindings = Bindings::new(&modules, keys)?;
+    let bindings = Bindings::new(&modules, keys, plmns)?;
     let text = bindings.write(&modules)?;
     Ok(Written {
         text,
@@ -652,10 +658,13 @@ struct Bindings {
     /// The types whose open type may hold a key, each with the expression that says
     /// whether it does.
     key_holders: BTreeMap<String, String>,
+    /// The types that are a PLMN identity, each with the types that it is a name for,
+    /// down to the one that is three octets: none when it is three octets itself.
+    plmns: BTreeMap<String, Vec<String>>,
 }
 
 impl Bindings {
-    fn new(modules: &[Module], keys: Keys<'_>) -> Result<Self> {
+    fn new(modules: &[Module], keys: Keys<'_>, plmns: &[&str]) -> Result<Self> {
         let definitions = || {
             modules
                 .iter()
@@ -691,7 +700,24 @@ impl Bindings {
             key_holders: holders
                 .map(|(name, holds)| (name.to_string(), holds.to_string()))
                 .collect(),
+            plmns: BTreeMap::new(),
         };
+        // A PLMN identity is three octets, or a name for a type that is.
+        for plmn in plmns {
+            let (mut name, mut through) = (plmn.to_string(), Vec::new());
+            loop {
+                let definition = definitions().find(|definition| definition.name == name);
+                match definition.map(|definition| &definition.shape) {
+                    Some(Shape::Alias(Kind::OctetArray(3))) => break,
+                    Some(Shape::Alias(Kind::Named(inner))) => {
+                        through.push(inner.clone());
+                        name = inner.clone();
+                    }
+                    _ => bail!("{plmn}, a PLMN identity, is not three octets"),
+                }
+            }
+            bindings.plmns.insert(plmn.to_string(), through);
+        }
         // The types that hold a type which holds a key hold one too: until none is added.
         loop {
             let before = bindings.keys.len();
@@ -917,6 +943,61 @@ impl Bindings {
         Ok(())
     }
 
+    /// `Display` and `Debug` of a PLMN identity, which print its MCC and its MNC, with
+    /// its conversions to and from the `Plmn` of oxirush-utils, and those of another
+    /// type that is a fixed number of octets, which print them in hexadecimal.
+    fn printed(&self, out: &mut String, name: &str) -> Result<()> {
+        let fmt = "fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result";
+        // The octets of a PLMN identity, through the types that it is a name for.
+        let through = self.plmns.get(name);
+        let inner = ".0".repeat(through.map_or(0, Vec::len));
+        let hex = format!(
+            "self.0{inner}.iter().try_for_each(|octet| write!(formatter, \"{{octet:02x}}\"))"
+        );
+        match through {
+            Some(through) => {
+                let plmn = "oxirush_utils::identity::Plmn";
+                writeln!(
+                    out,
+                    "/// The MCC and the MNC, as `208-93`. Octets that are no PLMN identity \
+                     print in hexadecimal.\n\
+                     impl core::fmt::Display for {name} {{ {fmt} {{ \
+                     match {plmn}::from_ap_octets(self.0{inner}) {{ \
+                     Ok(plmn) => write!(formatter, \"{{plmn}}\"), Err(_) => {hex}, }} }} }}"
+                )?;
+                let wrapped = through
+                    .iter()
+                    .rev()
+                    .fold("plmn.to_ap_octets()".to_string(), |octets, ty| {
+                        format!("{ty}({octets})")
+                    });
+                writeln!(
+                    out,
+                    "/// The PLMN identity of a PLMN, in the order of the application protocols.\n\
+                     impl From<{plmn}> for {name} {{ fn from(plmn: {plmn}) -> Self {{ Self({wrapped}) }} }}"
+                )?;
+                writeln!(
+                    out,
+                    "/// The PLMN of a PLMN identity: an error for octets that are none.\n\
+                     impl TryFrom<{name}> for {plmn} {{ \
+                     type Error = oxirush_utils::identity::Error; \
+                     fn try_from(identity: {name}) -> Result<Self, Self::Error> {{ \
+                     Self::from_ap_octets(identity.0{inner}) }} }}"
+                )?;
+            }
+            None => writeln!(
+                out,
+                "/// The octets, in hexadecimal.\n\
+                 impl core::fmt::Display for {name} {{ {fmt} {{ {hex} }} }}"
+            )?,
+        }
+        writeln!(
+            out,
+            "impl core::fmt::Debug for {name} {{ {fmt} {{ write!(formatter, \"{name}({{self}})\") }} }}"
+        )?;
+        Ok(())
+    }
+
     fn definition(&self, out: &mut String, definition: &Definition) -> Result<()> {
         let name = &definition.name;
         let borrows = self.borrowing.contains(name);
@@ -926,10 +1007,15 @@ impl Bindings {
             false => (name.clone(), name.clone(), ""),
         };
         // `Debug` shows no octet of a key: that of a key and that of a type whose open
-        // type may hold one are written here, and the others are derived.
-        let by_hand = self.key_types.contains(name) || self.key_holders.contains_key(name);
-        if by_hand {
-            self.debug(out, definition, &named)?;
+        // type may hold one are written here. So is that of a PLMN identity and of a
+        // fixed number of octets, which print as they are read. The others are derived.
+        let of_a_key = self.key_types.contains(name) || self.key_holders.contains_key(name);
+        let octets = matches!(definition.shape, Shape::Alias(Kind::OctetArray(_)));
+        let by_hand = of_a_key || octets || self.plmns.contains_key(name);
+        match of_a_key {
+            true => self.debug(out, definition, &named)?,
+            false if by_hand => self.printed(out, name)?,
+            false => {}
         }
         write_docs(out, &definition.docs)?;
         let copy = if self.copied.contains(name) {
