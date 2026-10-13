@@ -60,6 +60,51 @@ pub enum ErrorKind {
     Limit,
 }
 
+/// The criticality of an IE or of a procedure in the application protocols of 3GPP, as
+/// their ASN.1 has it (`Criticality ::= ENUMERATED { reject, ignore, notify }`): what a
+/// receiver does with what it does not comprehend. The bindings of a protocol have a
+/// type of their own for it, which converts to and from this one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Criticality {
+    /// The receiver rejects the procedure.
+    Reject,
+    /// The receiver ignores the IE.
+    Ignore,
+    /// The receiver ignores the IE, and notifies the sender.
+    Notify,
+}
+
+/// The IE of a message that an error is about: [`Error::ie`] of an error of the kind
+/// `MissingIe` or `UndecodableIe` that the bindings of a protocol made.
+///
+/// It is what the Criticality Diagnostics of an answer say of an IE (3GPP TS 38.413
+/// clauses 10.3.4 and 10.3.5, TS 36.413 clause 10.3): its identifier, and its
+/// criticality.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct ErrorIe {
+    /// The identifier of the IE.
+    pub id: u16,
+    /// Its criticality: the one that it was received with, for an IE that is there,
+    /// and the one that the object set of the message assigns it, for an IE that is
+    /// missing.
+    pub criticality: Criticality,
+    /// Its position among the IEs of the message, which starts at 0; `None` for an IE
+    /// that is missing.
+    pub position: Option<usize>,
+}
+
+impl ErrorIe {
+    /// The IE of an identifier and a criticality, at a position when it is there.
+    pub fn new(id: u16, criticality: Criticality, position: Option<usize>) -> Self {
+        Self {
+            id,
+            criticality,
+            position,
+        }
+    }
+}
+
 /// The error of every function of the crate that can fail, and of the bindings that
 /// are built on it.
 ///
@@ -94,6 +139,8 @@ struct Inner {
     /// The fields of the bindings on the way to where a decoding stopped, the
     /// innermost first.
     fields: Vec<&'static str>,
+    /// The IE of a message that the error is about.
+    ie: Option<ErrorIe>,
 }
 
 impl Error {
@@ -104,6 +151,7 @@ impl Error {
             what: what.into(),
             why: None,
             fields: Vec::new(),
+            ie: None,
         }))
     }
 
@@ -138,10 +186,35 @@ impl Error {
         self
     }
 
+    /// The IE of a message that the error is about, when it is about one: an error of
+    /// the kind `MissingIe` or `UndecodableIe` that the bindings of a protocol made.
+    ///
+    /// ```
+    /// use oxirush_aper::{Criticality, Error, ErrorIe};
+    ///
+    /// // The IE 21 of an NG SETUP REQUEST, received with the criticality `ignore`
+    /// let ie = ErrorIe::new(21, Criticality::Ignore, Some(3));
+    /// let error = Error::undecodable("the DefaultPagingDRX does not decode").about_ie(ie);
+    /// assert_eq!(error.ie(), Some(ie));
+    /// assert_eq!(Error::argument("an MCC has three digits").ie(), None);
+    /// ```
+    pub fn ie(&self) -> Option<ErrorIe> {
+        self.0.ie
+    }
+
+    /// The same error, about an IE of a message.
+    #[must_use]
+    pub fn about_ie(mut self, ie: ErrorIe) -> Self {
+        self.0.ie = Some(ie);
+        self
+    }
+
     /// The same error, with the message that `reword` makes of the one that it has.
     #[must_use]
     pub fn reworded(self, reword: impl FnOnce(&str) -> String) -> Self {
-        Self::new(self.0.kind, reword(&self.to_string()))
+        let mut reworded = Self::new(self.0.kind, reword(&self.to_string()));
+        reworded.0.ie = self.0.ie;
+        reworded
     }
 
     /// The reason of what is wrong, where the message has one apart, and what is wrong

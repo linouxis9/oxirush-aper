@@ -104,7 +104,7 @@ use alloc::vec::Vec;
 struct Readme;
 
 pub use bits::{BitString, Bits};
-pub use error::{Error, ErrorKind};
+pub use error::{Criticality, Error, ErrorIe, ErrorKind};
 pub use octets::Octets;
 pub use oid::ObjectIdentifier;
 pub use reader::{Additions, Reader};

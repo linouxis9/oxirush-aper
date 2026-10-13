@@ -21,7 +21,9 @@ and S1AP (TS 36.413) uses.
 - `AsnType`, `Decode` and `Encode`, which generated bindings implement, and
   `decode`, `encode` and `encode_into` for a complete encoding.
 - `Error`, with an `ErrorKind`, the reason, and the names of the fields on the
-  way to where a decoding stopped.
+  way to where a decoding stopped. An error that the bindings of a protocol
+  make about an IE of a message has it: `ie()` gives an `ErrorIe`, the
+  identifier of the IE, its `Criticality` and its position.
 - The `inspect` feature: `json`, with which bindings write and read their
   values as `serde_json` values in the form of the JSON Encoding Rules.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
