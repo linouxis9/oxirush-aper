@@ -25,10 +25,6 @@ inspect = ["dep:serde_json"]
 [package.metadata.docs.rs]
 all-features = true
 
-# cargo-fuzz sets `fuzzing`.
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
-
 [dependencies]
 serde_json = { version = "1.0.106", optional = true, default-features = false, features = ["alloc"] }
 
