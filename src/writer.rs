@@ -414,10 +414,13 @@ impl<'a> Writer<'a> {
     ///
     /// # Errors
     ///
-    /// No addition is an error: the extension bit is then not set, and nothing
-    /// follows the root.
+    /// No addition, and none that is present, is an error: the extension bit is then
+    /// not set (§19.1), and nothing follows the root.
     pub fn additions(&mut self, present: &[bool]) -> Result<(), Error> {
-        let count = present.len();
+        let count = match present.contains(&true) {
+            true => present.len(),
+            false => 0,
+        };
         match count {
             0 => return Err(Error::encode("a SEQUENCE has no addition to write")),
             1..=64 => {

@@ -794,6 +794,63 @@ fn the_additions_of_a_sequence_are_a_bitmap_and_open_types() {
 }
 
 #[test]
+fn a_sequence_whose_extension_bit_is_set_has_an_addition_that_is_present() {
+    let refused = |octets: &[u8]| {
+        let error = Reader::new(octets).skip_additions().unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Decode, "{octets:02x?}");
+        // A reader that knows the additions is told the same.
+        let mut reader = Reader::new(octets);
+        let known = reader.additions();
+        let known = known.and_then(|additions| additions.skip_rest(&mut reader));
+        assert_eq!(known.unwrap_err().to_string(), error.to_string());
+        let why = error.to_string();
+        why.strip_prefix("the octets do not decode: ")
+            .unwrap()
+            .to_string()
+    };
+    let none = "the extension bit of a SEQUENCE is set, and it has no extension addition";
+    // §19.8: the length of the bitmap is a normally small length, whose lower bound is
+    // one (§11.9.3.1 a)): "n cannot be zero". Its form for more than 64 bits is an
+    // unconstrained length (§11.9.3.4), which can say zero: a one bit, then no bit.
+    assert_eq!(refused(&[0x80, 0x00]), none);
+    // §19.1: the extension bit is one when an addition is present, and zero otherwise.
+    // A bitmap of three additions of which none is present, and one of seventy.
+    assert_eq!(refused(&[0b0000_0100, 0x00]), none);
+    assert_eq!(refused(&[&[0x80, 70][..], &[0; 9]].concat()), none);
+    // §11.9.3.4: 64 bits at most have their length, less one, in six bits. One addition
+    // that is present, counted in the form of more than 64, then its open type.
+    assert_eq!(
+        refused(&[0x80, 0x01, 0x80, 0x01, 0xaa]),
+        "the bitmap of 64 extension additions at most has its length in six bits"
+    );
+    assert_eq!(
+        refused(&[&[0x80, 64][..], &[0xff; 8]].concat()),
+        "the bitmap of 64 extension additions at most has its length in six bits"
+    );
+    // §19.9, §11.2.1: an addition is the complete encoding of a value in an open type,
+    // which is one octet at least (§11.1.3.1). One addition, present, of no octet.
+    assert_eq!(
+        refused(&[0b0000_0001, 0x00]),
+        "an extension addition has no octet: an open type holds a complete encoding"
+    );
+    // The same additions as the clauses have them are read.
+    let mut reader = Reader::new(&[0b0000_0001, 0x01, 0x00]);
+    reader.skip_additions().unwrap();
+    reader.finish().unwrap();
+    let mut seventy = vec![0x80, 70, 0x80];
+    seventy.extend([0; 8]);
+    seventy.extend([0x01, 0xaa]);
+    let mut reader = Reader::new(&seventy);
+    reader.skip_additions().unwrap();
+    reader.finish().unwrap();
+    // A writer writes none of them: no addition, and none that is present.
+    let mut octets = Vec::new();
+    assert!(Writer::new(&mut octets).additions(&[]).is_err());
+    assert!(Writer::new(&mut octets).additions(&[false, false]).is_err());
+    assert!(octets.is_empty());
+}
+
+#[test]
 fn an_open_type_is_written_into_the_octets_that_hold_it() {
     // A value of 127 octets has a length of one octet, one of 128 a length of two.
     for length in [0usize, 1, 127, 128, 16383, 16384, 40000] {

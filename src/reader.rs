@@ -404,14 +404,36 @@ impl<'a> Reader<'a> {
         check_size(size, lower, upper)
     }
 
-    /// A normally small length (X.691 §11.9.3.4): the length of the bitmap of the
-    /// extension additions, then that bitmap.
+    /// The bitmap of the extension additions (X.691 §19.7, §19.8) after its length, a
+    /// normally small length (§11.9.3.4): 64 bits at most have their length, less one,
+    /// in six bits, and more bits an unconstrained length.
+    ///
+    /// The clauses leave a sender one encoding, and a reader takes no other: the length
+    /// is one at least (§11.9.3.1 a)), 64 bits at most are not counted in the form of
+    /// more, and one addition at least is present, as the extension bit is set for
+    /// nothing else (§19.1).
     fn addition_bitmap(&mut self) -> Result<BitString<'a>, Error> {
-        if !self.bit()? {
+        const NONE: &str =
+            "the extension bit of a SEQUENCE is set, and it has no extension addition";
+        let bitmap = if self.bit()? {
+            let bitmap = self.bit_string_in_fragments()?;
+            match bitmap.len() {
+                0 => return Err(Error::decode(NONE)),
+                1..=64 => {
+                    return Err(Error::decode(
+                        "the bitmap of 64 extension additions at most has its length in six bits",
+                    ));
+                }
+                _ => bitmap,
+            }
+        } else {
             let count = self.bits(6)? as usize + 1;
-            return self.bit_field(count);
+            self.bit_field(count)?
+        };
+        if (0..bitmap.len()).all(|addition| bitmap.get(addition) != Some(true)) {
+            return Err(Error::decode(NONE));
         }
-        self.bit_string_in_fragments()
+        Ok(bitmap)
     }
 
     // ── ENUMERATED and CHOICE ───────────────────────────────────────────────
@@ -473,6 +495,13 @@ impl<'a> Reader<'a> {
     /// §19.7 to §19.9): the bitmap of their presence, then an open type for each one
     /// that is present. A later version of a specification adds them, and a reader of
     /// an earlier one does not know them.
+    ///
+    /// # Errors
+    ///
+    /// What the clauses give no encoding for is an error: a bitmap of no bit or of
+    /// which no bit is set, as the extension bit is set when an addition is present
+    /// (§19.1, §19.8); a bitmap of 64 bits at most whose length is in the form of more
+    /// (§11.9.3.4); and an addition of no octet (§11.1.3.1).
     pub fn skip_additions(&mut self) -> Result<(), Error> {
         let additions = self.additions()?;
         additions.skip_rest(self)
@@ -480,6 +509,7 @@ impl<'a> Reader<'a> {
 
     /// The extension additions of a SEQUENCE whose extension bit is set: which of them
     /// are present. Each one that is present follows in an open type, in their order.
+    /// The bitmap is refused as [`skip_additions`](Self::skip_additions) refuses it.
     ///
     /// ```
     /// use oxirush_aper::Reader;
@@ -589,15 +619,24 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Skip an open type.
+    /// Skip the open type of an extension addition: the complete encoding of a value
+    /// (X.691 §19.9, §11.2.1), which is one octet at least (§11.1.3.1).
     fn skip_open_type(&mut self) -> Result<(), Error> {
+        let mut octets = 0;
         loop {
             let (count, more) = self.length()?;
             self.octets(count)?;
+            octets += count;
             if !more {
-                return Ok(());
+                break;
             }
         }
+        if octets == 0 {
+            return Err(Error::decode(
+                "an extension addition has no octet: an open type holds a complete encoding",
+            ));
+        }
+        Ok(())
     }
 
     // ── BIT STRING ──────────────────────────────────────────────────────────
