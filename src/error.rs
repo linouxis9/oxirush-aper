@@ -314,11 +314,29 @@ impl Error {
         Self::decode(format!("the number does not fit in {bits} bits"))
     }
 
+    fn write_fields(&self, text: &mut String) {
+        if self.0.fields.is_empty() {
+            return;
+        }
+        text.push_str(", in its field `");
+        for (at, field) in self.fields().enumerate() {
+            if at > 0 {
+                text.push('.');
+            }
+            text.push_str(field);
+        }
+        text.push('`');
+    }
+}
+
+/// The errors that the bindings of an application protocol make of a PDU, of its message
+/// and of its IEs, in one wording for every protocol. A program that uses bindings
+/// matches on the [`kind`](Error::kind) of their errors, and makes none of these.
+impl Error {
     /// A PDU of another message than the one that ASN.1 names `expected`: `held` is the
     /// name of the message of its `direction` and of the procedure `code`, when the
     /// specification has one.
-    #[doc(hidden)]
-    pub fn __wrong_message(expected: &str, held: Option<&str>, direction: &str, code: u8) -> Self {
+    pub fn wrong_message(expected: &str, held: Option<&str>, direction: &str, code: u8) -> Self {
         let message = match held {
             Some(held) => format!(
                 "the message of this PDU is {held}, not {expected}: kind() says which \
@@ -334,8 +352,7 @@ impl Error {
 
     /// A PDU of the message that ASN.1 names `name`, which has no container of
     /// protocol IEs.
-    #[doc(hidden)]
-    pub fn __no_protocol_ies(name: &str) -> Self {
+    pub fn no_protocol_ies(name: &str) -> Self {
         let what =
             format!("the message of this PDU is {name}, which has no container of protocol IEs");
         Self::new(ErrorKind::WrongMessage, what)
@@ -343,8 +360,7 @@ impl Error {
 
     /// A PDU whose direction and procedure code the specification has no message for,
     /// and so no object set.
-    #[doc(hidden)]
-    pub fn __no_message_of(direction: &str, code: u8) -> Self {
+    pub fn no_message_of(direction: &str, code: u8) -> Self {
         let what = format!(
             "the specification has no {direction} of procedure {code}, and so no object set \
              for its IEs"
@@ -355,9 +371,8 @@ impl Error {
     /// This error is why the message of a PDU does not decode as a container of
     /// protocol IEs: the message that ASN.1 names `name`, when the specification has
     /// one for the PDU.
-    #[doc(hidden)]
     #[must_use]
-    pub fn __of_message(self, name: Option<&str>) -> Self {
+    pub fn of_message(self, name: Option<&str>) -> Self {
         const UNNAMED: &str =
             "the message of this PDU does not decode as a container of protocol IEs";
         self.of(match name {
@@ -367,9 +382,8 @@ impl Error {
     }
 
     /// This error is why `count` protocol IEs do not encode as a message.
-    #[doc(hidden)]
     #[must_use]
-    pub fn __of_protocol_ies(self, count: usize) -> Self {
+    pub fn of_protocol_ies(self, count: usize) -> Self {
         self.of(format!(
             "these {count} protocol IEs do not encode as a message"
         ))
@@ -377,17 +391,40 @@ impl Error {
 
     /// The IE that a message names `ie`, which the field `field` requires, is not in a
     /// message of the type `message`.
-    #[doc(hidden)]
-    pub fn __missing_ie(message: &str, ie: &str, field: &str) -> Self {
+    ///
+    /// ```
+    /// use oxirush_aper::{Error, ErrorKind};
+    ///
+    /// let error = Error::missing_ie("NGSetupRequest", "SupportedTAList", "areas");
+    /// assert_eq!(error.kind(), ErrorKind::MissingIe);
+    /// assert_eq!(
+    ///     error.to_string(),
+    ///     "this NGSetupRequest has no SupportedTAList, which the field `areas` requires"
+    /// );
+    /// ```
+    pub fn missing_ie(message: &str, ie: &str, field: &str) -> Self {
         let what = format!("this {message} has no {ie}, which the field `{field}` requires");
         Self::new(ErrorKind::MissingIe, what)
     }
 
     /// This error is why the IE that a message names `ie` does not decode, in a message
     /// of the type `message`.
-    #[doc(hidden)]
+    ///
+    /// ```
+    /// use oxirush_aper::{ErrorKind, Reader};
+    ///
+    /// // An ENUMERATED of four values and an extension marker, read from no octet
+    /// let codec = Reader::new(&[]).enumerated(4, 0, true).unwrap_err();
+    /// let error = codec.undecodable_ie("NGSetupRequest", "DefaultPagingDRX");
+    /// assert_eq!(error.kind(), ErrorKind::UndecodableIe);
+    /// assert_eq!(
+    ///     error.to_string(),
+    ///     "the DefaultPagingDRX of this NGSetupRequest does not decode: the octets end before \
+    ///      the value does"
+    /// );
+    /// ```
     #[must_use]
-    pub fn __undecodable_ie(self, message: &str, ie: &str) -> Self {
+    pub fn undecodable_ie(self, message: &str, ie: &str) -> Self {
         // What the codec said of the octets, without the type that it took them for.
         self.of(format!("the {ie} of this {message} does not decode"))
             .with_kind(ErrorKind::UndecodableIe)
@@ -396,25 +433,10 @@ impl Error {
     /// A value of the type that ASN.1 names `name` that is written in JSON and does
     /// not encode: it is outside a constraint of its type, and so no value of that
     /// type. This error is what the codec said of it.
-    #[doc(hidden)]
     #[must_use]
-    pub fn __outside_its_type(self, name: &str) -> Self {
+    pub fn outside_its_type(self, name: &str) -> Self {
         self.of(format!("this is not a value of {name}"))
             .with_kind(ErrorKind::Value)
-    }
-
-    fn write_fields(&self, text: &mut String) {
-        if self.0.fields.is_empty() {
-            return;
-        }
-        text.push_str(", in its field `");
-        for (at, field) in self.fields().enumerate() {
-            if at > 0 {
-                text.push('.');
-            }
-            text.push_str(field);
-        }
-        text.push('`');
     }
 }
 

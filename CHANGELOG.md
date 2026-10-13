@@ -23,7 +23,10 @@ and S1AP (TS 36.413) uses.
 - `Error`, with an `ErrorKind`, the reason, and the names of the fields on the
   way to where a decoding stopped. An error that the bindings of a protocol
   make about an IE of a message has it: `ie()` gives an `ErrorIe`, the
-  identifier of the IE, its `Criticality` and its position.
+  identifier of the IE, its `Criticality` and its position. The errors that
+  bindings make of a PDU, of its message and of its IEs have one wording, in
+  constructors of `Error`: `wrong_message`, `missing_ie`, `undecodable_ie`
+  and the others.
 - The `inspect` feature: `json`, with which bindings write and read their
   values as `serde_json` values in the form of the JSON Encoding Rules.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
