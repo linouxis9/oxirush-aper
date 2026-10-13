@@ -152,7 +152,7 @@ let mut writer = Writer::new(&mut octets);
 // INTEGER (0..7): three bits
 writer.unsigned(5, 0, 7)?;
 // INTEGER (0..255, ...): the extension bit, then one octet, aligned
-writer.unsigned_extensible(200, 0, 255);
+writer.unsigned_extensible(200, 0, 255)?;
 // ENUMERATED with 6 root values and an extension marker: the fourth
 writer.index(3, 6, true);
 // SIZE (1..256) of a SEQUENCE OF: its count, then its items

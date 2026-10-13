@@ -196,12 +196,12 @@ fn whole_numbers_with_an_extension_marker_and_without_an_upper_bound() {
     ] {
         same(
             &Octet(Integer::from(number)),
-            |w| w.unsigned_extensible(number, 0, 255),
+            |w| w.unsigned_extensible(number, 0, 255).unwrap(),
             |r| r.unsigned_extensible(0, 255).unwrap() == number,
         );
         same(
             &BitRate(Integer::from(number)),
-            |w| w.unsigned_extensible(number, 0, 4000000000000),
+            |w| w.unsigned_extensible(number, 0, 4000000000000).unwrap(),
             |r| r.unsigned_extensible(0, 4000000000000).unwrap() == number,
         );
         same(
@@ -234,7 +234,7 @@ fn whole_numbers_with_an_extension_marker_and_without_an_upper_bound() {
     ] {
         same(
             &Offset(Integer::from(number)),
-            |w| w.signed_extensible(number, -420, 10000),
+            |w| w.signed_extensible(number, -420, 10000).unwrap(),
             |r| r.signed_extensible(-420, 10000).unwrap() == number,
         );
         same(
@@ -466,7 +466,7 @@ fn octet_strings() {
         );
         same(
             &ExtensibleName(octets.clone().into()),
-            |w| w.octet_string_extensible(&octets, 1, 150),
+            |w| w.octet_string_extensible(&octets, 1, 150).unwrap(),
             |r| r.octet_string_extensible(1, 150).unwrap() == octets,
         );
     }
@@ -489,13 +489,13 @@ fn octet_strings() {
         // not read it back.
         same_where(
             &Extensible(octets.clone().into()),
-            |w| w.octet_string_extensible(&octets, 3, 3),
+            |w| w.octet_string_extensible(&octets, 3, 3).unwrap(),
             |r| r.octet_string_extensible(3, 3).unwrap() == octets,
             Where::Written,
         );
         same(
             &ExtensibleName(octets.clone().into()),
-            |w| w.octet_string_extensible(&octets, 1, 150),
+            |w| w.octet_string_extensible(&octets, 1, 150).unwrap(),
             |r| r.octet_string_extensible(1, 150).unwrap() == octets,
         );
     }
@@ -633,19 +633,19 @@ fn bit_strings() {
         let long = oxirush_aper::BitString::new(octets.clone(), length).unwrap();
         same(
             &Address(their_bits(&octets, length)),
-            |w| w.bit_string_extensible(&long, 1, 160),
+            |w| w.bit_string_extensible(&long, 1, 160).unwrap(),
             |r| r.bit_string_extensible(1, 160).unwrap() == long,
         );
         same(
             &Algorithms(their_bits(&octets, length)),
-            |w| w.bit_string_extensible(&long, 16, 16),
+            |w| w.bit_string_extensible(&long, 16, 16).unwrap(),
             |r| r.bit_string_extensible(16, 16).unwrap() == long,
         );
     }
     let sixteen = oxirush_aper::BitString::from([0xe0, 0x00]);
     same(
         &Algorithms(their_bits(&[0xe0, 0x00], 16)),
-        |w| w.bit_string_extensible(&sixteen, 16, 16),
+        |w| w.bit_string_extensible(&sixteen, 16, 16).unwrap(),
         |r| r.bit_string_extensible(16, 16).unwrap() == sixteen,
     );
     // No size constraint: each form of the length, and fragments.

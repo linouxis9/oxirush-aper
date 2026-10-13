@@ -2,7 +2,10 @@
 //! octets that its clause gives: the notes of the clauses where they have an example,
 //! and the encoding worked out from the clause otherwise.
 
-use oxirush_aper::{BitString, Bits, ErrorKind, ObjectIdentifier, Reader, UNBOUNDED, Writer};
+use oxirush_aper::{
+    AsnType, BitString, Bits, Encode, Error, ErrorKind, ObjectIdentifier, Reader, UNBOUNDED,
+    Writer, encode, encode_strict,
+};
 
 /// What a writer gives for the fields that `write` writes.
 fn written(write: impl FnOnce(&mut Writer<'_>)) -> Vec<u8> {
@@ -145,22 +148,25 @@ fn an_integer_with_an_extension_marker_has_a_bit_before_it() {
     // §13.1: within the root, as without the marker.
     // The one octet of (0..255) is octet-aligned after the bit.
     assert_eq!(
-        written(|w| w.unsigned_extensible(255, 0, 255)),
+        written(|w| w.unsigned_extensible(255, 0, 255).unwrap()),
         [0x00, 0xff]
     );
-    assert_eq!(written(|w| w.unsigned_extensible(5, 0, 7)), [0b0101_0000]);
+    assert_eq!(
+        written(|w| w.unsigned_extensible(5, 0, 7).unwrap()),
+        [0b0101_0000]
+    );
     // Outside it, an unconstrained whole number: its length, then its octets in
     // two's complement (§11.8, §11.4).
     assert_eq!(
-        written(|w| w.unsigned_extensible(256, 0, 255)),
+        written(|w| w.unsigned_extensible(256, 0, 255).unwrap()),
         [0x80, 0x02, 0x01, 0x00]
     );
     assert_eq!(
-        written(|w| w.signed_extensible(-1, 0, 255)),
+        written(|w| w.signed_extensible(-1, 0, 255).unwrap()),
         [0x80, 0x01, 0xff]
     );
     assert_eq!(
-        written(|w| w.signed_extensible(128, 0, 100)),
+        written(|w| w.signed_extensible(128, 0, 100).unwrap()),
         [0x80, 0x02, 0x00, 0x80]
     );
     for (value, octets) in [
@@ -173,7 +179,10 @@ fn an_integer_with_an_extension_marker_has_a_bit_before_it() {
             ],
         ),
     ] {
-        assert_eq!(written(|w| w.unsigned_extensible(value, 0, 255)), octets);
+        assert_eq!(
+            written(|w| w.unsigned_extensible(value, 0, 255).unwrap()),
+            octets
+        );
         assert_eq!(
             Reader::new(&octets).unsigned_extensible(0, 255).unwrap(),
             value
@@ -550,11 +559,11 @@ fn an_octet_string_is_aligned_unless_it_has_two_octets_at_most() {
     // §17.3: with an extension marker a bit comes first, and a string outside the
     // root has an unconstrained length.
     assert_eq!(
-        written(|w| w.octet_string_extensible(&[1, 2, 3], 3, 3)),
+        written(|w| w.octet_string_extensible(&[1, 2, 3], 3, 3).unwrap()),
         [0x00, 1, 2, 3]
     );
     assert_eq!(
-        written(|w| w.octet_string_extensible(&[1, 2], 3, 3)),
+        written(|w| w.octet_string_extensible(&[1, 2], 3, 3).unwrap()),
         [0x80, 2, 1, 2]
     );
     assert_eq!(
@@ -637,7 +646,7 @@ fn a_bit_string_is_aligned_unless_it_has_one_size_of_sixteen_bits_at_most() {
     // §16.6: with an extension marker a bit comes first.
     let sixteen = BitString::from([0xe0, 0x00]);
     assert_eq!(
-        written(|w| w.bit_string_extensible(&sixteen, 16, 16)),
+        written(|w| w.bit_string_extensible(&sixteen, 16, 16).unwrap()),
         [0b0111_0000, 0b0000_0000, 0b0000_0000]
     );
     let read = Reader::new(&[0b0111_0000, 0, 0])
@@ -646,7 +655,7 @@ fn a_bit_string_is_aligned_unless_it_has_one_size_of_sixteen_bits_at_most() {
     assert_eq!(read, sixteen);
     let eight = BitString::from([0xe0]);
     assert_eq!(
-        written(|w| w.bit_string_extensible(&eight, 16, 16)),
+        written(|w| w.bit_string_extensible(&eight, 16, 16).unwrap()),
         [0x80, 0x08, 0xe0]
     );
     assert_eq!(
@@ -935,4 +944,92 @@ fn a_writer_writes_bits_as_a_reader_reads_them() {
         }
         assert_eq!(reader.position(), total);
     }
+}
+
+/// X.691 clauses 13.1, 17.3, 16.6 and 30.4: a value outside the root of an extensible
+/// constraint is written with the extension bit, as a receiver of a later version of
+/// the type reads it. A strict writer refuses it, and writes nothing of it.
+#[test]
+fn a_strict_writer_refuses_what_is_outside_the_root_of_an_extensible_constraint() {
+    let refused = |write: &dyn Fn(&mut Writer<'_>) -> Result<(), Error>| {
+        let (mut any, mut none) = (Vec::new(), Vec::new());
+        write(&mut Writer::new(&mut any)).unwrap();
+        assert!(!any.is_empty());
+        let error = write(&mut Writer::strict(&mut none)).unwrap_err();
+        assert!(none.is_empty());
+        assert_eq!(error.kind(), ErrorKind::Encode);
+        error.reason()
+    };
+    assert_eq!(
+        refused(&|w| w.unsigned_extensible(256, 0, 255)),
+        "256 is outside the root of its constraint (0..255, ...)"
+    );
+    assert_eq!(
+        refused(&|w| w.signed_extensible(-1, 0, 255)),
+        "-1 is outside the root of its constraint (0..255, ...)"
+    );
+    assert_eq!(
+        refused(&|w| w.octet_string_extensible(&[1, 2], 3, 3)),
+        "a size of 2 is outside the root of its constraint (3, ...)"
+    );
+    let eight = BitString::from_octets(vec![0xab]);
+    assert_eq!(
+        refused(&|w| w.bit_string_extensible(&eight, 16, 32)),
+        "a size of 8 is outside the root of its constraint (16..32, ...)"
+    );
+    assert_eq!(
+        refused(&|w| w.printable_string_extensible("", 1, 150)),
+        "a size of 0 is outside the root of its constraint (1..150, ...)"
+    );
+    assert_eq!(
+        refused(&|w| w.visible_string_extensible("", 1, 150)),
+        "a size of 0 is outside the root of its constraint (1..150, ...)"
+    );
+    assert_eq!(
+        refused(&|w| w.ia5_string_extensible("ab", 1, 1)),
+        "a size of 2 is outside the root of its constraint (1, ...)"
+    );
+
+    // Within the root, a strict writer writes what the other one writes.
+    let both = |write: &dyn Fn(&mut Writer<'_>) -> Result<(), Error>| {
+        let (mut any, mut strict) = (Vec::new(), Vec::new());
+        write(&mut Writer::new(&mut any)).unwrap();
+        write(&mut Writer::strict(&mut strict)).unwrap();
+        assert_eq!(any, strict);
+        any
+    };
+    // The extension bit, then the one octet of a number of 256 values, aligned.
+    assert_eq!(both(&|w| w.unsigned_extensible(255, 0, 255)), [0x00, 0xff]);
+    assert_eq!(
+        both(&|w| w.octet_string_extensible(&[1, 2, 3], 3, 3)).len(),
+        4
+    );
+    assert!(!both(&|w| w.printable_string_extensible("amf", 1, 150)).is_empty());
+}
+
+/// TS 38.413 clause 9.3.3.21: an AMF name is a PrintableString (SIZE (1..150, ...)).
+/// One of no character encodes, as an extension, and is no AMF name of this version.
+#[test]
+fn encode_strict_refuses_a_value_that_is_none_of_this_version_of_its_type() {
+    struct Name(&'static str);
+    impl AsnType for Name {
+        const NAME: &'static str = "AMFName";
+    }
+    impl Encode for Name {
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.printable_string_extensible(self.0, 1, 150)
+        }
+    }
+    assert_eq!(encode(&Name("")).unwrap(), [0x80, 0x00]);
+    let error = encode_strict(&Name("")).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Encode);
+    assert_eq!(
+        error.to_string(),
+        "a value of AMFName does not encode: a size of 0 is outside the root of its \
+         constraint (1..150, ...)"
+    );
+    assert_eq!(
+        encode_strict(&Name("amf-1")).unwrap(),
+        encode(&Name("amf-1")).unwrap()
+    );
 }

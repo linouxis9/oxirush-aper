@@ -15,6 +15,10 @@ and S1AP (TS 36.413) uses.
   extension additions of a `SEQUENCE`, `OCTET STRING`, `BIT STRING`,
   `PrintableString`, `VisibleString`, `IA5String`, `UTF8String`,
   `OBJECT IDENTIFIER` and open types, which a writer encodes in place.
+- A value outside the root of an extensible constraint is written as an
+  extension, which a receiver of a later version of the type reads.
+  `Writer::strict` and `encode_strict` refuse it: a sender of this version
+  sends none.
 - The values: `Octets`, which borrows from the octets that are decoded or
   owns its own, `Bits` for a bit string of 64 bits at most, `BitString` for
   the others, and `ObjectIdentifier`.

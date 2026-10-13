@@ -203,6 +203,32 @@ pub fn encode<T: Encode>(value: &T) -> Result<Vec<u8>, Error> {
     Ok(octets)
 }
 
+/// The complete encoding of `value`, as [`encode`] gives it, for a value that is one of
+/// this version of its type: a number or a size outside the root of an extensible
+/// constraint, which `encode` writes as an extension, is an error.
+///
+/// An extensible constraint, as `INTEGER (0..255, ...)` or `SIZE (1..150, ...)`, has a
+/// receiver read what a later version of the type allows, so `encode` writes any value.
+/// The sender of this version sends none of them: a name of no character is no AMF
+/// name, though it encodes.
+///
+/// # Errors
+///
+/// An error of the kind `Encode`, which names the type, says why, and gives the field
+/// that does not encode.
+pub fn encode_strict<T: Encode>(value: &T) -> Result<Vec<u8>, Error> {
+    let mut octets = Vec::new();
+    match value.encode(&mut Writer::strict(&mut octets)) {
+        Ok(()) => {
+            if octets.is_empty() {
+                octets.push(0);
+            }
+            Ok(octets)
+        }
+        Err(error) => Err(error.encoding(T::NAME)),
+    }
+}
+
 /// Append the complete encoding of `value` to `octets`. After an error, `octets` are
 /// as they were.
 pub fn encode_into<T: Encode>(value: &T, octets: &mut Vec<u8>) -> Result<(), Error> {

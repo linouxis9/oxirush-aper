@@ -211,10 +211,10 @@ fn write(writer: &mut Writer<'_>, field: &Field) {
         Field::Unsigned(value, lower, upper) => writer.unsigned(*value, *lower, *upper).unwrap(),
         Field::Signed(value, lower, upper) => writer.signed(*value, *lower, *upper).unwrap(),
         Field::UnsignedExtensible(value, lower, upper) => {
-            writer.unsigned_extensible(*value, *lower, *upper)
+            writer.unsigned_extensible(*value, *lower, *upper).unwrap()
         }
         Field::SignedExtensible(value, lower, upper) => {
-            writer.signed_extensible(*value, *lower, *upper)
+            writer.signed_extensible(*value, *lower, *upper).unwrap()
         }
         Field::Unconstrained(value) => writer.unconstrained(*value),
         Field::SemiConstrained(value, lower) => writer.semi_constrained(*value, *lower).unwrap(),
@@ -227,14 +227,14 @@ fn write(writer: &mut Writer<'_>, field: &Field) {
         Field::Array3(octets) => writer.octet_array(octets),
         Field::Array2(octets) => writer.octet_array(octets),
         Field::Octets(octets, lower, upper) => writer.octet_string(octets, *lower, *upper).unwrap(),
-        Field::OctetsExtensible(octets, lower, upper) => {
-            writer.octet_string_extensible(octets, *lower, *upper)
-        }
+        Field::OctetsExtensible(octets, lower, upper) => writer
+            .octet_string_extensible(octets, *lower, *upper)
+            .unwrap(),
         Field::Open(octets) => writer.open_type(octets),
         Field::BitsSized(bits, lower, upper) => writer.bits_sized(*bits, *lower, *upper).unwrap(),
         Field::BitString(bits, lower, upper) => writer.bit_string(bits, *lower, *upper).unwrap(),
         Field::BitStringExtensible(bits, lower, upper) => {
-            writer.bit_string_extensible(bits, *lower, *upper)
+            writer.bit_string_extensible(bits, *lower, *upper).unwrap()
         }
         Field::Text(alphabet, extensible, text, lower, upper) => {
             let (lower, upper) = (*lower, *upper);

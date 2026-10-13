@@ -157,7 +157,7 @@ impl Encode for Sample<'_> {
         writer.unsigned(self.small.into(), 0, 100)?;
         writer.unsigned(self.word.into(), 0, 65535)?;
         writer.signed(self.signed.into(), -8, 7)?;
-        writer.unsigned_extensible(self.rate, 0, 4_000_000_000_000);
+        writer.unsigned_extensible(self.rate, 0, 4_000_000_000_000)?;
         writer.index(self.kind, 3, true);
         match &self.either {
             Either::Number(number) => {

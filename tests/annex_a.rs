@@ -300,7 +300,7 @@ mod constrained {
         write_name(&record.name, extensible, w)?;
         match extensible {
             // `INTEGER (0..9999, ...)`.
-            true => w.unsigned_extensible(record.number as u64, 0, 9999),
+            true => w.unsigned_extensible(record.number as u64, 0, 9999)?,
             false => w.unconstrained(record.number),
         }
         w.visible_string(&record.title, 0, UNBOUNDED)?;

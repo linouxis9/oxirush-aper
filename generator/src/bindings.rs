@@ -1950,11 +1950,12 @@ impl Bindings {
                         writeln!(out, "writer.unsigned({wide}, {lower}, {upper})?;")?
                     }
                     (Some(lower), Some(upper), true) if lower < 0 => {
-                        writeln!(out, "writer.signed_extensible({wide}, {lower}, {upper});")?
+                        writeln!(out, "writer.signed_extensible({wide}, {lower}, {upper})?;")?
                     }
-                    (Some(lower), Some(upper), true) => {
-                        writeln!(out, "writer.unsigned_extensible({wide}, {lower}, {upper});")?
-                    }
+                    (Some(lower), Some(upper), true) => writeln!(
+                        out,
+                        "writer.unsigned_extensible({wide}, {lower}, {upper})?;"
+                    )?,
                     (Some(lower), None, _) if lower < 0 => {
                         writeln!(out, "writer.semi_constrained({wide}, {lower})?;")?
                     }
@@ -1968,7 +1969,7 @@ impl Bindings {
             Kind::Octets(range) => match range.extensible {
                 true => writeln!(
                     out,
-                    "writer.octet_string_extensible({referred}, {});",
+                    "writer.octet_string_extensible({referred}, {})?;",
                     bounds(range)
                 )?,
                 false => writeln!(out, "writer.octet_string({referred}, {})?;", bounds(range))?,
@@ -1977,7 +1978,7 @@ impl Bindings {
             Kind::BitString(range) => match range.extensible {
                 true => writeln!(
                     out,
-                    "writer.bit_string_extensible({referred}, {});",
+                    "writer.bit_string_extensible({referred}, {})?;",
                     bounds(range)
                 )?,
                 false => writeln!(out, "writer.bit_string({referred}, {})?;", bounds(range))?,

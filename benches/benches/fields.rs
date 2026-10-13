@@ -120,7 +120,9 @@ fn fields(criterion: &mut Criterion) {
             for number in 0..FIELDS {
                 let id = black_box(number << 28);
                 writer.unsigned(id, 0, 1_099_511_627_775).unwrap();
-                writer.unsigned_extensible(black_box(number * 1_000_000), 0, 4_000_000_000_000);
+                writer
+                    .unsigned_extensible(black_box(number * 1_000_000), 0, 4_000_000_000_000)
+                    .unwrap();
             }
         },
         |reader| {

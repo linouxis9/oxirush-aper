@@ -298,6 +298,25 @@ impl Error {
 
     /// A size that is read outside its constraint.
     #[cold]
+    pub(crate) fn number_written_outside_root(value: i128, lower: i128, upper: i128) -> Self {
+        Self::encode(format!(
+            "{value} is outside the root of its constraint ({lower}..{upper}, ...)"
+        ))
+    }
+
+    #[cold]
+    pub(crate) fn size_written_outside_root(size: usize, lower: usize, upper: usize) -> Self {
+        Self::encode(match lower == upper {
+            true => {
+                format!("a size of {size} is outside the root of its constraint ({lower}, ...)")
+            }
+            false => format!(
+                "a size of {size} is outside the root of its constraint ({lower}..{upper}, ...)"
+            ),
+        })
+    }
+
+    #[cold]
     pub(crate) fn size_read_outside(size: usize, lower: usize, upper: Option<usize>) -> Self {
         Self::decode(size_outside(size, lower, upper))
     }
