@@ -156,7 +156,16 @@ pub struct Keys<'a> {
 /// converts to and from the `Plmn` of oxirush-utils, which the crate of the bindings
 /// then depends on. Every other type that is a fixed number of octets prints them in
 /// hexadecimal.
-pub fn bindings(description: &str, keys: Keys<'_>, plmns: &[&str]) -> Result<Written> {
+///
+/// `field` is the path, in the crate of the bindings, of a trait `Trait<T>` with one
+/// method `__field(self) -> T`: each type that is a name for one value implements it
+/// for the type of that value, so that a macro of the crate takes either.
+pub fn bindings(
+    description: &str,
+    keys: Keys<'_>,
+    plmns: &[&str],
+    field: Option<&str>,
+) -> Result<Written> {
     let file = syn::parse_file(description).context("parse the resolved bindings")?;
     let mut modules = Vec::new();
     for item in &file.items {
@@ -172,7 +181,8 @@ pub fn bindings(description: &str, keys: Keys<'_>, plmns: &[&str]) -> Result<Wri
             entries: entries(items).with_context(|| format!("in {}", module.ident))?,
         });
     }
-    let bindings = Bindings::new(&modules, keys, plmns)?;
+    let mut bindings = Bindings::new(&modules, keys, plmns)?;
+    bindings.field = field.map(str::to_string);
     let text = bindings.write(&modules)?;
     Ok(Written {
         text,
@@ -661,6 +671,9 @@ struct Bindings {
     /// The types that are a PLMN identity, each with the types that it is a name for,
     /// down to the one that is three octets: none when it is three octets itself.
     plmns: BTreeMap<String, Vec<String>>,
+    /// The path of the trait that a type which is a name for one value implements for
+    /// the type of that value.
+    field: Option<String>,
 }
 
 impl Bindings {
@@ -701,6 +714,7 @@ impl Bindings {
                 .map(|(name, holds)| (name.to_string(), holds.to_string()))
                 .collect(),
             plmns: BTreeMap::new(),
+            field: None,
         };
         // A PLMN identity is three octets, or a name for a type that is.
         for plmn in plmns {
@@ -1164,6 +1178,13 @@ impl Bindings {
             Shape::Alias(kind) => {
                 let ty = self.ty(kind, "'a");
                 writeln!(out, "pub struct {declared}(pub {ty});")?;
+                if let Some(field) = &self.field {
+                    writeln!(
+                        out,
+                        "impl{life} {field}<{ty}> for {declared} {{ #[inline] fn __field(self) -> {ty} \
+                         {{ self.0 }} }}"
+                    )?;
+                }
                 if borrows {
                     writeln!(out, "impl{life} {declared} {{")?;
                     self.owned_doc(out, name)?;
