@@ -857,7 +857,7 @@ impl Bindings {
             writeln!(
                 out,
                 "#[allow(non_camel_case_types, non_snake_case, non_upper_case_globals, unused, \
-                 clippy::too_many_arguments)]"
+                 clippy::too_many_arguments, clippy::collapsible_if)]"
             )?;
             writeln!(out, "pub mod {} {{", module.name)?;
             writeln!(out, "use super::*;")?;
@@ -1390,15 +1390,28 @@ impl Bindings {
         for member in &optional {
             writeln!(out, "writer.bit(self.{}.is_some());", member.name)?;
         }
+        // A value of a member that does not encode is an error that says the member, as
+        // the reader says the one where a decoding stopped: each statement that may
+        // fail returns its error with the name.
+        let fallible = regex::Regex::new(r"(?m)^(?P<call>[^\n{}]+)\?;$")?;
         for member in members {
+            let mut written = String::new();
             match member.optional {
                 true => {
-                    writeln!(out, "if let Some(value) = &self.{} {{", member.name)?;
-                    self.encode(out, &member.kind, "value", true)?;
-                    writeln!(out, "}}")?;
+                    writeln!(written, "if let Some(value) = &self.{} {{", member.name)?;
+                    self.encode(&mut written, &member.kind, "value", true)?;
+                    writeln!(written, "}}")?;
                 }
-                false => self.encode(out, &member.kind, &format!("self.{}", member.name), false)?,
+                false => {
+                    let value = format!("self.{}", member.name);
+                    self.encode(&mut written, &member.kind, &value, false)?
+                }
             }
+            let named = format!(
+                "if let Err(error) = ${{call}} {{ return Err(error.in_field({:?})); }}",
+                member.name
+            );
+            out.push_str(&fallible.replace_all(&written, named.as_str()));
         }
         writeln!(out, "Ok(())")?;
         writeln!(out, "}} }}")?;
