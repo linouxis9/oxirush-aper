@@ -1681,17 +1681,24 @@ impl Bindings {
                              for _ in 0..count {{ list.push({item}); }} list }}"
                         )
                     }
-                    // Otherwise an unconstrained one, in fragments from 16K elements.
+                    // Otherwise an unconstrained one, in fragments from 16K elements. The
+                    // size is checked when the length of a fragment is read, before its
+                    // elements are: against both bounds at the last fragment, and against
+                    // the upper one at each, so that a list which claims more fragments
+                    // than its type has elements is refused without being read.
                     upper => {
                         let length = unwrap("reader.length()");
+                        let over =
+                            upper.map_or(String::new(), |upper| format!("|| size > {upper}"));
                         let upper =
                             upper.map_or("UNBOUNDED".to_string(), |upper| upper.to_string());
-                        let check =
-                            unwrap(&format!("Reader::check_size(list.len(), {lower}, {upper})"));
+                        let check = unwrap(&format!("Reader::check_size(size, {lower}, {upper})"));
                         format!(
                             "{{ let mut list = Vec::new(); loop {{ let (count, more) = {length}; \
+                             let size = list.len().saturating_add(count); \
+                             if !more {over} {{ {check}; }} \
                              for _ in 0..count {{ list.push({item}); }} if !more {{ break; }} }} \
-                             {check}; list }}"
+                             list }}"
                         )
                     }
                 }
