@@ -62,6 +62,8 @@ pub struct Registry {
     /// The types of the bindings that borrow from the octets that they are decoded
     /// from: the list writes them with their lifetime.
     borrowing: BTreeSet<String>,
+    /// The types of the bindings that hold a key: the list marks the IEs of such a type.
+    keys: BTreeSet<String>,
     pub(crate) procedures: BTreeMap<u8, Procedure>,
     pub(crate) ies: BTreeMap<u16, Ie>,
 }
@@ -93,6 +95,7 @@ impl Registry {
         generated: &str,
         asn: &str,
         borrowing: BTreeSet<String>,
+        keys: BTreeSet<String>,
     ) -> Result<Self> {
         let declaration = Regex::new(r"(?m)^    pub (?:struct|enum|type) ([A-Za-z][A-Za-z0-9_]*)")?;
         let mut types = BTreeMap::new();
@@ -113,6 +116,7 @@ impl Registry {
             types,
             aliases,
             borrowing,
+            keys,
             procedures: BTreeMap::new(),
             ies: BTreeMap::new(),
         };
@@ -176,8 +180,9 @@ impl Registry {
         }
         writeln!(out, "}}")?;
         // The identifier, the criticality of the IE in a single container when its object
-        // sets give it one, the name and the type, the type that the octets of the IE
-        // contain, then the names that the macros take the IE by. An IE of an extension
+        // sets give it one, the name, `@key` for an IE whose type holds a key, the type,
+        // the type that the octets of the IE contain, then the names that the macros
+        // take the IE by. An IE of an extension
         // container that has several types has them in brackets, each with the types
         // that it extends so.
         writeln!(out, "ies! {{")?;
@@ -187,6 +192,13 @@ impl Registry {
                 write!(out, " {criticality}")?;
             }
             write!(out, " {:?}", ie.name)?;
+            let holds_key = |path: &String| {
+                let name = path.rsplit(':').next().unwrap_or(path);
+                self.keys.contains(name)
+            };
+            if ie.types.iter().chain(&ie.contents).any(holds_key) {
+                write!(out, " @key")?;
+            }
             match (alone(&ie.types), alone(&ie.contents)) {
                 (Some(ty), Some(contained)) => {
                     write!(out, " {}, {}", self.written(&ty), self.written(&contained))?

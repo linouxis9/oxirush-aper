@@ -13,7 +13,7 @@
 //! What the two protocols do not have is refused, and not written wrongly: a member
 //! with a default value, an extension addition of a SEQUENCE, a size with an
 //! extension marker on a list, a constraint that is no range.
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 use anyhow::{Context, Result, bail, ensure};
@@ -134,10 +134,23 @@ struct Module {
 pub struct Written {
     pub text: String,
     pub borrowing: BTreeSet<String>,
+    /// The types that hold a key: the types of [`Keys::types`], and those that hold one.
+    pub keys: BTreeSet<String>,
+}
+
+/// What the bindings are told of the keys of a protocol: `Debug` prints no octet of one.
+#[derive(Clone, Copy, Default)]
+pub struct Keys<'a> {
+    /// The types that are a key, each a string with a name: `Debug` shows their length.
+    pub types: &'a [&'a str],
+    /// The SEQUENCE types whose open type holds the value of another type, which may
+    /// hold a key: each with the expression, of `self`, that says whether it does.
+    /// `Debug` then shows the length of the octets of the open type.
+    pub holders: &'a [(&'a str, &'a str)],
 }
 
 /// The bindings on oxirush-aper of the description that rasn-compiler gave.
-pub fn bindings(description: &str) -> Result<Written> {
+pub fn bindings(description: &str, keys: Keys<'_>) -> Result<Written> {
     let file = syn::parse_file(description).context("parse the resolved bindings")?;
     let mut modules = Vec::new();
     for item in &file.items {
@@ -153,11 +166,12 @@ pub fn bindings(description: &str) -> Result<Written> {
             entries: entries(items).with_context(|| format!("in {}", module.ident))?,
         });
     }
-    let bindings = Bindings::new(&modules)?;
+    let bindings = Bindings::new(&modules, keys)?;
     let text = bindings.write(&modules)?;
     Ok(Written {
         text,
         borrowing: bindings.borrowing,
+        keys: bindings.keys,
     })
 }
 
@@ -631,10 +645,17 @@ struct Bindings {
     /// The SEQUENCE types whose members are all plain fields: their codec is read and
     /// written where it is used.
     plain: BTreeSet<String>,
+    /// The types that are a key, and those that hold one.
+    keys: BTreeSet<String>,
+    /// The types that are a key themselves.
+    key_types: BTreeSet<String>,
+    /// The types whose open type may hold a key, each with the expression that says
+    /// whether it does.
+    key_holders: BTreeMap<String, String>,
 }
 
 impl Bindings {
-    fn new(modules: &[Module]) -> Result<Self> {
+    fn new(modules: &[Module], keys: Keys<'_>) -> Result<Self> {
         let definitions = || {
             modules
                 .iter()
@@ -652,11 +673,44 @@ impl Bindings {
                 definition.name
             );
         }
+        for name in keys
+            .types
+            .iter()
+            .chain(keys.holders.iter().map(|(name, _)| name))
+        {
+            ensure!(names.contains(name), "{name}, of the keys, is no type");
+        }
+        let key_types: BTreeSet<String> = keys.types.iter().map(|name| name.to_string()).collect();
+        let holders = keys.holders.iter();
         let mut bindings = Self {
             borrowing: BTreeSet::new(),
             copied: BTreeSet::new(),
             plain: BTreeSet::new(),
+            keys: key_types.clone(),
+            key_types,
+            key_holders: holders
+                .map(|(name, holds)| (name.to_string(), holds.to_string()))
+                .collect(),
         };
+        // The types that hold a type which holds a key hold one too: until none is added.
+        loop {
+            let before = bindings.keys.len();
+            for definition in definitions() {
+                let holds = match &definition.shape {
+                    Shape::Sequence(members) | Shape::Choice(members) => members
+                        .iter()
+                        .any(|member| bindings.holds_key(&member.kind)),
+                    Shape::Enumerated(_) => false,
+                    Shape::Alias(kind) => bindings.holds_key(kind),
+                };
+                if holds {
+                    bindings.keys.insert(definition.name.clone());
+                }
+            }
+            if bindings.keys.len() == before {
+                break;
+            }
+        }
         // The types that hold a type that borrows borrow too: until none is added.
         loop {
             let before = bindings.borrowing.len();
@@ -724,6 +778,16 @@ impl Bindings {
         match kind {
             Kind::Named(name) if self.plain.contains(name) => true,
             kind => self.is_field(kind),
+        }
+    }
+
+    /// Whether a value of a kind holds a key, as a value of the bindings: the octets of
+    /// an open type are not looked into.
+    fn holds_key(&self, kind: &Kind) -> bool {
+        match kind {
+            Kind::List { of, .. } => self.holds_key(of),
+            Kind::Named(name) => self.keys.contains(name),
+            _ => false,
         }
     }
 
@@ -808,6 +872,51 @@ impl Bindings {
         Ok(out)
     }
 
+    /// `Debug` of a key, which shows its length, and of a type whose open type may hold
+    /// one, which shows the length of the octets of that open type when it does.
+    fn debug(&self, out: &mut String, definition: &Definition, named: &str) -> Result<()> {
+        let name = &definition.name;
+        writeln!(out, "impl core::fmt::Debug for {named} {{")?;
+        writeln!(
+            out,
+            "fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {{"
+        )?;
+        match (&definition.shape, self.key_holders.get(name)) {
+            (Shape::Alias(kind), None) => {
+                let unit = match kind {
+                    Kind::Bits(_) | Kind::BitString(_) => "bits",
+                    Kind::OctetArray(_) | Kind::Octets(_) => "octets",
+                    _ => bail!("{name} is a key, and no string of bits or of octets"),
+                };
+                writeln!(
+                    out,
+                    "write!(formatter, \"{name}({{}} {unit})\", self.0.len())"
+                )?;
+            }
+            (Shape::Sequence(members), Some(holds)) => {
+                writeln!(out, "let holds_key = {holds};")?;
+                writeln!(out, "let mut shown = formatter.debug_struct(\"{name}\");")?;
+                for member in members {
+                    let (field, value) = (&member.name, format!("self.{}", member.name));
+                    match member.kind {
+                        Kind::Open if !member.optional => writeln!(
+                            out,
+                            "match holds_key {{ \
+                             true => shown.field(\"{field}\", &format_args!(\"{{}} octets\", {value}.len())), \
+                             false => shown.field(\"{field}\", &{value}), }};"
+                        )?,
+                        Kind::Open => bail!("{name} has an open type that is optional"),
+                        _ => writeln!(out, "shown.field(\"{field}\", &{value});")?,
+                    }
+                }
+                writeln!(out, "shown.finish()")?;
+            }
+            _ => bail!("{name} is neither a key nor a SEQUENCE with an open type"),
+        }
+        writeln!(out, "}}\n}}")?;
+        Ok(())
+    }
+
     fn definition(&self, out: &mut String, definition: &Definition) -> Result<()> {
         let name = &definition.name;
         let borrows = self.borrowing.contains(name);
@@ -816,13 +925,20 @@ impl Bindings {
             true => (format!("{name}<'a>"), format!("{name}<'_>"), "<'a>"),
             false => (name.clone(), name.clone(), ""),
         };
+        // `Debug` shows no octet of a key: that of a key and that of a type whose open
+        // type may hold one are written here, and the others are derived.
+        let by_hand = self.key_types.contains(name) || self.key_holders.contains_key(name);
+        if by_hand {
+            self.debug(out, definition, &named)?;
+        }
         write_docs(out, &definition.docs)?;
         let copy = if self.copied.contains(name) {
             ", Copy"
         } else {
             ""
         };
-        writeln!(out, "#[derive(Debug, Clone, PartialEq, Eq, Hash{copy})]")?;
+        let debug = if by_hand { "" } else { "Debug, " };
+        writeln!(out, "#[derive({debug}Clone, PartialEq, Eq, Hash{copy})]")?;
         if definition.extensible {
             writeln!(out, "#[non_exhaustive]")?;
         }
