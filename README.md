@@ -203,6 +203,33 @@ assert_eq!(Reader::new(&held).unsigned(0, 65535)?, 0x1234);
 # Ok::<(), oxirush_aper::Error>(())
 ```
 
+A value that is decoded from an open type borrows from the input too, when it
+is read from the octets that `as_borrowed()` gives: they live as long as the
+input, where `&held` lives as long as the variable. An open type of 16384
+octets or more comes in fragments, which are gathered: it owns its octets, and
+what is decoded from it is copied out.
+
+```rust
+use oxirush_aper::{Error, Octets, Reader};
+
+// The OCTET STRING (SIZE (0..255)) that an open type holds
+fn held(input: &[u8]) -> Result<Octets<'_>, Error> {
+    let open = Reader::new(input).open_type()?;
+    match open.as_borrowed() {
+        // In one piece: the string is a part of `input`
+        Some(octets) => Reader::new(octets).octet_string(0, 255),
+        // Gathered from fragments: the string is copied out of them
+        None => Ok(Reader::new(&open).octet_string(0, 255)?.into_owned()),
+    }
+}
+
+let input = [0x03, 0x02, 0xab, 0xcd];
+let string = held(&input)?;
+assert_eq!(string, [0xab, 0xcd]);
+assert!(string.is_borrowed());
+# Ok::<(), oxirush_aper::Error>(())
+```
+
 ### Extension additions
 
 ```rust
