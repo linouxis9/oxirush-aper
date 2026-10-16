@@ -85,6 +85,10 @@ struct Member {
     /// that the bindings had before the rule of [`crate::names`], and that the oracle
     /// of the tests has.
     was: String,
+    /// Whether the value owns its octets: the extension container of a SEQUENCE and
+    /// the extension of a CHOICE, which a value has seldom, so that a type whose own
+    /// members borrow nothing has no lifetime for them.
+    owned: bool,
     kind: Kind,
     optional: bool,
     addition: bool,
@@ -300,10 +304,12 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
                 for variant in &item.variants {
                     let own = self::attributes(&variant.attrs)?;
                     let asn = own.identifier.clone();
+                    let asn = asn.unwrap_or_else(|| variant.ident.to_string());
                     let mut member = Member {
                         name: variant.ident.to_string(),
                         was: variant.ident.to_string(),
-                        asn: asn.unwrap_or_else(|| variant.ident.to_string()),
+                        owned: attributes.choice && asn == EXTENSION_OF_A_CHOICE,
+                        asn,
                         kind: Kind::Null,
                         optional: false,
                         addition: own.addition,
@@ -393,6 +399,12 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// The member of a SEQUENCE that holds its extension container, by its identifier in
+/// the application protocols of 3GPP.
+const EXTENSIONS_OF_A_SEQUENCE: &str = "iE-Extensions";
+/// The alternative of a CHOICE that holds an extension, as an IE.
+const EXTENSION_OF_A_CHOICE: &str = "choice-Extensions";
+
 fn tokens(node: &impl quote::ToTokens) -> String {
     node.to_token_stream().to_string()
 }
@@ -419,6 +431,7 @@ fn member(field: &syn::Field) -> Result<Member> {
         kind: kind(&ty, &attributes).with_context(|| format!("in {name}"))?,
         // The field has the words of the identifier, and not the name of rasn-compiler.
         name: crate::names::field_name(&asn),
+        owned: asn == EXTENSIONS_OF_A_SEQUENCE,
         asn,
         was: name,
         optional,
@@ -688,7 +701,8 @@ fn integer(range: Range) -> Result<Kind> {
 
 struct Bindings {
     /// The types that borrow: those that hold octets, a long bit string, a character
-    /// string or an open type, and those that hold such a type.
+    /// string or an open type, and those that hold such a type in a member that does
+    /// not own its octets.
     borrowing: BTreeSet<String>,
     /// The types whose values are copied: numbers, arrays and short bit strings with a
     /// name, and the values of an ENUMERATED.
@@ -791,9 +805,9 @@ impl Bindings {
             let before = bindings.borrowing.len();
             for definition in definitions() {
                 let borrows = match &definition.shape {
-                    Shape::Sequence(members) | Shape::Choice(members) => {
-                        members.iter().any(|member| bindings.borrows(&member.kind))
-                    }
+                    Shape::Sequence(members) | Shape::Choice(members) => members
+                        .iter()
+                        .any(|member| !member.owned && bindings.borrows(&member.kind)),
                     Shape::Enumerated(_) => false,
                     Shape::Alias(kind) => bindings.borrows(kind),
                 };
@@ -1125,9 +1139,10 @@ impl Bindings {
                     )?;
                     for member in members {
                         let value = format!("self.{}", member.name);
-                        let owned = match member.optional {
-                            true => self.owned_optional(&member.kind, &value),
-                            false => self.owned(&member.kind, &value),
+                        let owned = match (member.owned, member.optional) {
+                            (true, _) => value,
+                            (false, true) => self.owned_optional(&member.kind, &value),
+                            (false, false) => self.owned(&member.kind, &value),
                         };
                         writeln!(out, "{}: {owned},", member.name)?;
                     }
@@ -1142,7 +1157,12 @@ impl Bindings {
                 writeln!(out, "pub enum {declared} {{")?;
                 for member in members {
                     write_docs(out, &member.docs)?;
-                    writeln!(out, "{}({}),", member.name, self.ty(&member.kind, "'a"))?;
+                    writeln!(
+                        out,
+                        "{}({}),",
+                        member.name,
+                        self.alternative_ty(member, "'a")
+                    )?;
                 }
                 writeln!(out, "}}")?;
                 if borrows {
@@ -1156,7 +1176,10 @@ impl Bindings {
                         "pub fn into_owned(self) -> {name}<'static> {{ match self {{"
                     )?;
                     for member in members {
-                        let owned = self.owned(&member.kind, "value");
+                        let owned = match member.owned {
+                            true => "value".to_string(),
+                            false => self.owned(&member.kind, "value"),
+                        };
                         writeln!(
                             out,
                             "Self::{0}(value) => {name}::{0}({owned}),",
@@ -1171,10 +1194,10 @@ impl Bindings {
                         .iter()
                         .find(|member| &member.name == alternative)
                         .with_context(|| format!("no alternative {alternative}"))?;
-                    let ty = self.ty(&member.kind, "'a");
+                    let ty = self.alternative_ty(member, "'a");
                     let alone = members
                         .iter()
-                        .filter(|other| self.ty(&other.kind, "'a") == ty);
+                        .filter(|other| self.alternative_ty(other, "'a") == ty);
                     if alone.count() != 1 {
                         continue;
                     }
@@ -1343,10 +1366,19 @@ impl Bindings {
     }
 
     fn member_ty(&self, member: &Member, life: &str) -> String {
-        let ty = self.ty(&member.kind, life);
+        let ty = self.alternative_ty(member, life);
         match member.optional {
             true => format!("Option<{ty}>"),
             false => ty,
+        }
+    }
+
+    /// The type of a member, or of an alternative, with the lifetime `life` where it
+    /// borrows: `'static` for one that owns its octets.
+    fn alternative_ty(&self, member: &Member, life: &str) -> String {
+        match member.owned {
+            true => self.ty(&member.kind, "'static"),
+            false => self.ty(&member.kind, life),
         }
     }
 
@@ -1415,6 +1447,11 @@ impl Bindings {
                 )
             };
             let value = self.decode(&member.kind, &in_field)?;
+            // What owns its octets is copied out of the octets that are read.
+            let value = match member.owned {
+                true => format!("({value}).into_owned()"),
+                false => value,
+            };
             match member.optional {
                 true => {
                     let bit = 1u64 << (optional.len() - 1 - position);
@@ -1529,6 +1566,10 @@ impl Bindings {
             let name = &member.name;
             if !member.addition {
                 let value = self.decode(&member.kind, &|result| format!("{result}?"))?;
+                let value = match member.owned {
+                    true => format!("({value}).into_owned()"),
+                    false => value,
+                };
                 writeln!(out, "{pattern} => Self::{name}({value}),")?;
                 continue;
             }
