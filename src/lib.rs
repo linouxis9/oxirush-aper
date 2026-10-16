@@ -88,6 +88,7 @@ extern crate alloc;
 
 mod bits;
 mod error;
+mod faults;
 #[cfg(feature = "inspect")]
 pub mod json;
 mod octets;
@@ -105,6 +106,7 @@ struct Readme;
 
 pub use bits::{BitString, Bits};
 pub use error::{Criticality, Error, ErrorIe, ErrorKind};
+pub use faults::{Fault, Faults, Noted};
 pub use octets::Octets;
 pub use oid::ObjectIdentifier;
 pub use reader::{Additions, Reader};
@@ -187,6 +189,68 @@ pub fn decode<'a, T: Decode<'a>>(octets: &'a [u8]) -> Result<T, Error> {
             Err(error) => Err(error.decoding(T::NAME)),
         },
         Err(error) => Err(error.decoding(T::NAME)),
+    }
+}
+
+/// The value of the type `T` that `octets` are the complete encoding of, as [`decode`]
+/// reads it, and what of the encoding is in another form than the one that X.691 gives
+/// it: the [`Faults`] of the reader, with the padding of the end among them. They are
+/// none for octets that are written by the clauses.
+///
+/// A value in such a form is whole, and the encoder of a peer may write it: a receiver
+/// reads it, a tool that tests the peer says that its encoder is not canonical, and
+/// [`decode_strict`] refuses it. What a value holds as the octets of an open type is not
+/// read here, and has its faults where it is decoded.
+///
+/// ```
+/// use oxirush_aper::{Fault, Octets, decode_with_faults};
+///
+/// // An OCTET STRING of one octet, with its length in two octets
+/// let (octets, faults) = decode_with_faults::<Octets>(&[0x80, 0x01, 0xaa])?;
+/// assert_eq!(octets, [0xaa]);
+/// assert_eq!(faults[0].fault, Fault::LengthInTwoOctets);
+/// assert_eq!(faults[0].to_string(), "at bit 0, a length of 127 or less is in two octets (X.691 §11.9.3.6)");
+/// # Ok::<(), oxirush_aper::Error>(())
+/// ```
+///
+/// # Errors
+///
+/// Those of [`decode`].
+pub fn decode_with_faults<'a, T: Decode<'a>>(octets: &'a [u8]) -> Result<(T, Faults), Error> {
+    if octets.is_empty() {
+        return Err(Error::decode("there are no octets").decoding(T::NAME));
+    }
+    let mut reader = Reader::noting(octets);
+    let value = match T::decode(&mut reader) {
+        Ok(value) => value,
+        Err(error) => return Err(error.decoding(T::NAME)),
+    };
+    // The bits after the value, up to the end of its last octet, are padding.
+    reader.align();
+    match reader.finish() {
+        Ok(()) => Ok((value, *reader.faults())),
+        Err(error) => Err(error.decoding(T::NAME)),
+    }
+}
+
+/// The value of the type `T` that `octets` are the complete encoding of, when they are
+/// the one encoding that X.691 gives the value: what [`decode`] reads in another form,
+/// a [`Fault`], is an error here. The counterpart of [`encode_strict`].
+///
+/// # Errors
+///
+/// Those of [`decode`], and an error of the kind `Decode` that says the first fault,
+/// its clause and the bit at which it is.
+pub fn decode_strict<'a, T: Decode<'a>>(octets: &'a [u8]) -> Result<T, Error> {
+    let (value, faults) = decode_with_faults(octets)?;
+    match faults.first() {
+        None => Ok(value),
+        Some(noted) => {
+            let why = alloc::format!(
+                "{noted}: the value is read, and a sender by the clause writes it otherwise"
+            );
+            Err(Error::decode(why).decoding(T::NAME))
+        }
     }
 }
 

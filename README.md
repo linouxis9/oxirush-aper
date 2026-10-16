@@ -272,13 +272,45 @@ oxirush-aper = { version = "0.1", features = ["inspect"] }
 
 ## What the reader accepts
 
-A writer gives one encoding to a value. A reader takes what has one meaning:
-padding bits that are not zero, a length in a longer form than it needs, an
-arc of an object identifier that starts with an octet that holds nothing, and
-a number with octets that only extend its sign, up to the octets that a
-number of 64 bits may have. It refuses a number of no octet, a number of more
-octets than that whatever they hold, a number, a size or an index outside its
-constraint, and octets after a complete encoding.
+A writer gives a value its one encoding. A reader also takes a value that is
+whole in another form, as the encoder of a peer may write it. One that is
+asked to notes it: a `Fault`, with its clause and the bit at which it is.
+
+| `Fault` | What is read | X.691 |
+|---------|--------------|-------|
+| `LengthInTwoOctets` | A length of 127 or less in two octets | 11.9.3.6 |
+| `SmallFragment` | A fragment before another that is not the largest | 11.9.3.8.1 |
+| `SmallNumberAsLarge` | A normally small number of 63 or less in the form of 64 and more | 11.6.1 |
+| `LongNumber` | A whole number with octets that only extend it, up to the octets that a number of 64 bits may have | 11.3.6, 11.4.6 |
+| `Padding` | Padding bits that are not zero | 11.1.4 |
+
+```rust
+use oxirush_aper::{Fault, Octets, decode, decode_strict, decode_with_faults};
+
+// An OCTET STRING of one octet, whose length is in two octets
+let octets = [0x80, 0x01, 0xaa];
+assert_eq!(decode::<Octets>(&octets)?, [0xaa]);
+
+// What a tool that tests the peer wants to know
+let (_, faults) = decode_with_faults::<Octets>(&octets)?;
+assert_eq!(faults[0].fault, Fault::LengthInTwoOctets);
+assert_eq!(faults[0].to_string(), "at bit 0, a length of 127 or less is in two octets (X.691 §11.9.3.6)");
+
+// And a receiver that takes the one encoding alone
+assert!(decode_strict::<Octets>(&octets).is_err());
+# Ok::<(), oxirush_aper::Error>(())
+```
+
+`decode` and a reader of `Reader::new` note nothing. `Reader::noting` makes a
+reader that notes, and `Reader::faults` has what it noted, the first four of
+a reading in place and the count of all. Without a note, every reader takes
+an arc of an object identifier that starts with an octet that holds nothing.
+
+A reader refuses what announces something that is not there, and what has no
+value: an extension bit without an addition that is present, an addition of
+no octet, a number of no octet, a number of more octets than 64 bits may have
+whatever they hold, a number, a size or an index outside its constraint, and
+octets after a complete encoding.
 
 ## What it does not do
 

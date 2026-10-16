@@ -19,6 +19,14 @@ and S1AP (TS 36.413) uses.
   extension, which a receiver of a later version of the type reads.
   `Writer::strict` and `encode_strict` refuse it: a sender of this version
   sends none.
+- A value that is whole in another form than the one that its clause gives
+  it is read, and noted as a `Fault` with its clause and its bit: a length
+  of 127 or less in two octets, a fragment that is not the largest, a
+  normally small number in the form of a larger one, a whole number in more
+  octets than it needs, and padding bits that are not zero.
+  A reader of `Reader::noting` has them as its `faults`, `decode_with_faults`
+  gives them, and `decode_strict` refuses them. An extension bit without an addition that is present, and an
+  addition of no octet, are refused by every reading.
 - The values: `Octets`, which borrows from the octets that are decoded or
   owns its own, `Bits` for a bit string of 64 bits at most, `BitString` for
   the others, and `ObjectIdentifier`.

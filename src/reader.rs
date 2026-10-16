@@ -4,7 +4,7 @@ use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{BitString, Bits, Error, ObjectIdentifier, Octets, UNBOUNDED};
+use crate::{BitString, Bits, Error, Fault, Faults, ObjectIdentifier, Octets, UNBOUNDED};
 
 /// How many items a fragment of 16K items has (X.691 §11.9.3.8).
 const SIXTEEN_K: usize = 16384;
@@ -16,9 +16,15 @@ const RESERVED: usize = 4096;
 /// A reader of aligned PER: the octets of an encoding, and how far they are read.
 ///
 /// Each method reads one field of ITU-T X.691 and moves on. A field that is
-/// octet-aligned skips the bits up to the next octet first: their values are not
-/// looked at. The bounds of a constraint are arguments, which a caller writes as
-/// constants.
+/// octet-aligned skips the bits up to the next octet first. The bounds of a constraint
+/// are arguments, which a caller writes as constants.
+///
+/// A value that is whole, in another form than the one that its clause gives it, is
+/// read, as the encoder of a peer may write it: a length of 127 or less in two octets,
+/// a fragment that is not the largest, a small number in the form of a larger one, a
+/// whole number in more octets than it needs, and padding bits that are not zero. A
+/// reader that [`noting`](Self::noting) made notes each, [`faults`](Self::faults) has
+/// what it noted, and [`decode_strict`](crate::decode_strict) refuses it.
 ///
 /// ```
 /// use oxirush_aper::Reader;
@@ -37,6 +43,10 @@ pub struct Reader<'a> {
     octets: &'a [u8],
     /// How many bits are read.
     at: usize,
+    /// What was read in another form than the one of its clause, when the reader
+    /// notes it.
+    faults: Faults,
+    noting: bool,
 }
 
 impl<'a> Reader<'a> {
@@ -46,7 +56,65 @@ impl<'a> Reader<'a> {
         // The position is a count of bits.
         let most = usize::MAX / 8;
         let octets = octets.get(..most).unwrap_or(octets);
-        Self { octets, at: 0 }
+        Self {
+            octets,
+            at: 0,
+            faults: Faults::new(),
+            noting: false,
+        }
+    }
+
+    /// A reader at the first bit of `octets` that notes what it reads in another form
+    /// than the one that its clause gives: see [`Fault`], and [`faults`](Self::faults).
+    /// It reads what a reader of [`new`](Self::new) reads, which looks at no padding
+    /// bit and notes nothing.
+    ///
+    /// ```
+    /// use oxirush_aper::{Fault, Reader, UNBOUNDED};
+    ///
+    /// // An OCTET STRING of one octet, whose length is in two octets
+    /// let mut reader = Reader::noting(&[0x80, 0x01, 0xaa]);
+    /// assert_eq!(reader.octet_string(0, UNBOUNDED)?, [0xaa]);
+    /// assert_eq!(reader.faults()[0].fault, Fault::LengthInTwoOctets);
+    /// # Ok::<(), oxirush_aper::Error>(())
+    /// ```
+    #[inline]
+    pub fn noting(octets: &'a [u8]) -> Self {
+        let mut reader = Self::new(octets);
+        reader.noting = true;
+        reader
+    }
+
+    /// What a reader that [`noting`](Self::noting) made read so far in another form
+    /// than the one that its clause gives, each with the bit of the octets at which it
+    /// is. None for a reader of [`new`](Self::new).
+    #[inline]
+    pub fn faults(&self) -> &Faults {
+        &self.faults
+    }
+
+    /// Note a fault at a bit, when the reader notes: no part of reading octets that
+    /// are written by the clauses.
+    #[cold]
+    #[inline(never)]
+    fn note(&mut self, fault: Fault, bit: usize) {
+        if self.noting {
+            self.faults.push(fault, bit);
+        }
+    }
+
+    /// Note the bits up to the next octet boundary when one of them is not zero (X.691
+    /// §11.1.4). They are not skipped here.
+    #[inline]
+    fn padding(&mut self) {
+        let shift = self.at & 7;
+        if self.noting
+            && shift != 0
+            && let Some(octet) = self.octets.get(self.at >> 3)
+            && octet & (0xff >> shift) != 0
+        {
+            self.note(Fault::Padding, self.at);
+        }
     }
 
     /// How many bits are read.
@@ -141,15 +209,18 @@ impl<'a> Reader<'a> {
     }
 
     /// Skip the bits up to the next octet boundary: the padding of an octet-aligned
-    /// field (X.691 §11.1.4).
+    /// field, and that of the end of a complete encoding (X.691 §11.1.4). Bits of it
+    /// that are not zero are noted.
     #[inline]
     pub fn align(&mut self) {
+        self.padding();
         self.at = (self.at + 7) & !7;
     }
 
     /// One octet, octet-aligned.
     #[inline]
     pub fn octet(&mut self) -> Result<u8, Error> {
+        self.padding();
         let at = (self.at + 7) >> 3;
         let Some(octet) = self.octets.get(at) else {
             return Err(Error::ended());
@@ -161,6 +232,7 @@ impl<'a> Reader<'a> {
     /// The next `count` octets, octet-aligned.
     #[inline]
     pub fn octets(&mut self, count: usize) -> Result<&'a [u8], Error> {
+        self.padding();
         let start = (self.at + 7) >> 3;
         let held = start
             .checked_add(count)
@@ -175,6 +247,7 @@ impl<'a> Reader<'a> {
     /// The next `count` bits from an octet boundary, as the octets that hold them, the
     /// last one padded with zero bits. What follows them is not aligned.
     fn aligned_bits(&mut self, count: usize) -> Result<Octets<'a>, Error> {
+        self.padding();
         let start = (self.at + 7) >> 3;
         let length = count.div_ceil(8);
         let held = start
@@ -261,6 +334,10 @@ impl<'a> Reader<'a> {
         // The field of the length holds eight at most.
         let length = self.bits(length_bits)? as usize + 1;
         let octets = self.octets(length)?;
+        // The least octets that hold the number (§11.3.6).
+        if length > 1 && octets[0] == 0 {
+            self.note(Fault::LongNumber, self.at - length * 8);
+        }
         Ok(octets
             .iter()
             .fold(0, |number, octet| number << 8 | u64::from(*octet)))
@@ -320,10 +397,10 @@ impl<'a> Reader<'a> {
     /// complement when it is `signed`.
     ///
     /// A writer gives a number the least octets that hold it (X.691 §11.3.6, §11.4.6).
-    /// A reader takes octets that only extend the sign before them, as long as the
-    /// octets are no more than a number of 64 bits may have: eight, and nine in two's
-    /// complement, where a number of 2^63 or more has a zero octet first. More octets
-    /// are refused whatever they hold.
+    /// A reader takes octets that only extend the sign before them, and notes them, as
+    /// long as the octets are no more than a number of 64 bits may have: eight, and
+    /// nine in two's complement, where a number of 2^63 or more has a zero octet first.
+    /// More octets are refused whatever they hold.
     fn whole_number(&mut self, signed: bool) -> Result<i128, Error> {
         let octets = self.open_type()?;
         if octets.is_empty() {
@@ -331,6 +408,17 @@ impl<'a> Reader<'a> {
         }
         if octets.len() > if signed { 9 } else { 8 } {
             return Err(Error::does_not_fit(64));
+        }
+        // The least octets: the first eight bits are not all zero, and in two's
+        // complement the first nine are neither all zero nor all ones.
+        if let [first, second, ..] = &octets[..] {
+            let extends = match signed {
+                true => (*first == 0 && *second < 0x80) || (*first == 0xff && *second >= 0x80),
+                false => *first == 0,
+            };
+            if extends {
+                self.note(Fault::LongNumber, self.at - octets.len() * 8);
+            }
         }
         let negative = signed && octets[0] & 0x80 != 0;
         let start: i128 = if negative { -1 } else { 0 };
@@ -344,7 +432,13 @@ impl<'a> Reader<'a> {
         if !self.bit()? {
             return self.bits(6);
         }
-        self.semi_constrained_unsigned(0)
+        let start = self.at - 1;
+        let number = self.semi_constrained_unsigned(0)?;
+        // 63 and less are six bits after a zero bit (§11.6.1).
+        if number <= 63 {
+            self.note(Fault::SmallNumberAsLarge, start);
+        }
+        Ok(number)
     }
 
     // ── Lengths ─────────────────────────────────────────────────────────────
@@ -370,13 +464,46 @@ impl<'a> Reader<'a> {
             0..=0x7f => Ok((usize::from(first), false)),
             0x80..=0xbf => {
                 let second = self.octet()?;
-                Ok((usize::from(first & 0x3f) << 8 | usize::from(second), false))
+                let length = usize::from(first & 0x3f) << 8 | usize::from(second);
+                // 127 and less are one octet (§11.9.3.6).
+                if length < 0x80 {
+                    self.note(Fault::LengthInTwoOctets, self.at - 16);
+                }
+                Ok((length, false))
             }
             0xc1..=0xc4 => Ok((usize::from(first & 0x3f) * SIXTEEN_K, true)),
             _ => Err(Error::decode(
                 "a fragment has one to four times 16384 items",
             )),
         }
+    }
+
+    /// The length determinant that follows a fragment of `fragment` items, as
+    /// [`length`](Self::length) reads it: how many items follow it, and whether they
+    /// are a fragment too.
+    ///
+    /// A fragment is the largest that the items allow (X.691 §11.9.3.8.1), so the one
+    /// before another has four times 16K items. A smaller one is read, and a reader
+    /// that notes its faults notes it.
+    ///
+    /// ```
+    /// use oxirush_aper::{Fault, Reader};
+    ///
+    /// // 32768 items in two fragments of 16384, where one fragment holds them
+    /// let mut reader = Reader::noting(&[0xc1, 0xc1, 0x00]);
+    /// let (first, _) = reader.length()?;
+    /// let (second, _) = reader.length_after(first)?;
+    /// assert_eq!(reader.length_after(second)?, (0, false));
+    /// assert_eq!(reader.faults()[0].fault, Fault::SmallFragment);
+    /// # Ok::<(), oxirush_aper::Error>(())
+    /// ```
+    #[inline]
+    pub fn length_after(&mut self, fragment: usize) -> Result<(usize, bool), Error> {
+        let (count, more) = self.length()?;
+        if more && fragment < 4 * SIXTEEN_K {
+            self.note(Fault::SmallFragment, self.at - 8);
+        }
+        Ok((count, more))
     }
 
     /// The size of a string or of a list whose size constraint is `lower..=upper`,
@@ -610,12 +737,14 @@ impl<'a> Reader<'a> {
     #[cold]
     fn more_fragments(&mut self, first: &[u8]) -> Result<Vec<u8>, Error> {
         let mut gathered = first.to_vec();
+        let mut fragment = first.len();
         loop {
-            let (count, more) = self.length()?;
+            let (count, more) = self.length_after(fragment)?;
             gathered.extend_from_slice(self.octets(count)?);
             if !more {
                 return Ok(gathered);
             }
+            fragment = count;
         }
     }
 
@@ -623,13 +752,14 @@ impl<'a> Reader<'a> {
     /// (X.691 §19.9, §11.2.1), which is one octet at least (§11.1.3.1).
     fn skip_open_type(&mut self) -> Result<(), Error> {
         let mut octets = 0;
+        let (mut count, mut more) = self.length()?;
         loop {
-            let (count, more) = self.length()?;
             self.octets(count)?;
             octets += count;
             if !more {
                 break;
             }
+            (count, more) = self.length_after(count)?;
         }
         if octets == 0 {
             return Err(Error::decode(
@@ -720,11 +850,13 @@ impl<'a> Reader<'a> {
         // A fragment is a multiple of 16384 bits, and so whole octets.
         let mut gathered = self.octets(count / 8)?.to_vec();
         let mut bits = count;
+        let mut fragment = count;
         loop {
-            let (count, more) = self.length()?;
+            let (count, more) = self.length_after(fragment)?;
             bits += count;
             if more {
                 gathered.extend_from_slice(self.octets(count / 8)?);
+                fragment = count;
             } else {
                 gathered.extend_from_slice(&self.aligned_bits(count)?);
                 return Ok(BitString::of(Octets::owned(gathered), bits));

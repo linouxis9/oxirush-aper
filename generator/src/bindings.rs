@@ -1929,11 +1929,15 @@ impl Bindings {
                         let upper =
                             upper.map_or("UNBOUNDED".to_string(), |upper| upper.to_string());
                         let check = unwrap(&format!("Reader::check_size(size, {lower}, {upper})"));
+                        // The length after a fragment says whether that fragment was the
+                        // largest that the elements allow, which the reader notes.
+                        let after = unwrap("reader.length_after(count)");
                         format!(
-                            "{{ let mut list = Vec::new(); loop {{ let (count, more) = {length}; \
-                             let size = list.len().saturating_add(count); \
+                            "{{ let mut list = Vec::new(); let (mut count, mut more) = {length}; \
+                             loop {{ let size = list.len().saturating_add(count); \
                              if !more {over} {{ {check}; }} \
-                             for _ in 0..count {{ list.push({item}); }} if !more {{ break; }} }} \
+                             for _ in 0..count {{ list.push({item}); }} if !more {{ break; }} \
+                             (count, more) = {after}; }} \
                              list }}"
                         )
                     }
