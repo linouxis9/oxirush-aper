@@ -1088,7 +1088,12 @@ impl Bindings {
         };
         let debug = if by_hand { "" } else { "Debug, " };
         writeln!(out, "#[derive({debug}Clone, PartialEq, Eq, Hash{copy})]")?;
-        if definition.extensible {
+        // An extensible CHOICE or ENUMERATED takes alternatives and values in a later
+        // version, which a `match` of a caller leaves room for. A SEQUENCE that takes a
+        // member in a later version changes its `new`, which breaks a caller whatever
+        // the attribute says: on a struct it would only forbid a literal, and a pattern
+        // without `..`.
+        if definition.extensible && !matches!(definition.shape, Shape::Sequence(_)) {
             writeln!(out, "#[non_exhaustive]")?;
         }
         match &definition.shape {

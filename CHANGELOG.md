@@ -44,6 +44,9 @@ and S1AP (TS 36.413) uses.
 - The `inspect` feature: `json`, with which bindings write and read their
   values as `serde_json` values in the form of the JSON Encoding Rules.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
+- The crate, oxirush-ngap and oxirush-s1ap are released in step: the two
+  re-export it with its value types, and a breaking release of the crate is
+  one of both. The README says what a program with two versions gets.
 - In the repository and not in the crate: `generator/`, the library that
   writes the bindings of a protocol on this crate, fuzz targets and
   benchmarks.

@@ -85,6 +85,16 @@ oxirush-aper = "0.1"
 The minimum supported Rust version is 1.88. The crate is `#![no_std]`, needs
 `alloc`, and has no `unsafe`.
 
+The crate, [oxirush-ngap](https://github.com/linouxis9/oxirush-ngap) and
+[oxirush-s1ap](https://github.com/linouxis9/oxirush-s1ap) are released in
+step. Each version of a protocol crate names one version of this crate and
+re-exports it, as `oxirush_ngap::aper`, with its `Error`, `Octets`, `Bits` and
+`BitString`, which are in the types of its bindings: a breaking release of
+this crate is one of both protocol crates, which come out with it. A program
+that depends on this crate in another version than its protocol crate has two
+`Error` and two `Octets` types, which do not convert into each other: it takes
+the runtime through the protocol crate.
+
 ## Values
 
 | ASN.1 | Rust |
