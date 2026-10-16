@@ -81,6 +81,10 @@ struct Member {
     name: String,
     /// The name that ASN.1 gives the member or the alternative.
     asn: String,
+    /// The name that rasn-compiler gives the field of a member of a SEQUENCE: the one
+    /// that the bindings had before the rule of [`crate::names`], and that the oracle
+    /// of the tests has.
+    was: String,
     kind: Kind,
     optional: bool,
     addition: bool,
@@ -136,6 +140,11 @@ pub struct Written {
     pub borrowing: BTreeSet<String>,
     /// The types that hold a key: the types of [`Keys::types`], and those that hold one.
     pub keys: BTreeSet<String>,
+    /// Each member of each SEQUENCE, a line each, in the order of the bindings: the type,
+    /// the identifier that ASN.1 gives the member, the name of its field by the rule of
+    /// [`crate::names`], and the name that rasn-compiler gives it, which the bindings
+    /// had before that rule. Tab-separated, after a line of headings.
+    pub fields: String,
 }
 
 /// What the bindings are told of the keys of a protocol: `Debug` prints no octet of one.
@@ -184,10 +193,22 @@ pub fn bindings(
     let mut bindings = Bindings::new(&modules, keys, plmns)?;
     bindings.field = field.map(str::to_string);
     let text = bindings.write(&modules)?;
+    let mut fields = String::from("type\tASN.1 identifier\tfield\tfield before the rule\n");
+    for entry in modules.iter().flat_map(|module| &module.entries) {
+        if let Entry::Definition(definition) = entry
+            && let Shape::Sequence(members) = &definition.shape
+        {
+            for member in members {
+                let (of, asn) = (&definition.name, &member.asn);
+                writeln!(fields, "{of}\t{asn}\t{}\t{}", member.name, member.was)?;
+            }
+        }
+    }
     Ok(Written {
         text,
         borrowing: bindings.borrowing,
         keys: bindings.keys,
+        fields,
     })
 }
 
@@ -234,7 +255,16 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
                     Fields::Named(fields) => {
                         ensure!(!attributes.delegate, "{name} delegates to named members");
                         let members: Result<Vec<_>> = fields.named.iter().map(member).collect();
-                        Shape::Sequence(members.with_context(|| format!("in {name}"))?)
+                        let members = members.with_context(|| format!("in {name}"))?;
+                        let mut names = BTreeSet::new();
+                        for member in &members {
+                            ensure!(
+                                names.insert(&member.name),
+                                "two members of {name} have the name {}",
+                                member.name
+                            );
+                        }
+                        Shape::Sequence(members)
                     }
                     Fields::Unnamed(fields) => {
                         ensure!(
@@ -272,6 +302,7 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
                     let asn = own.identifier.clone();
                     let mut member = Member {
                         name: variant.ident.to_string(),
+                        was: variant.ident.to_string(),
                         asn: asn.unwrap_or_else(|| variant.ident.to_string()),
                         kind: Kind::Null,
                         optional: false,
@@ -379,13 +410,17 @@ fn member(field: &syn::Field) -> Result<Member> {
         None => (false, field.ty.clone()),
     };
     ensure!(!attributes.addition, "{name} is an extension addition");
+    // An identifier that is the name that rasn-compiler gives the field is not written.
+    let asn = attributes
+        .identifier
+        .clone()
+        .unwrap_or_else(|| name.clone());
     Ok(Member {
-        asn: attributes
-            .identifier
-            .clone()
-            .unwrap_or_else(|| name.clone()),
         kind: kind(&ty, &attributes).with_context(|| format!("in {name}"))?,
-        name,
+        // The field has the words of the identifier, and not the name of rasn-compiler.
+        name: crate::names::field_name(&asn),
+        asn,
+        was: name,
         optional,
         addition: false,
         number: 0,

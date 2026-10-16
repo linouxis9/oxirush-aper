@@ -24,7 +24,7 @@
 //!
 //! - [`containers`] gives the protocol IE and extension containers one type each;
 //! - [`bindings`] writes each type with its codec on `oxirush-aper`, its conversions
-//!   and its JSON form;
+//!   and its JSON form, and names each field by the rule of [`names`];
 //! - [`rasn_fix`] corrects the bindings for rasn, which are the oracle of the tests:
 //!   the same types with the codec of another implementation;
 //! - [`registry`] reads the procedures and the IEs from the ASN.1, and writes the list
@@ -40,5 +40,6 @@ pub mod asn1;
 pub mod bindings;
 pub mod containers;
 pub mod inspection;
+pub mod names;
 pub mod rasn_fix;
 pub mod registry;
