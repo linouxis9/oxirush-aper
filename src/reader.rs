@@ -22,7 +22,8 @@ const RESERVED: usize = 4096;
 /// A value that is whole, in another form than the one that its clause gives it, is
 /// read, as the encoder of a peer may write it: a length of 127 or less in two octets,
 /// a fragment that is not the largest, a small number in the form of a larger one, a
-/// whole number in more octets than it needs, and padding bits that are not zero. A
+/// whole number in more octets than it needs, padding bits that are not zero, and an
+/// arc of an object identifier that starts with an octet that holds nothing. A
 /// reader that [`noting`](Self::noting) made notes each, [`faults`](Self::faults) has
 /// what it noted, and [`decode_strict`](crate::decode_strict) refuses it.
 ///
@@ -967,6 +968,17 @@ impl<'a> Reader<'a> {
     /// contents octets that the Basic Encoding Rules give it.
     pub fn object_identifier(&mut self) -> Result<ObjectIdentifier, Error> {
         let octets = self.octets_in_fragments()?;
+        if self.noting {
+            // The first octet of each arc, where the octets before it end an arc.
+            let start = self.at - octets.len() * 8;
+            let mut first = true;
+            for (at, octet) in octets.iter().enumerate() {
+                if first && *octet == 0x80 {
+                    self.note(Fault::LongArc, start + at * 8);
+                }
+                first = octet & 0x80 == 0;
+            }
+        }
         ObjectIdentifier::from_contents(&octets)
     }
 

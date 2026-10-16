@@ -23,7 +23,9 @@ and S1AP (TS 36.413) uses.
   it is read, and noted as a `Fault` with its clause and its bit: a length
   of 127 or less in two octets, a fragment that is not the largest, a
   normally small number in the form of a larger one, a whole number in more
-  octets than it needs, and padding bits that are not zero.
+  octets than it needs, padding bits that are not zero, and an arc of an
+  object identifier that starts with an octet that holds nothing (X.690
+  §8.19.2).
   A reader of `Reader::noting` has them as its `faults`, `decode_with_faults`
   gives them, and `decode_strict` refuses them. An extension bit without an addition that is present, and an
   addition of no octet, are refused by every reading.

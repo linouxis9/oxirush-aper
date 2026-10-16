@@ -168,6 +168,7 @@ fn padding_bits_are_zero() {
     assert_eq!(numbers, (5, 0x1234));
     assert_eq!(noted(&faults), [(Fault::Padding, 3)]);
     assert_eq!(Fault::Padding.clause(), "11.1.4");
+    assert_eq!(Fault::Padding.standard(), "X.691");
     // Before an octet, before octets and before the bits of a string that is aligned.
     let octet = |reader: &mut Reader<'_>| {
         let first = reader.bit().unwrap();
@@ -199,6 +200,33 @@ fn padding_bits_are_zero() {
     let (value, faults) = decode_with_faults::<bool>(&[0x81]).unwrap();
     assert!(value);
     assert_eq!(noted(&faults), [(Fault::Padding, 1)]);
+}
+
+#[test]
+fn an_arc_of_an_object_identifier_is_the_fewest_octets_that_hold_it() {
+    // X.690 §8.19.2, which §24 of X.691 takes for the contents octets: "The subidentifier
+    // shall be encoded in the fewest possible octets, that is, the leading octet of the
+    // subidentifier shall not have the value 80 (hexadecimal)." {1 2 840} after the
+    // length of its contents: 42, then 840 in two octets.
+    let identifier = |reader: &mut Reader<'_>| reader.object_identifier().unwrap().arcs().to_vec();
+    let (arcs, faults) = read(&[3, 0x2a, 0x86, 0x48], identifier);
+    assert_eq!((arcs, noted(&faults)), (vec![1, 2, 840], vec![]));
+    // 840 after an octet that holds nothing.
+    let (arcs, faults) = read(&[4, 0x2a, 0x80, 0x86, 0x48], identifier);
+    assert_eq!(arcs, [1, 2, 840]);
+    assert_eq!(noted(&faults), [(Fault::LongArc, 16)]);
+    assert_eq!(
+        (Fault::LongArc.standard(), Fault::LongArc.clause()),
+        ("X.690", "8.19.2")
+    );
+    assert_eq!(
+        faults[0].to_string(),
+        "at bit 16, an arc of an object identifier starts with an octet that holds nothing (X.690 \
+         §8.19.2)"
+    );
+    // 0x80 in an arc after its first octet is a part of the number: 16384 is 81 80 00.
+    let (arcs, faults) = read(&[4, 0x2a, 0x81, 0x80, 0x00], identifier);
+    assert_eq!((arcs, faults.len()), (vec![1, 2, 16384], 0));
 }
 
 #[test]

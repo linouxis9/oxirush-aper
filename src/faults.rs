@@ -43,11 +43,15 @@ pub enum Fault {
     /// Padding bits that are not zero, before an octet-aligned field or at the end of
     /// a complete encoding (§11.1.4).
     Padding,
+    /// An arc of an OBJECT IDENTIFIER whose first octet holds nothing: the octets of
+    /// an arc are the fewest that hold it, so the first is not 0x80 (ITU-T X.690
+    /// §8.19.2, which X.691 §24 takes).
+    LongArc,
 }
 
 impl Fault {
-    /// The clause of ITU-T X.691 (02/2021) that gives the encoding its one form, as
-    /// `11.9.3.6`.
+    /// The clause that gives the encoding its one form, as `11.9.3.6`, of the
+    /// recommendation that [`standard`](Self::standard) names.
     pub const fn clause(self) -> &'static str {
         match self {
             Self::LengthInTwoOctets => "11.9.3.6",
@@ -55,6 +59,17 @@ impl Fault {
             Self::SmallNumberAsLarge => "11.6.1",
             Self::LongNumber => "11.3.6, 11.4.6",
             Self::Padding => "11.1.4",
+            Self::LongArc => "8.19.2",
+        }
+    }
+
+    /// The recommendation of ITU-T (02/2021) that has the clause: `X.691`, and
+    /// `X.690` for the arcs of an object identifier, whose contents octets are those
+    /// of the Basic Encoding Rules.
+    pub const fn standard(self) -> &'static str {
+        match self {
+            Self::LongArc => "X.690",
+            _ => "X.691",
         }
     }
 }
@@ -67,8 +82,11 @@ impl fmt::Display for Fault {
             Self::SmallNumberAsLarge => "a number of 63 or less is in the form of a larger one",
             Self::LongNumber => "a whole number is in more octets than it needs",
             Self::Padding => "padding bits are not zero",
+            Self::LongArc => {
+                "an arc of an object identifier starts with an octet that holds nothing"
+            }
         };
-        write!(formatter, "{what} (X.691 §{})", self.clause())
+        write!(formatter, "{what} ({} §{})", self.standard(), self.clause())
     }
 }
 

@@ -283,6 +283,7 @@ asked to notes it: a `Fault`, with its clause and the bit at which it is.
 | `SmallNumberAsLarge` | A normally small number of 63 or less in the form of 64 and more | 11.6.1 |
 | `LongNumber` | A whole number with octets that only extend it, up to the octets that a number of 64 bits may have | 11.3.6, 11.4.6 |
 | `Padding` | Padding bits that are not zero | 11.1.4 |
+| `LongArc` | An arc of an object identifier that starts with an octet that holds nothing | X.690 8.19.2 |
 
 ```rust
 use oxirush_aper::{Fault, Octets, decode, decode_strict, decode_with_faults};
@@ -303,8 +304,15 @@ assert!(decode_strict::<Octets>(&octets).is_err());
 
 `decode` and a reader of `Reader::new` note nothing. `Reader::noting` makes a
 reader that notes, and `Reader::faults` has what it noted, the first four of
-a reading in place and the count of all. Without a note, every reader takes
-an arc of an object identifier that starts with an octet that holds nothing.
+a reading in place and the count of all.
+
+A reader that does not note pays for the one that can: a test before each
+octet-aligned field. Reading the IEs of an NGAP message, or the message as
+its type, takes 4 to 13 ns more for it (40 to 95 ns, by 8 to 14%, with the
+code aligned so that its place does not count). A form of the reader that
+pays nothing would decode every value twice in the crates that check
+messages, once for each reader, or would have to tell padding from data
+without reading it.
 
 A reader refuses what announces something that is not there, and what has no
 value: an extension bit without an addition that is present, an addition of
