@@ -83,6 +83,22 @@ and S1AP (TS 36.413) uses.
   a response of the procedure, without them (TS 38.413 clause 9.3.1.3, TS
   36.413 clause 9.2.1.21): `Diagnostics::criticality_diagnostics` takes the
   procedure code and the direction as an `Option`.
+- `protocol`: what the application protocols of 3GPP in aligned PER have in
+  common, written once for oxirush-ngap and oxirush-s1ap. The traits that
+  their registries implement: `Protocol` for the marker type of a protocol,
+  `Pdu`, `Field`, `Container` for a message or a transfer of protocol IEs,
+  `Message`, `Ie` for the marker type of each IE, by the names that the macros
+  take, and `List` for an IE whose value is a list of single containers. The
+  readers that the protocol crates give as `ies::<T>()`, `ie::<T>()` and
+  `items::<L>()` of a PDU and of a message: `Ies` reads every occurrence of an
+  IE in order and decodes that IE alone, from the octets of the message of a
+  PDU, which it walks without allocating, or from a message that is decoded,
+  and `Items` walks the items of a list without building it. A repeated IE
+  stays visible to `ies`. `check` and `check_structure` of a PDU, the second
+  for the container alone without decoding a value (`check::structure_deviations`),
+  `protocol_ies`, `set_protocol_ies`, `of_message`, and the macros of the
+  protocol crates, hidden from the documentation, which their public macros
+  call with their own path: `build_ngap!` is `__build!` of this crate.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
 - The crate, oxirush-ngap and oxirush-s1ap are released in step: the two
   depend on one version of it exactly (`=0.1.0`), re-export it with its value

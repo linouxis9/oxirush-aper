@@ -100,6 +100,7 @@ pub mod inspect;
 pub mod json;
 mod octets;
 mod oid;
+pub mod protocol;
 mod reader;
 mod writer;
 

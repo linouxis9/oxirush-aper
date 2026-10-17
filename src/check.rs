@@ -558,6 +558,28 @@ pub fn deviations<P: Diagnostics>(
     value: &dyn Fn(usize) -> (Option<Wrong>, Faults),
     found: &mut Vec<Deviation<P>>,
 ) {
+    compared(set, ies, Some(value), found)
+}
+
+/// Add to `found` how `ies`, the IEs of a message in their order, each as its identifier
+/// and its criticality, deviate from `set` in the container alone: what [`deviations`]
+/// adds, but for what it says of the values.
+pub fn structure_deviations<P: Diagnostics>(
+    set: &[(u16, P::Criticality, bool)],
+    ies: &[(u16, P::Criticality)],
+    found: &mut Vec<Deviation<P>>,
+) {
+    compared(set, ies, None, found)
+}
+
+/// What [`deviations`] and [`structure_deviations`] add: with what is wrong with each
+/// value, when `value` says it, and without otherwise.
+fn compared<P: Diagnostics>(
+    set: &[(u16, P::Criticality, bool)],
+    ies: &[(u16, P::Criticality)],
+    value: Option<&dyn Fn(usize) -> (Option<Wrong>, Faults)>,
+    found: &mut Vec<Deviation<P>>,
+) {
     let name = P::name;
     // Where the message has each IE of the set first, and the IE that the set has last
     // among those that the message had so far.
@@ -608,6 +630,9 @@ pub fn deviations<P: Diagnostics>(
                 assigned,
             });
         }
+        let Some(value) = value else {
+            continue;
+        };
         let (wrong, faults) = value(position);
         match wrong {
             Some(Wrong::Undecodable(error)) => found.push(Deviation::UndecodableIe {

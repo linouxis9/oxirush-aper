@@ -54,6 +54,8 @@ pub(crate) struct Ie {
 }
 
 pub struct Registry {
+    /// The name of the protocol, as `NGAP`.
+    protocol: String,
     /// The module of the bindings, and their types by name without case or punctuation.
     module: String,
     types: BTreeMap<String, String>,
@@ -66,6 +68,12 @@ pub struct Registry {
     keys: BTreeSet<String>,
     pub(crate) procedures: BTreeMap<u8, Procedure>,
     pub(crate) ies: BTreeMap<u16, Ie>,
+    /// The alternatives of the `TriggeringMessage` of the bindings, in the order of the
+    /// directions.
+    triggering: Vec<String>,
+    /// The lists of single containers: the identifier of an IE whose value is one, that
+    /// of the IE of its items, and the size of the list.
+    lists: Vec<(u16, u16, usize, usize)>,
 }
 
 /// The one type of what has one.
@@ -112,6 +120,7 @@ impl Registry {
             .map(|c| (c[1].to_string(), c[2].to_string()))
             .collect();
         let mut registry = Self {
+            protocol: protocol.to_string(),
             module: protocol.to_ascii_lowercase(),
             types,
             aliases,
@@ -119,10 +128,92 @@ impl Registry {
             keys,
             procedures: BTreeMap::new(),
             ies: BTreeMap::new(),
+            triggering: triggering(generated)?,
+            lists: Vec::new(),
         };
         registry.procedures = registry.read_procedures(protocol, asn)?;
         registry.ies = registry.read_ies(protocol, asn)?;
+        registry.lists = registry.read_lists(protocol, asn)?;
         Ok(registry)
+    }
+
+    /// The lists of single containers that are the value of an IE, each with the IE of its
+    /// items, which its object set has alone, and its size, as the ASN.1 defines them: a
+    /// `SEQUENCE (SIZE (lower..upper)) OF ProtocolIE-SingleContainer { {Set} }`, or a type
+    /// of a parameterized `ProtocolIE-ContainerList { lower, upper, {Set} }`.
+    fn read_lists(&self, protocol: &str, asn: &str) -> Result<Vec<(u16, u16, usize, usize)>> {
+        let constant = Regex::new(r"(?m)^\s*([A-Za-z][A-Za-z0-9-]*)\s+INTEGER\s*::=\s*(\d+)")?;
+        let constants: BTreeMap<&str, usize> = constant
+            .captures_iter(asn)
+            .filter_map(|c| Some((c.get(1)?.as_str(), c[2].parse().ok()?)))
+            .collect();
+        let bound = |value: &str| -> Result<usize> {
+            match value.parse() {
+                Ok(value) => Ok(value),
+                Err(_) => constants
+                    .get(value)
+                    .copied()
+                    .ok_or_else(|| anyhow!("unknown bound {value} of a list")),
+            }
+        };
+        // The lists of a parameterized type, by its name, with their size.
+        let parameterized = Regex::new(
+            r"(?m)^([A-Za-z][A-Za-z0-9-]*)\s*\{[^}]*\}\s*::=\s*ProtocolIE-ContainerList\s*\{\s*([A-Za-z0-9-]+)\s*,\s*([A-Za-z0-9-]+)\s*,",
+        )?;
+        let mut sizes: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+        for c in parameterized.captures_iter(asn) {
+            let name = c.get(1).expect("a name").as_str();
+            sizes.insert(name, (bound(&c[2])?, bound(&c[3])?));
+        }
+        let direct = Regex::new(
+            r"(?m)^([A-Za-z][A-Za-z0-9-]*)\s*::=\s*SEQUENCE\s*\(\s*SIZE\s*\(\s*([A-Za-z0-9-]+)\s*\.\.\s*([A-Za-z0-9-]+)\s*\)\s*\)\s*OF\s+ProtocolIE-SingleContainer\s*\{\s*\{\s*([A-Za-z][A-Za-z0-9-]*)\s*\}\s*\}",
+        )?;
+        let of_parameterized = Regex::new(
+            r"(?m)^([A-Za-z][A-Za-z0-9-]*)\s*::=\s*([A-Za-z][A-Za-z0-9-]*)\s*\{\s*\{\s*([A-Za-z][A-Za-z0-9-]*)\s*\}\s*\}",
+        )?;
+        let mut lists: Vec<(String, usize, usize, String)> = Vec::new();
+        for c in direct.captures_iter(asn) {
+            lists.push((
+                c[1].to_string(),
+                bound(&c[2])?,
+                bound(&c[3])?,
+                c[4].to_string(),
+            ));
+        }
+        for c in of_parameterized.captures_iter(asn) {
+            if let Some((lower, upper)) = sizes.get(&c[2]) {
+                lists.push((c[1].to_string(), *lower, *upper, c[3].to_string()));
+            }
+        }
+        let ids = identifiers(asn)?;
+        let object = Regex::new(r"\{\s*ID\s+(id-[A-Za-z][A-Za-z0-9-]*)\s+CRITICALITY")?;
+        let mut found = Vec::new();
+        for (name, lower, upper, set) in lists {
+            let block = Regex::new(&format!(
+                r"(?ms)^[\t ]*{}\s+{protocol}-PROTOCOL-IES\s*::=\s*\{{(.*?)^[\t ]*\}}",
+                regex::escape(&set)
+            ))?;
+            let block = block.captures(asn);
+            let block = block.ok_or_else(|| anyhow!("{name}: no set {set}"))?;
+            let items: Vec<_> = object.captures_iter(&block[1]).collect();
+            // A list whose items are one IE.
+            let [item] = items.as_slice() else {
+                continue;
+            };
+            let item = ids.get(&item[1]).map(|(id, _)| *id);
+            let item = item.ok_or_else(|| anyhow!("{name}: an item that is no IE"))?;
+            let Some(path) = self.resolve(&name) else {
+                continue;
+            };
+            for (id, ie) in &self.ies {
+                if alone(&ie.types).as_ref() == Some(&path) && !ie.macros.is_empty() {
+                    found.push((*id, item, lower, upper));
+                }
+            }
+        }
+        found.sort();
+        found.dedup();
+        Ok(found)
     }
 
     /// The path in the crate of the generated type that ASN.1 names `name`.
@@ -142,16 +233,40 @@ impl Registry {
     }
 
     /// The list: one line for each procedure and for each IE, which the macros
-    /// `procedures!` and `ies!` of the crate expand.
+    /// `__procedures!` and `__ies!` of oxirush-aper expand in the crate, with the names of
+    /// the protocol that `__protocol!` takes.
     pub fn list(&self) -> Result<String> {
         // rustfmt leaves the lines of a macro called with braces as they are.
         let mut out = String::from(
-            "// Auto-generated from ASN.1 by the generator of oxirush-aper; do not edit.\nuse crate::macros::{ies, procedures};\n",
+            "// Auto-generated from ASN.1 by the generator of oxirush-aper; do not edit.\n",
         );
+        let name = &self.protocol;
+        let marker: String = name
+            .chars()
+            .take(1)
+            .chain(self.module.chars().skip(1))
+            .collect();
+        let module = &self.module;
+        // The marker type of the protocol, and the names of its types.
+        let [initiating, successful, unsuccessful] = self.triggering.as_slice() else {
+            bail!(
+                "a TriggeringMessage of {} alternatives",
+                self.triggering.len()
+            );
+        };
+        writeln!(
+            out,
+            "oxirush_aper::__protocol! {{ protocol {marker} {name:?}, bindings {module}, pdu {name}PDU, \
+             triggering {initiating} {successful} {unsuccessful} }}"
+        )?;
         // The procedure code, the name and the criticality, then for each message its
         // direction, its kind, the name that ASN.1 gives it, its type and the IEs of its
         // object set, in brackets: a message without an object set has none.
-        writeln!(out, "procedures! {{")?;
+        writeln!(
+            out,
+            "oxirush_aper::__procedures! {{\n    protocol {marker} {name:?}, bindings {module}, pdu \
+             {name}PDU, kind {marker}PduKind, hooks oxirush_{module}_hooks;"
+        )?;
         for (code, procedure) in &self.procedures {
             write!(out, "    {code} {}", procedure.name)?;
             if let Some(criticality) = &procedure.criticality {
@@ -185,7 +300,10 @@ impl Registry {
         // take the IE by. An IE of an extension
         // container that has several types has them in brackets, each with the types
         // that it extends so.
-        writeln!(out, "ies! {{")?;
+        writeln!(
+            out,
+            "oxirush_aper::__ies! {{\n    protocol {marker} {name:?};"
+        )?;
         for (id, ie) in &self.ies {
             write!(out, "    {id}")?;
             if let Some(criticality) = alone(&ie.items) {
@@ -232,6 +350,17 @@ impl Registry {
                 write!(out, " => {}", ie.macros.join(" "))?;
             }
             writeln!(out, ";")?;
+        }
+        writeln!(out, "}}")?;
+        // The lists of single containers: the marker of the list, that of its items, and
+        // its size.
+        writeln!(out, "oxirush_aper::__lists! {{")?;
+        for (list, item, lower, upper) in &self.lists {
+            let marker = |id: &u16| self.ies.get(id).and_then(|ie| ie.macros.first());
+            let (Some(list), Some(item)) = (marker(list), marker(item)) else {
+                bail!("a list of single containers, or its item, has no name");
+            };
+            writeln!(out, "    {list} {item} {lower} {upper};")?;
         }
         writeln!(out, "}}")?;
         ensure!(
@@ -392,6 +521,16 @@ impl Registry {
         }
         Ok(ies)
     }
+}
+
+/// The alternatives of the `TriggeringMessage` of the bindings `generated`, in their order.
+fn triggering(generated: &str) -> Result<Vec<String>> {
+    let block = Regex::new(r"(?s)pub enum TriggeringMessage \{(.*?)\}")?;
+    let block = block.captures(generated);
+    let block = block.ok_or_else(|| anyhow!("no TriggeringMessage in the bindings"))?;
+    let alternative = Regex::new(r"(?m)^\s*([a-z][a-z0-9_]*)\s*(?:=\s*\d+\s*)?,")?;
+    let alternatives = alternative.captures_iter(&block[1]);
+    Ok(alternatives.map(|c| c[1].to_string()).collect())
 }
 
 /// The identifier of each constant of an IE, and whether it is that of a protocol IE.
