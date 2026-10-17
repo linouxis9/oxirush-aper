@@ -92,7 +92,7 @@ revision that this revision of the crate is tested with:
 
 ```toml
 [patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "6d2ff3142ed8ffa4089774fc843db4a528cae4fc" }
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "5c47d25abdddf234d4e4bc95b6f77c41f9372bdc" }
 ```
 
 The crate, [oxirush-ngap](https://github.com/linouxis9/oxirush-ngap) and

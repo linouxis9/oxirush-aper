@@ -10,11 +10,12 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # oxirush-utils, which the feature `inspect` takes, is not on crates.io yet: the commit
+  # oxirush-utils, which the feature `inspect` takes, is not on crates.io yet, and cargo
+  # resolves an optional dependency without its feature too: every build takes the commit
   # that build/revisions records, which build/pin.py writes here.
   UNPUBLISHED: >-
     --config patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"
-    --config patch.crates-io.oxirush-utils.rev="6d2ff3142ed8ffa4089774fc843db4a528cae4fc"
+    --config patch.crates-io.oxirush-utils.rev="5c47d25abdddf234d4e4bc95b6f77c41f9372bdc"
 
 jobs:
   test:
@@ -26,7 +27,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # With rasn as the oracle of tests/rasn.rs.
       - run: cargo test $UNPUBLISHED --all-features
-      - run: cargo test
+      - run: cargo test $UNPUBLISHED
 
   msrv:
     name: MSRV (1.88)
@@ -46,7 +47,7 @@ jobs:
         with:
           targets: thumbv7em-none-eabihf
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --lib --target thumbv7em-none-eabihf
+      - run: cargo build $UNPUBLISHED --lib --target thumbv7em-none-eabihf
       - run: cargo build $UNPUBLISHED --lib --target thumbv7em-none-eabihf --all-features
 
   clippy:
@@ -59,7 +60,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy $UNPUBLISHED --all-targets --all-features -- -D warnings
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy $UNPUBLISHED --all-targets -- -D warnings
 
   doc:
     name: Doc
