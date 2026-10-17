@@ -1984,6 +1984,51 @@ impl Protocol {
         value
     }
 
+    /// `value`, a value of `shape` that another implementation wrote in the JSON Encoding
+    /// Rules (ITU-T X.697), as a tree has it: each value of a well-known type in its
+    /// readable form, where that form gives the same value back. In those rules a string
+    /// of decimal digits is octets, which a tree reads in two ways or as digits: the tests
+    /// read the values of their reference with this.
+    pub fn from_jer(&self, value: &mut Value, shape: Shape) {
+        self.of_jer(value, shape, 0);
+    }
+
+    /// `value`, a value of `shape` in the JSON Encoding Rules, as a tree has it.
+    fn of_jer(&self, value: &mut Value, mut shape: Shape, depth: usize) {
+        if depth > WRITTEN {
+            return;
+        }
+        // A type that another names, as far as a well-known type, which has a form.
+        for _ in 0..16 {
+            let Shape::Named(name) = shape else {
+                break;
+            };
+            if let Some(form) = (self.type_form)(name) {
+                *value = crate::json::readable(form, value.clone());
+                return;
+            }
+            match (self.kind_of)(name) {
+                Some(Kind::Is(is)) => shape = *is,
+                _ => break,
+            }
+        }
+        match value {
+            Value::Object(object) => {
+                let members = self.member_shapes(shape, object);
+                for (key, child) in object.iter_mut() {
+                    self.of_jer(child, member_shape(&members, key), depth + 1);
+                }
+            }
+            Value::Array(entries) => {
+                let entry = self.entry_shape(shape);
+                for child in entries {
+                    self.of_jer(child, entry, depth + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// `value`, a value of `shape`, as the JSON Encoding Rules write it.
     fn to_jer(&self, value: &mut Value, shape: Shape, depth: usize) {
         if depth > WRITTEN {

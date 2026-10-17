@@ -999,6 +999,16 @@ pub(crate) use $crate::inspect::Typed;
 pub fn open(view: &mut Value, path: &str) -> Result<(), Error> {
     shared::open(&TABLES, view, path)
 }
+
+/// The view, as `to_view` writes views, of a view whose values another implementation
+/// wrote in the JSON Encoding Rules of ITU-T X.697, as pycrate writes them: `from_view` of
+/// the PDU reads what it gives, where it would refuse a string of decimal digits that is
+/// octets in those rules and a number or digits in a view. The tests read the values of
+/// their reference with it.
+#[doc(hidden)]
+pub fn __view_of_jer(view: &Value) -> Result<Value, Error> {
+    shared::view_of_jer(&TABLES, view)
+}
     };
 }
 

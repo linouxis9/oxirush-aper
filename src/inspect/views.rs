@@ -721,6 +721,27 @@ pub fn view_parts(protocol: &'static Protocol, view: &Value) -> Result<Parts, Er
     })
 }
 
+/// `view`, a view of a PDU of `protocol` whose values another implementation wrote in the
+/// JSON Encoding Rules (ITU-T X.697), as a view has them: what
+/// [`Protocol::from_jer`] makes of its message, which `from_view` of the PDU reads.
+///
+/// # Errors
+///
+/// A view without its procedure code or its direction.
+pub fn view_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, Error> {
+    let mut view = view.clone();
+    let code = view["procedure_code"]
+        .as_u64()
+        .and_then(|c| u8::try_from(c).ok())
+        .ok_or_else(|| Error::form("the procedure_code of a view is a number from 0 to 255"))?;
+    let direction = direction_of(view["direction"].as_str().ok_or_else(no_direction)?)?;
+    let shape = protocol.message_shape(direction, code);
+    if let Some(message) = view.get_mut("message") {
+        protocol.from_jer(message, shape);
+    }
+    Ok(view)
+}
+
 /// Whether `view` is a view of the PDU of `protocol` of a direction and a procedure
 /// code, where it says which message it is of.
 ///

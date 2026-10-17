@@ -103,6 +103,10 @@ and S1AP (TS 36.413) uses.
   IEs with their marker types, its lists, the tables of `inspect`, the
   module `hooks` of its fuzz targets and its oracle, and the tests of its
   tables. The README shows the macros on the protocol of `tests/toy/`.
+  `inspect::view_of_jer` and `Protocol::from_jer`, beside `Protocol::jer`: a view
+  whose values another implementation wrote in the JSON Encoding Rules, as a view of
+  the crate has them, where a string of decimal digits is octets; the tests of the
+  protocol crates read the values of pycrate with them.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
 - The crate, oxirush-ngap and oxirush-s1ap are released in step: the two
   depend on one version of it exactly (`=0.1.0`), re-export it with its value

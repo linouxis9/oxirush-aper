@@ -46,7 +46,7 @@ pub use paths::{
     EDITED, Members, check_path, enumerated_at, extended, insert, listed_ies, member_shape,
     named_ies, of_a_transfer, open, paths, remove, select, set, written_ie,
 };
-pub use views::{Parts, of_the_pdu, tree, tree_parts, view, view_parts};
+pub use views::{Parts, of_the_pdu, tree, tree_parts, view, view_of_jer, view_parts};
 
 /// What a type of a protocol makes of octets: the JSON form of their value, and whether
 /// that value encodes back to them. It does not when they hold what a later version of

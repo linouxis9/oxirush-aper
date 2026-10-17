@@ -5,7 +5,9 @@
 //! follows, and but for the well-known types of 3GPP that have a readable [`Form`], as
 //! `"208-93"` for a PLMN identity, which their trees show and are read in as well. A
 //! string of decimal digits is never read as octets there: octets whose hexadecimal has
-//! no letter are written after `0x`.
+//! no letter are written after `0x`. In the JSON Encoding Rules such a string is octets,
+//! and a view that another implementation wrote in them is read as a view of the crate
+//! has it through `inspect::view_of_jer`.
 //!
 //! | ASN.1 | JSON |
 //! | --- | --- |
