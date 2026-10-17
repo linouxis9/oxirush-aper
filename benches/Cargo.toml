@@ -9,6 +9,8 @@ license = "Apache-2.0"
 
 [dependencies]
 oxirush-aper = { path = ".." }
+# The derive of rasn 0.29, which `compare` times on the same types.
+rasn = { version = "=0.29.0", default-features = false, features = ["bytes"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false }

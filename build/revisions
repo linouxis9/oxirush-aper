@@ -5,4 +5,4 @@
 #
 # build/pin.py writes it wherever the crate is taken from its repository, and
 # tests/revisions.rs holds each place to it.
-oxirush-utils c484a191f231520f3ba30b5887b5fda76d447f61
+oxirush-utils eb1c453cd08dc3d0b712f53d4273595793cb9106
