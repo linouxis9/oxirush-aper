@@ -87,6 +87,7 @@
 extern crate alloc;
 
 mod bits;
+pub mod check;
 mod error;
 mod faults;
 #[cfg(feature = "inspect")]

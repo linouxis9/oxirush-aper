@@ -1635,20 +1635,20 @@ pub fn insert(
     tree::insert_in(&Views::new(protocol), view, path, value).map_err(error)
 }
 
-/// Show, in `view`, a view of a PDU of `protocol`, the octets that `path` takes as a type
-/// that they may carry as what `decode` makes of them and of the name of that type.
+/// Decode, in `view`, a view of a PDU of `protocol`, the octets that `path` takes as a
+/// type that they may carry: those of an IE whose content the specification gives by
+/// reference, where the segment after the IE or its `value` is the name that ASN.1 gives
+/// one of these types. The IE then has, in place of its octets, the transfer of that type
+/// under that name: its decoded value beside the octets, or why they are not of that
+/// type. A path that goes through no such name changes nothing.
 ///
 /// # Errors
 ///
 /// What [`select`] refuses: the view is then as it was.
-pub fn open(
-    protocol: &'static Protocol,
-    view: &mut Value,
-    path: &str,
-    decode: &dyn Fn(Value, &str) -> Value,
-) -> Result<(), Error> {
+pub fn open(protocol: &'static Protocol, view: &mut Value, path: &str) -> Result<(), Error> {
+    let opened = |raw: Value, name: &str| protocol.opened(raw, name);
     let views = Views {
-        opens: Some(decode),
+        opens: Some(&opened),
         ..Views::new(protocol)
     };
     tree::open_in(&views, view, path).map_err(error)

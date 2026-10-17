@@ -284,11 +284,14 @@ assert_eq!((extended, a, b), (true, true, Some(7)));
 With the `inspect` feature, `oxirush_aper::json` has what generated bindings
 write and read their JSON forms with: `serde_json` values in the form of the
 JSON Encoding Rules (X.697), with octets and open types in hexadecimal. And
-`oxirush_aper::inspect` has the paths into the view of a PDU of an
-application protocol, on the trees and the paths of `oxirush-utils`: a
-protocol crate gives the tables that its generator writes, as a `Protocol`,
-and `select`, `check_path`, `paths`, `set`, `remove`, `insert` and `open`
-read them, so that oxirush-ngap and oxirush-s1ap have one implementation.
+`oxirush_aper::inspect` has the views and the trees of the PDUs of an
+application protocol and the paths into a view, on the trees and the paths
+of `oxirush-utils`: a protocol crate gives the tables that its generator
+writes and the functions of its types, as a `Protocol`, and `view`, `tree`,
+`select`, `check_path`, `paths`, `set`, `remove`, `insert` and `open` read
+them, so that oxirush-ngap and oxirush-s1ap have one implementation. So is
+`oxirush_aper::check`, without a feature: how a PDU deviates from the object
+set of its message, which a protocol tells in its own types.
 
 ```toml
 [dependencies]

@@ -104,6 +104,16 @@ static TEST: Protocol = Protocol {
     message_ie_criticalities: &[("Release", &[(15, "ignore"), (16, "reject")])],
     ie_id,
     kind_of,
+    procedure_criticalities: &[(1, "reject")],
+    ie_typed: |_| Err(Error::new(ErrorKind::UnknownIe, "no codec in this test")),
+    extension_typed: |_, _| None,
+    ie_contents: |_| None,
+    ie_form: |_| None,
+    member_form: |_| None,
+    transfer_fields: &["transfer"],
+    transfer_typed: |_| Ok(typed()),
+    carried_typed: |_| None,
+    any_message: typed,
 };
 
 /// The view of a RELEASE with a cause, and a holder whose transfer contains a cause.

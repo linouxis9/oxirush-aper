@@ -29,6 +29,7 @@
 //! the entry that it is.
 
 mod paths;
+mod views;
 
 use alloc::vec::Vec;
 use serde_json::Value;
@@ -39,6 +40,7 @@ pub use paths::{
     EDITED, Members, check_path, enumerated_at, extended, insert, listed_ies, member_shape,
     named_ies, of_a_transfer, open, paths, remove, select, set, written_ie,
 };
+pub use views::{Form, Parts, of_the_pdu, tree, tree_parts, view, view_parts};
 
 /// The functions of a type of a protocol: the JSON form of the value that octets are,
 /// and the octets of the value that a JSON form writes.
@@ -105,6 +107,36 @@ pub struct Protocol {
     /// What a type of [`types`](Self::types) is, by its name: the protocol keeps the
     /// index that it reads, made once.
     pub kind_of: fn(&str) -> Option<&'static Kind>,
+    /// The criticality that ASN.1 assigns to each procedure, by its code.
+    pub procedure_criticalities: &'static [(u8, &'static str)],
+    /// The functions of the type of each IE that has one type, by its identifier: an
+    /// error that says why for one that has none.
+    pub ie_typed: fn(u16) -> Result<Typed, Error>,
+    /// The functions of the type of an IE of an extension container where it extends
+    /// the type that the bindings give this name; `None` for an IE that has its type
+    /// whatever it extends.
+    pub extension_typed: fn(u16, &str) -> Option<Typed>,
+    /// The functions of the type that the octets of an IE contain, for an IE whose type
+    /// is `OCTET STRING (CONTAINING ...)`.
+    pub ie_contents: fn(u16) -> Option<Typed>,
+    /// How a view shows the value of an IE, by its identifier, where it is shown in a
+    /// readable form.
+    pub ie_form: fn(u16) -> Option<Form>,
+    /// How a view shows the value of a member, by its name, where it is shown in a
+    /// readable form.
+    pub member_form: fn(&str) -> Option<Form>,
+    /// The members that hold a transfer: octets that contain a value of a type.
+    pub transfer_fields: &'static [&'static str],
+    /// The functions of the type that a transfer of a member contains; an error for a
+    /// member that has several types, or none.
+    pub transfer_typed: fn(&str) -> Result<Typed, Error>,
+    /// The functions of a type that the octets of an IE may carry, by the name that
+    /// ASN.1 gives it.
+    pub carried_typed: fn(&str) -> Option<Typed>,
+    /// The functions of the message of a procedure that the protocol does not have in
+    /// that direction, which is read and written as what every message of the protocol
+    /// but the private one is: a container of protocol IEs and nothing else.
+    pub any_message: fn() -> Typed,
 }
 
 /// What a value of a view is, as its ASN.1 type has it: what a path can select in it.
