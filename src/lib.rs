@@ -90,6 +90,8 @@ mod bits;
 mod error;
 mod faults;
 #[cfg(feature = "inspect")]
+pub mod inspect;
+#[cfg(feature = "inspect")]
 pub mod json;
 mod octets;
 mod oid;

@@ -19,14 +19,16 @@ include = [
 ]
 
 [features]
-# The JSON forms of a value, as `serde_json` values.
-inspect = ["dep:serde_json"]
+# The JSON forms of a value, as `serde_json` values, and the paths into the views of the
+# application protocols, on the trees of `oxirush-utils`.
+inspect = ["dep:serde_json", "dep:oxirush-utils"]
 
 [package.metadata.docs.rs]
 all-features = true
 
 [dependencies]
-serde_json = { version = "1.0.106", optional = true, default-features = false, features = ["alloc"] }
+serde_json = { version = "1.0.154", optional = true, default-features = false, features = ["alloc"] }
+oxirush-utils = { version = "0.1.0", optional = true, features = ["tree"] }
 
 [dev-dependencies]
 # The oracle of the tests: the codec of another implementation.
@@ -34,4 +36,8 @@ rasn = { version = "0.29.0", default-features = false, features = ["bytes"] }
 
 [[test]]
 name = "json"
+required-features = ["inspect"]
+
+[[test]]
+name = "inspect"
 required-features = ["inspect"]

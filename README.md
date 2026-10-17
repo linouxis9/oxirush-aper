@@ -85,6 +85,16 @@ oxirush-aper = "0.1"
 The minimum supported Rust version is 1.88. The crate is `#![no_std]`, needs
 `alloc`, and has no `unsafe`.
 
+With the feature `inspect`, the crate takes `oxirush-utils`, whose trees and paths
+the views of the protocols are on. `oxirush-utils` 0.1.0 is not on crates.io yet:
+until it is, a build with the feature takes it from its repository, at the
+revision that this revision of the crate is tested with:
+
+```toml
+[patch.crates-io]
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "6d2ff3142ed8ffa4089774fc843db4a528cae4fc" }
+```
+
 The crate, [oxirush-ngap](https://github.com/linouxis9/oxirush-ngap) and
 [oxirush-s1ap](https://github.com/linouxis9/oxirush-s1ap) are released in
 step. Each version of a protocol crate names one version of this crate and
@@ -273,7 +283,12 @@ assert_eq!((extended, a, b), (true, true, Some(7)));
 
 With the `inspect` feature, `oxirush_aper::json` has what generated bindings
 write and read their JSON forms with: `serde_json` values in the form of the
-JSON Encoding Rules (X.697), with octets and open types in hexadecimal.
+JSON Encoding Rules (X.697), with octets and open types in hexadecimal. And
+`oxirush_aper::inspect` has the paths into the view of a PDU of an
+application protocol, on the trees and the paths of `oxirush-utils`: a
+protocol crate gives the tables that its generator writes, as a `Protocol`,
+and `select`, `check_path`, `paths`, `set`, `remove`, `insert` and `open`
+read them, so that oxirush-ngap and oxirush-s1ap have one implementation.
 
 ```toml
 [dependencies]

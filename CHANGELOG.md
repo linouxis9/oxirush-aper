@@ -43,6 +43,10 @@ and S1AP (TS 36.413) uses.
   and the others.
 - The `inspect` feature: `json`, with which bindings write and read their
   values as `serde_json` values in the form of the JSON Encoding Rules.
+  And `inspect`, the paths into the view of a PDU of an application protocol
+  that NGAP and S1AP share, on the trees and the paths of `oxirush-utils`:
+  a protocol gives its tables as a `Protocol`. An edit is done in the place
+  of the view, at each place that its path selects or at none.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
 - The crate, oxirush-ngap and oxirush-s1ap are released in step: the two
   re-export it with its value types, and a breaking release of the crate is

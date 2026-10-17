@@ -475,7 +475,7 @@ fn a_bit_string_has_its_length_unless_its_type_gives_it() {
             "fixed-bits",
             json!({"value": "ABC0", "length": 12}),
             "a bit string of 12 bits is expected, in hexadecimal, and \
-             {\"length\":12,\"value\":\"ABC0\"} is written",
+             {\"value\":\"ABC0\",\"length\":12} is written",
         ),
         (
             "address",
@@ -487,7 +487,7 @@ fn a_bit_string_has_its_length_unless_its_type_gives_it() {
             "address",
             json!({"value": "0A000001", "length": 32, "other": 1}),
             "a bit string whose size varies is expected, which is written as {\"value\": \
-             HEXADECIMAL, \"length\": BITS}, and {\"length\":32,\"other\":1,\"value\":\"0A000001… \
+             HEXADECIMAL, \"length\": BITS}, and {\"value\":\"0A000001\",\"length\":32,\"other\":… \
              is written",
         ),
         (
