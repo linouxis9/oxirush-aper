@@ -55,11 +55,14 @@ and S1AP (TS 36.413) uses.
   of the view, at each place that its path selects or at none.
 - `check`: how a PDU of an application protocol deviates from the object set
   of its message, as a `Deviation` that a protocol tells in its own types
-  through `Diagnostics`, and what its receiver answers for it.
+  through `Diagnostics`, and what its receiver answers for it: the protocol
+  cause, and the item of the Criticality Diagnostics of an IE of the
+  criticality `reject` or `notify`, as an item is never `ignore`.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
 - The crate, oxirush-ngap and oxirush-s1ap are released in step: the two
   re-export it with its value types, and a breaking release of the crate is
   one of both. The README says what a program with two versions gets.
 - In the repository and not in the crate: `generator/`, the library that
-  writes the bindings of a protocol on this crate, fuzz targets and
+  writes the bindings of a protocol on this crate, with the type of ASN.1 of
+  each binding as the first line of its documentation, fuzz targets and
   benchmarks.

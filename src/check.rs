@@ -259,13 +259,18 @@ impl<P: Diagnostics> Deviation<P> {
 
     /// The item of the Criticality Diagnostics IE that tells of this deviation: the
     /// criticality of [`ie`](Self::ie), its identifier and
-    /// [`type_of_error`](Self::type_of_error). `None` where there is no type of error.
+    /// [`type_of_error`](Self::type_of_error). `None` where there is no type of error,
+    /// and for an IE of the criticality `ignore`.
     ///
-    /// The specification has a receiver report the IEs that it does not comprehend
-    /// and those that are missing when their criticality is `reject` or `notify`, and
-    /// ignore the others: the criticality of the item says which it is.
+    /// A receiver reports the IEs that it does not comprehend and those that are
+    /// missing when their criticality is `reject` or `notify`, and ignores the others
+    /// (clauses 10.3.4.2 and 10.3.5 of TS 38.413 and of TS 36.413): the criticality of an
+    /// item is never `ignore` (TS 38.413 clause 9.3.1.3, TS 36.413 clause 9.2.1.21).
     pub fn diagnostics_item(&self) -> Option<P::Item> {
         let (id, criticality) = self.ie()?;
+        if matches!(criticality.into(), Criticality::Ignore) {
+            return None;
+        }
         let type_of_error = self.type_of_error()?;
         Some(P::item(criticality, id, type_of_error))
     }

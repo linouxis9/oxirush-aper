@@ -1080,6 +1080,7 @@ impl Bindings {
             false if by_hand => self.printed(out, name)?,
             false => {}
         }
+        writeln!(out, "/// {}", summary(definition))?;
         write_docs(out, &definition.docs)?;
         let copy = if self.copied.contains(name) {
             ", Copy"
@@ -2154,6 +2155,66 @@ impl Bindings {
             }
         }
         Ok(())
+    }
+}
+
+/// What a type is in ASN.1, as the first line of its documentation says it:
+/// `NAME ::= TYPE`, with the constraint of a number or a size, and whether a later
+/// version adds alternatives, values or members to it.
+fn summary(definition: &Definition) -> String {
+    let what = match &definition.shape {
+        Shape::Sequence(_) => "SEQUENCE".to_string(),
+        Shape::Choice(_) => "CHOICE".to_string(),
+        Shape::Enumerated(_) => "ENUMERATED".to_string(),
+        Shape::Alias(kind) => asn1(kind),
+    };
+    let marker = match definition.extensible && !matches!(definition.shape, Shape::Alias(_)) {
+        true => ", with an extension marker",
+        false => "",
+    };
+    format!("`{} ::= {what}`{marker}.", definition.asn)
+}
+
+/// A kind of value in the notation of ASN.1, with its constraint.
+fn asn1(kind: &Kind) -> String {
+    match kind {
+        Kind::Boolean => "BOOLEAN".into(),
+        Kind::Null => "NULL".into(),
+        Kind::Integer { range, .. } => format!("INTEGER{}", constraint(range, false)),
+        Kind::OctetArray(size) => format!("OCTET STRING (SIZE ({size}))"),
+        Kind::Octets(range) => format!("OCTET STRING{}", constraint(range, true)),
+        Kind::Bits(range) | Kind::BitString(range) => {
+            format!("BIT STRING{}", constraint(range, true))
+        }
+        Kind::Text { of, range } => {
+            let of = match *of {
+                "printable_string" => "PrintableString",
+                "visible_string" => "VisibleString",
+                "ia5_string" => "IA5String",
+                _ => "UTF8String",
+            };
+            format!("{of}{}", constraint(range, true))
+        }
+        Kind::ObjectIdentifier => "OBJECT IDENTIFIER".into(),
+        Kind::Open => "an open type".into(),
+        Kind::List { of, range } => format!("SEQUENCE{} OF {}", constraint(range, true), asn1(of)),
+        Kind::Named(name) => name.clone(),
+    }
+}
+
+/// A constraint in the notation of ASN.1: ` (0..255, ...)`, or ` (SIZE (1..16))` for a
+/// size. Nothing for a range without a bound.
+fn constraint(range: &Range, size: bool) -> String {
+    let bound = |bound: Option<i128>, none: &str| bound.map_or(none.to_string(), |b| b.to_string());
+    let values = match (range.lower, range.upper) {
+        (None, None) => return String::new(),
+        (Some(lower), Some(upper)) if lower == upper => lower.to_string(),
+        (lower, upper) => format!("{}..{}", bound(lower, "MIN"), bound(upper, "MAX")),
+    };
+    let marker = if range.extensible { ", ..." } else { "" };
+    match size {
+        true => format!(" (SIZE ({values}{marker}))"),
+        false => format!(" ({values}{marker})"),
     }
 }
 
