@@ -1451,10 +1451,17 @@ impl Bindings {
         );
         // A SEQUENCE of a few fields, none of which is a value with members of its
         // own, is read and written where it is used: the field of a protocol IE
-        // container is one, and a message is a list of them.
-        let inline = match self.plain.contains(&definition.name) {
-            true => "#[inline]\n",
-            false => "",
+        // container is one, and a message is a list of them. The field is read by the
+        // readers of the IEs of the protocol too, and is inlined in each place all the
+        // same: else the loop of the container calls it, and decoding a message takes a
+        // tenth longer.
+        let inline = match (
+            definition.name.as_str(),
+            self.plain.contains(&definition.name),
+        ) {
+            ("ProtocolIEField", _) => "#[inline(always)]\n",
+            (_, true) => "#[inline]\n",
+            (_, false) => "",
         };
         writeln!(out, "impl<'a> Decode<'a> for {declared} {{")?;
         writeln!(
