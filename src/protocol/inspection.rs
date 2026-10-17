@@ -1040,6 +1040,9 @@ macro_rules! __hooks {
             /// The name of the type of a PDU in the bindings.
             pub const PDU_TYPE: &str = stringify!($pdu);
 
+            /// The root of the paths of a view, which the module of the bindings names.
+            pub const ROOT: &str = concat!("/", stringify!($bindings));
+
             /// The octets of the message of `pdu`.
             pub fn message_octets<'p>(pdu: &'p $pdu<'_>) -> &'p [u8] {
                 pdu.value()

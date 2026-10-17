@@ -29,15 +29,17 @@
 //! The crate differs from the oracle in one thing, which the comparison of the oracle
 //! names where it meets it: its bindings hold an INTEGER in 64 bits.
 //!
-//! oxirush-ngap and oxirush-s1ap take this file from oxirush-aper. What depends on the
-//! protocol is in `src/protocol.rs` of the package of each.
+//! oxirush-ngap and oxirush-s1ap take this file from oxirush-aper. The package of each
+//! names its crate `codec`, whose module `hooks` names what is of the protocol.
 
-mod protocol {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/protocol.rs"));
-}
+use codec::hooks::{self, BorrowedPdu as Borrowed, PDU_TYPE, Pdu, ROOT};
+use codec::tree::Value;
+use codec::{Error, ErrorKind, aper, inspect};
 
-use protocol::{ANY_MESSAGE, Borrowed, Error, ErrorKind, PDU_TYPE, Pdu, ROOT};
-use protocol::{Value, aper, hooks, inspect};
+/// A message that is a container of protocol IEs, as every message but the private one
+/// is, and which both protocols have: the codec of rasn reads the protocol IEs of any of
+/// them as this one.
+const ANY_MESSAGE: &str = "ErrorIndication";
 
 /// What the crate wrote of a value that it read, or why it read none, for the oracle.
 fn ours(written: &Result<Vec<u8>, Error>) -> Result<&[u8], String> {

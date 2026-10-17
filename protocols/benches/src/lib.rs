@@ -35,17 +35,129 @@
 //! take the type of a message.
 
 pub mod counting;
+
+/// The operations that take the type of a message: its direction, its
+/// procedure, the criticality of its PDU and its type, then each of its IEs
+/// as the macros name it, with its criticality and the type of its value.
+// It is expanded in `protocol.rs`, whose names `types`, `extract_ies!`, `build!` and
+// `Pdu` it takes.
+macro_rules! typed {
+    ($direction:ident $procedure:ident $criticality:ident $message:ident {
+        $($ie_criticality:ident $ie:ident: $type:ident $(<$borrows:lifetime>)?,)*
+    }) => {{
+        /// The values of the IEs of the message, in their order. Those that hold
+        /// octets borrow them.
+        type Values<'a> = ($(types::$type $(<$borrows>)?,)*);
+
+        #[allow(non_snake_case)]
+        fn read<'a>(message: &'a types::$message<'a>) -> Result<Values<'a>, codec::Error> {
+            extract_ies!(message, $message,
+                $(req $ie: types::$type $(<$borrows>)? = $ie(value) => value,)*
+            );
+            Ok(($($ie,)*))
+        }
+
+        /// The same values, which borrow nothing.
+        #[allow(non_snake_case)]
+        fn owned(($($ie,)*): Values<'_>) -> Values<'static> {
+            ($(typed!(@owned $ie $(, $borrows)?),)*)
+        }
+
+        #[allow(non_snake_case)]
+        fn build(($($ie,)*): Values<'_>) -> Result<Pdu, codec::Error> {
+            build!($direction, $procedure, $criticality, $message,
+                $($ie_criticality $ie($ie),)*
+            )
+        }
+
+        fn message(pdu: &Pdu) -> types::$message<'_> {
+            pdu.decode_value().unwrap()
+        }
+
+        $crate::Typed {
+            decode_value: |pdu| $crate::done(pdu.decode_value::<types::$message<'_>>()),
+            extract: |pdu| {
+                let message = message(pdu);
+                Box::new(move || $crate::done(read(&message)))
+            },
+            build: |pdu| {
+                let mut values = Some(owned(read(&message(pdu)).unwrap()));
+                Box::new(move || $crate::done(build(values.take().unwrap())))
+            },
+            rebuilt: |pdu| build(read(&message(pdu)).unwrap()).unwrap(),
+        }
+    }};
+    (@owned $value:ident) => {
+        $value
+    };
+    (@owned $value:ident, $borrows:lifetime) => {
+        $value.into_owned()
+    };
+}
+
 mod protocol {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/protocol.rs"));
 }
 
 use protocol::codec::inspect;
 use protocol::codec::{tree, tree::Value};
-pub use protocol::{
-    Borrowed, Pdu, TheirMessage, TheirPdu, codec, extract_ies, our_pdu, their_message, their_pdu,
-    types,
-};
+pub use protocol::{Borrowed, Pdu, TheirPdu, codec, extract_ies, types};
 use std::hint::black_box;
+
+// ── The protocol ────────────────────────────────────────────────────────────
+
+/// The PDU of `pdu`, with the octets of another message.
+pub fn our_pdu(pdu: &Pdu, message: codec::Octets<'static>) -> Pdu {
+    let mut pdu = pdu.clone();
+    match &mut pdu {
+        Pdu::initiatingMessage(pdu) => pdu.value = message,
+        Pdu::successfulOutcome(pdu) => pdu.value = message,
+        Pdu::unsuccessfulOutcome(pdu) => pdu.value = message,
+        _ => {}
+    }
+    pdu
+}
+
+/// A message of the rasn bindings: every message of the protocol but the private one is
+/// a SEQUENCE of its protocol IEs, with an extension marker, which decodes and encodes as
+/// this one, which both protocols have.
+pub type TheirMessage = oracle::bindings::InitialUEMessage;
+
+/// The octets of the message of a rasn PDU.
+pub fn their_message(pdu: &TheirPdu) -> &[u8] {
+    match pdu {
+        TheirPdu::initiatingMessage(pdu) => pdu.value.as_bytes(),
+        TheirPdu::successfulOutcome(pdu) => pdu.value.as_bytes(),
+        TheirPdu::unsuccessfulOutcome(pdu) => pdu.value.as_bytes(),
+        _ => &[],
+    }
+}
+
+/// The rasn PDU of `pdu`, with the octets of another message.
+pub fn their_pdu(pdu: &TheirPdu, message: oracle::rasn::types::Any) -> TheirPdu {
+    let mut pdu = pdu.clone();
+    match &mut pdu {
+        TheirPdu::initiatingMessage(pdu) => pdu.value = message,
+        TheirPdu::successfulOutcome(pdu) => pdu.value = message,
+        TheirPdu::unsuccessfulOutcome(pdu) => pdu.value = message,
+        _ => {}
+    }
+    pdu
+}
+
+/// The fixtures of the crate: a line for each message, with its name and its
+/// octets in hexadecimal.
+const FIXTURES: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../tests/fixtures/messages.tsv"
+));
+
+/// `length` octets in hexadecimal, which are not all the same.
+pub(crate) fn octets(length: usize) -> String {
+    (0..length)
+        .map(|at| format!("{:02X}", (at * 7 + 3) % 251))
+        .collect()
+}
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
 
@@ -166,7 +278,7 @@ pub struct Input {
 /// The messages of the fixtures that have protocol IEs: all but the private
 /// message, which has no tree.
 fn fixtures() -> Vec<Message> {
-    let lines = protocol::FIXTURES.lines();
+    let lines = FIXTURES.lines();
     let octets = lines
         .filter(|line| !line.starts_with('#'))
         .map(|line| hex::decode(line.split('\t').nth(1).unwrap()).unwrap());

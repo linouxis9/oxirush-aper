@@ -322,4 +322,4 @@ jobs:
       - run: cargo fmt --check --manifest-path oracle/Cargo.toml
       - run: cargo fmt --check --manifest-path fuzz/Cargo.toml
       # What the shared programs include of the protocol, which cargo fmt does not reach.
-      - run: rustfmt --edition 2024 --check benches/src/protocol.rs benches/src/readers.rs fuzz/src/protocol.rs
+      - run: rustfmt --edition 2024 --check benches/src/protocol.rs benches/src/readers.rs
