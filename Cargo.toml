@@ -2,12 +2,12 @@
 name = "oxirush-aper"
 version = "0.1.0"
 edition = "2024"
-description = "Aligned PER (ITU-T X.691) runtime for generated bindings of 3GPP-style ASN.1: readers, writers and value types"
+description = "Aligned PER (ITU-T X.691) for Rust bindings generated from 3GPP ASN.1: a reader and a writer of the fields, and the types of the values"
 license = "Apache-2.0"
 repository = "https://github.com/linouxis9/oxirush-aper"
 authors = ["Valentin D'Emmanuele"]
 rust-version = "1.88"
-keywords = ["asn1", "aper", "per", "3gpp", "codec"]
+keywords = ["asn1", "aper", "per", "x691", "3gpp"]
 categories = ["encoding", "parser-implementations", "network-programming", "no-std"]
 readme = "README.md"
 include = [

@@ -265,7 +265,7 @@ impl Protocol {
                 ("criticality", Shape::Plain, false),
                 (
                     MESSAGE,
-                    message.map_or(Shape::Unknown, Shape::Message),
+                    message.map_or(Shape::AnyMessage, Shape::Message),
                     false,
                 ),
                 ("_raw_message", Shape::Plain, true),
@@ -281,6 +281,8 @@ impl Protocol {
                 }
                 members
             }
+            // Its IEs are each of the type that its identifier gives it.
+            Shape::AnyMessage => vec![(IES, Shape::Ies(None), false)],
             Shape::Named(name) => match (self.kind_of)(name) {
                 Some(Kind::Sequence(members) | Kind::Choice(members)) => {
                     // An extension container extends the type that has it.
@@ -437,6 +439,9 @@ impl Protocol {
         let of = match shape {
             Shape::Named(name) => name.to_string(),
             Shape::Message(message) => message.name.to_string(),
+            Shape::AnyMessage => {
+                "the message of a procedure that the tables do not have".to_string()
+            }
             Shape::Pdu(_) => "a view".to_string(),
             Shape::Bits => "a bit string".to_string(),
             Shape::Transfer(_) => "a transfer".to_string(),
@@ -485,7 +490,11 @@ impl Protocol {
         known.ok_or_else(|| {
             Error::new(
                 ErrorKind::UnknownMessage,
-                format!("{name:?} is not a message of {}", self.name),
+                format!(
+                    "{name:?} is not a message of {}{}",
+                    self.name,
+                    self.nearest_message(name)
+                ),
             )
         })
     }
@@ -495,9 +504,37 @@ impl Protocol {
         (self.ie_id)(name).ok_or_else(|| {
             Error::new(
                 ErrorKind::UnknownIe,
-                format!("{name:?} is not an IE of {}", self.name),
+                format!(
+                    "{name:?} is not an IE of {}{}",
+                    self.name,
+                    self.nearest_ie(name)
+                ),
             )
         })
+    }
+
+    /// What an error says of `name`, which no IE of the protocol has: the names of the
+    /// IEs that are nearest to it, if some are near.
+    pub(crate) fn nearest_ie(&self, name: &str) -> String {
+        let names: Vec<&str> = self.ie_names.iter().map(|(_, name)| *name).collect();
+        nearest_names(&names, name)
+    }
+
+    /// What an error says of `name`, which no message of the protocol has: the names of
+    /// the messages that are nearest to it, if some are near.
+    pub(crate) fn nearest_message(&self, name: &str) -> String {
+        let names: Vec<&str> = self.messages.iter().map(|(_, _, name, ..)| *name).collect();
+        nearest_names(&names, name)
+    }
+}
+
+/// `: the nearest name is X`, or `: the nearest names are X and Y`, of the names that are
+/// near `name`; nothing when none is.
+fn nearest_names(names: &[&str], name: &str) -> String {
+    match oxirush_utils::tree::nearest(names, name, 3)[..] {
+        [] => String::new(),
+        [one] => format!(": the nearest name is {one}"),
+        [ref near @ .., last] => format!(": the nearest names are {} and {last}", near.join(", ")),
     }
 }
 
@@ -840,9 +877,10 @@ impl Views<'_> {
             return Err(not_an_id(part));
         }
         if at.named && at.taken == 2 && !self.protocol.selects_ies(part) {
+            let nearest = self.protocol.nearest_ie(part);
             return Err(refusal(
                 ErrorKind::UnknownIe,
-                format!("{part:?} is not an IE of {}", self.protocol.name),
+                format!("{part:?} is not an IE of {}{nearest}", self.protocol.name),
             ));
         }
         let shape = self.protocol.resolved(at.shape);
@@ -1710,7 +1748,7 @@ impl Protocol {
     /// the tables have it.
     pub fn message_shape(&self, direction: &str, code: u8) -> Shape {
         let message = self.sent(|of, procedure, _| procedure == code && of == direction);
-        message.map_or(Shape::Unknown, Shape::Message)
+        message.map_or(Shape::AnyMessage, Shape::Message)
     }
 
     /// The shape of octets that carry the type which ASN.1 names `name`, once a view

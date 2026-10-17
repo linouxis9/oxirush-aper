@@ -161,6 +161,9 @@ pub enum Shape {
     Pdu(Option<Sent>),
     /// The message of a PDU.
     Message(Sent),
+    /// The message of a procedure that the tables do not have: a container of IEs
+    /// without an object set, which each message of a protocol but the private one is.
+    AnyMessage,
     /// A value without members.
     Plain,
     /// The one value of the type NULL, which a CHOICE has as an alternative: `null`,

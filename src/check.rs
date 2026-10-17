@@ -60,11 +60,12 @@ pub trait Diagnostics {
         type_of_error: Self::TypeOfError,
     ) -> Self::Item;
 
-    /// The Criticality Diagnostics of a message of a procedure code, of a direction and
-    /// of a criticality, with `items` for its IEs, or none.
+    /// The Criticality Diagnostics of a message of a criticality, with `items` for its
+    /// IEs, or none, and with the procedure code and the direction of the message that
+    /// `triggering` gives: an ERROR INDICATION has them, and a response of the procedure
+    /// of the message has not.
     fn criticality_diagnostics(
-        procedure_code: u8,
-        direction: &str,
+        triggering: Option<(u8, &str)>,
         criticality: Self::Criticality,
         items: Option<Vec<Self::Item>>,
     ) -> Self::CriticalityDiagnostics;
@@ -72,7 +73,10 @@ pub trait Diagnostics {
 
 /// The protocol causes that a receiver answers a message with for its deviations: those
 /// that the clauses of the criticality of TS 38.413 and TS 36.413 give.
+///
+/// More causes may come with a later version: a `match` leaves the others to `_`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ProtocolCause {
     /// An IE whose value does not decode.
     TransferSyntaxError,
@@ -321,6 +325,10 @@ impl<P: Diagnostics> Deviation<P> {
     /// it does not comprehend or that is missing, for a procedure of that criticality,
     /// which it ignores, for a criticality that is not the assigned one, and for an
     /// encoding that is not the canonical one.
+    ///
+    /// A deviation of an ERROR INDICATION is answered by none: clause 10.5 of both
+    /// specifications has its receiver handle it locally, and send no ERROR INDICATION
+    /// back. The cause is then what the receiver notes.
     pub fn cause(&self) -> Option<P::Cause> {
         let by_criticality = |criticality: &P::Criticality| match (*criticality).into() {
             Criticality::Reject => Some(ProtocolCause::AbstractSyntaxErrorReject),
@@ -482,19 +490,38 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
     }
 }
 
-/// The Criticality Diagnostics IE with which a receiver answers a message of a
-/// procedure code, of a direction and of a criticality, for `deviations`: the procedure
-/// code, the triggering message and the procedure criticality, which clause 10.3.4.1
-/// has for a procedure that the receiver does not comprehend, and the item of each
-/// deviation that has one ([`Deviation::diagnostics_item`]), which clauses 10.3.4.2 and
-/// 10.3.5 have for an IE, 256 of them at most (`maxnoofErrors`). No list where no
-/// deviation has an item.
+/// The Criticality Diagnostics IE of an ERROR INDICATION with which a receiver answers a
+/// message of a procedure code, of a direction and of a criticality, for `deviations`:
+/// the procedure code, the triggering message and the procedure criticality, which
+/// clause 10.3.4.1 has for a procedure that the receiver does not comprehend, and the
+/// item of each deviation that has one ([`Deviation::diagnostics_item`]), which clauses
+/// 10.3.4.2 and 10.3.5 have for an IE, 256 of them at most (`maxnoofErrors`). No list
+/// where no deviation has an item.
 pub fn criticality_diagnostics<P: Diagnostics>(
     procedure_code: u8,
     direction: &str,
     criticality: P::Criticality,
     deviations: &[Deviation<P>],
 ) -> P::CriticalityDiagnostics {
+    let items = items(deviations);
+    P::criticality_diagnostics(Some((procedure_code, direction)), criticality, items)
+}
+
+/// The Criticality Diagnostics IE of the response, of the procedure of the message, with
+/// which a receiver answers a message of a criticality for `deviations`: the procedure
+/// criticality and the item of each deviation that has one, without the procedure code
+/// and the triggering message, which TS 38.413 clause 9.3.1.3 and TS 36.413 clause
+/// 9.2.1.21 keep for an ERROR INDICATION.
+pub fn criticality_diagnostics_for_response<P: Diagnostics>(
+    criticality: P::Criticality,
+    deviations: &[Deviation<P>],
+) -> P::CriticalityDiagnostics {
+    P::criticality_diagnostics(None, criticality, items(deviations))
+}
+
+/// The items of the Criticality Diagnostics for `deviations`: 256 at most, and none for
+/// deviations that have none.
+fn items<P: Diagnostics>(deviations: &[Deviation<P>]) -> Option<Vec<P::Item>> {
     /// How many items the IE has at most: `maxnoofErrors` of both specifications.
     const MOST: usize = 256;
     let items: Vec<P::Item> = deviations
@@ -502,12 +529,14 @@ pub fn criticality_diagnostics<P: Diagnostics>(
         .filter_map(Deviation::diagnostics_item)
         .take(MOST)
         .collect();
-    let items = (!items.is_empty()).then_some(items);
-    P::criticality_diagnostics(procedure_code, direction, criticality, items)
+    (!items.is_empty()).then_some(items)
 }
 
 /// What is wrong with the value of an IE, against the type that the bindings give it.
+///
+/// More variants may come with a later version: a `match` leaves the others to `_`.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Wrong {
     /// The octets do not decode: why, as the macro that extracts the IE says it.
     Undecodable(Error),

@@ -51,7 +51,11 @@ and S1AP (TS 36.413) uses.
   readable form, `Form`, which its tree shows and in which it is read, as
   well as in the form of the rules: `"208-93"` for a PLMN identity, a number
   for an identifier of a fixed size, an IP address for a transport layer
-  address, the digits of an IMSI.
+  address, the digits of an IMSI. A string of decimal digits is never read
+  as octets: `"310410"` for a PLMN identity, or `"123456"` for a TAC, is
+  refused with the two values that it could be (310-410 and the octets
+  0x310410, which are 134-001), and octets whose hexadecimal has no letter
+  are written after `0x`, as `"0x134001"`.
   And `inspect`, hidden from the documentation, the plumbing that NGAP and
   S1AP share: the views and the trees of their PDUs and the paths into a
   view, on the trees and the paths of `oxirush-utils`. An edit is done in the
@@ -63,20 +67,30 @@ and S1AP (TS 36.413) uses.
   received, and a tree has those octets in its place; every PDU that decodes
   has a tree, a procedure that the protocol does not have by its code and
   its direction, and a message that has no list of IEs or does not decode by
-  its octets.
+  its octets. The message of a procedure that the protocol does not have is
+  a container of IEs to the paths too, each IE of the type of its
+  identifier, so that what `paths` lists there is what `select` takes.
 - `check`: how a PDU of an application protocol deviates from the object set
   of its message, as a `Deviation` that a protocol tells in its own types
   through `Diagnostics`, and what its receiver answers for it: the protocol
   cause, and the item of the Criticality Diagnostics of an IE of the
   criticality `reject` or `notify`, as an item is never `ignore`. A procedure
   that the specification does not have is `UnknownProcedure`, which a
-  receiver answers by the criticality of the PDU, and
-  `criticality_diagnostics` makes the Criticality Diagnostics of an answer
-  from the deviations, in one call.
+  receiver answers by the criticality of the PDU.
+  `criticality_diagnostics` makes the Criticality Diagnostics of an ERROR
+  INDICATION from the deviations, in one call, with the procedure code and
+  the triggering message, and `criticality_diagnostics_for_response` that of
+  a response of the procedure, without them (TS 38.413 clause 9.3.1.3, TS
+  36.413 clause 9.2.1.21): `Diagnostics::criticality_diagnostics` takes the
+  procedure code and the direction as an `Option`.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
 - The crate, oxirush-ngap and oxirush-s1ap are released in step: the two
-  re-export it with its value types, and a breaking release of the crate is
-  one of both. The README says what a program with two versions gets.
+  depend on one version of it exactly (`=0.1.0`), re-export it with its value
+  types, and build on its module `inspect`, which is hidden from the
+  documentation and changes with them, so that a release of the crate is one
+  of both. `json::Form`, `json::Characters`, `check::ProtocolCause` and
+  `check::Wrong` are `#[non_exhaustive]`, as `check::Deviation` and the
+  errors are: a later version may add to them.
 - In the repository and not in the crate: `generator/`, the library that
   writes the bindings of a protocol on this crate, with the type of ASN.1 of
   each binding as the first line of its documentation and none of the

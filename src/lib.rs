@@ -90,8 +90,9 @@ mod bits;
 pub mod check;
 mod error;
 mod faults;
-// The plumbing of the generated crates, which changes with them in any release: hidden
-// from the documentation, and no part of the API that a version number promises.
+// The plumbing of the generated crates, hidden from the documentation: it changes with
+// them, and oxirush-ngap and oxirush-s1ap depend on the one version of this crate that is
+// released with theirs (`=0.1.0`), so that no other version of it reaches their builds.
 #[cfg(feature = "inspect")]
 #[doc(hidden)]
 pub mod inspect;

@@ -95,7 +95,7 @@ that this revision of the crate is tested with, until it is published:
 oxirush-aper = { git = "https://github.com/linouxis9/oxirush-aper" }
 
 [patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "0617bcb831fec1e9a7a41f7c370a4f624868073e" }
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "c484a191f231520f3ba30b5887b5fda76d447f61" }
 ```
 
 In a clone of the repository, a cargo command takes it with `--config`, as CI
@@ -104,7 +104,7 @@ does:
 ```sh
 cargo test --all-features \
   --config 'patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"' \
-  --config 'patch.crates-io.oxirush-utils.rev="0617bcb831fec1e9a7a41f7c370a4f624868073e"'
+  --config 'patch.crates-io.oxirush-utils.rev="c484a191f231520f3ba30b5887b5fda76d447f61"'
 ```
 
 A program that uses [oxirush-ngap](https://github.com/linouxis9/oxirush-ngap)

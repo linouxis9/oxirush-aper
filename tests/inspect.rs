@@ -381,6 +381,37 @@ fn an_alternative_of_the_type_null_is_a_value() {
     assert_eq!(shown.unwrap()[0], tree!({"Cause": {"misc": null}}));
 }
 
+/// The review of the release candidate found the first finding of the review of the move
+/// still true of a procedure that the tables do not have: its message is read as a
+/// container of IEs, and its paths listed an alternative of the type NULL that a
+/// selection did not take. Its IEs have the shapes of their identifiers there too.
+#[test]
+fn an_alternative_of_the_type_null_is_a_value_in_a_procedure_that_the_tables_lack() {
+    let mut view = release();
+    view["procedure_code"] = tree!(254);
+    view["message"]["protocolIEs"][0]["value"] = tree!({"misc": null});
+    let paths = inspect::paths(&TEST, &view);
+    assert!(
+        paths.contains(&("/test/Cause/value/misc".to_string(), Value::Null)),
+        "{paths:?}"
+    );
+    for (path, value) in &paths {
+        assert_eq!(
+            inspect::select(&TEST, &view, path),
+            Ok(vec![value]),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        inspect::select(&TEST, &view, "/test/Cause/misc"),
+        Ok(vec![&Value::Null])
+    );
+    assert_eq!(
+        inspect::select(&TEST, &view, "/test/Holder/value/transfer/radioNetwork"),
+        Ok(vec![&tree!("user-inactivity")])
+    );
+}
+
 /// The fourth finding of the review of the move of the paths to oxirush-utils: `open` with
 /// `*` was refused at the first IE that had no member of the next name, where a selection
 /// takes those that have it.

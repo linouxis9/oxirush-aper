@@ -3,7 +3,9 @@
 //!
 //! A value has the form of the JSON Encoding Rules, ITU-T X.697 (02/2021), but for what
 //! follows, and but for the well-known types of 3GPP that have a readable [`Form`], as
-//! `"208-93"` for a PLMN identity, which their trees show and are read in as well.
+//! `"208-93"` for a PLMN identity, which their trees show and are read in as well. A
+//! string of decimal digits is never read as octets there: octets whose hexadecimal has
+//! no letter are written after `0x`.
 //!
 //! | ASN.1 | JSON |
 //! | --- | --- |
@@ -107,7 +109,10 @@ pub fn object_identifier(identifier: &ObjectIdentifier) -> Value {
 /// The readable form of the values of a well-known type, which its tree shows, and in
 /// which it is read as well as in the form of the JSON Encoding Rules: generated code
 /// writes its tree with [`readable`] and reads it with [`read_readable`].
+///
+/// More forms may come with a later version: a `match` leaves the others to `_`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Form {
     /// A PLMN identity as its MCC and MNC: `"208-93"`.
     Plmn,
@@ -171,11 +176,14 @@ impl Form {
 
     /// The value as its ASN.1 type has it, from its readable form. A value in another
     /// form is kept as it is: the form of the type is still taken, and the codec refuses
-    /// what is neither.
+    /// what is neither. A string of decimal digits is never read as octets: octets whose
+    /// hexadecimal has no letter are written after `0x`, as `"0x134001"`.
     ///
     /// # Errors
     ///
-    /// Why what is written in the readable form is no value of it.
+    /// Why what is written in the readable form is no value of it, and a string of
+    /// decimal digits that a PLMN identity or a number would read in two ways, which the
+    /// error names.
     pub fn write(self, shown: &Value) -> Result<Value, String> {
         let number = |bits: u32, number: u64| {
             if bits < 64 && number >> bits != 0 {
@@ -195,7 +203,16 @@ impl Form {
             };
         };
         let bcd = |digits: &str| digits.bytes().map(|digit| digit & 15).collect::<Vec<_>>();
-        let all_digits = |text: &str| text.bytes().all(|b| b.is_ascii_digit());
+        let all_digits = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+        // Octets in hexadecimal after `0x`, as they are written where digits would be read
+        // in another way.
+        let hexadecimal = |octets: &str| {
+            unhex(octets)
+                .map(|octets| Value::String(hex(&octets)))
+                .ok_or_else(|| {
+                    format!("{text}: octets in hexadecimal after 0x, two digits for each")
+                })
+        };
         match self {
             Self::Plmn if text.contains('-') => {
                 let (mcc, mnc) = text.split_once('-').unwrap_or_default();
@@ -206,6 +223,38 @@ impl Form {
                 let plmn =
                     plmn.ok_or_else(|| format!("{text}: a PLMN identity is MCC-MNC, as 208-93"))?;
                 Ok(Value::String(hex(&plmn.to_ap_octets())))
+            }
+            Self::Plmn | Self::Digits | Self::Number(_) if text.starts_with("0x") => match self {
+                Self::Number(bits) => {
+                    let value = u64::from_str_radix(&text[2..], 16).map_err(|error| {
+                        format!("{text} is not a number in hexadecimal: {error}")
+                    })?;
+                    number(bits, value)
+                }
+                Self::Plmn if text.len() != 8 => Err(format!(
+                    "{text}: the octets of a PLMN identity are three, six hexadecimal digits \
+                     after 0x"
+                )),
+                _ => hexadecimal(&text[2..]),
+            },
+            // Six digits are the digits of an MCC and an MNC of three, and three octets.
+            Self::Plmn if all_digits(text) && text.len() == 6 => {
+                let (mcc, mnc) = text.split_at(3);
+                let octets = unhex(text).and_then(|octets| <[u8; 3]>::try_from(octets).ok());
+                let other = octets.and_then(|octets| Plmn::from_ap_octets(octets).ok());
+                let other = other
+                    .map(|other| format!(", which are {other}"))
+                    .unwrap_or_default();
+                Err(format!(
+                    "{text} is read in two ways, as the PLMN identity {mcc}-{mnc} and as the \
+                     octets 0x{text}{other}: write \"{mcc}-{mnc}\" or \"0x{text}\""
+                ))
+            }
+            Self::Plmn if all_digits(text) && text.len() == 5 => {
+                let (mcc, mnc) = text.split_at(3);
+                Err(format!(
+                    "{text}: a PLMN identity is MCC-MNC: write \"{mcc}-{mnc}\""
+                ))
             }
             // Without a hyphen it is its three octets: what is neither says both forms,
             // where the codec would say that it is no octets.
@@ -221,10 +270,23 @@ impl Form {
                 let octets = pairs.map(|pair| pair.get(1).copied().unwrap_or(15) << 4 | pair[0]);
                 Ok(Value::String(hex(&octets.collect::<Vec<_>>())))
             }
-            Self::Number(bits) if text.starts_with("0x") => {
-                let value = u64::from_str_radix(&text[2..], 16)
-                    .map_err(|error| format!("{text} is not a number in hexadecimal: {error}"))?;
-                number(bits, value)
+            // A number in quotes, which the octets of its type in hexadecimal would be too.
+            Self::Number(bits) if all_digits(text) => {
+                let octets = bits.div_ceil(8);
+                let as_octets = (text.len() == octets as usize * 2)
+                    .then(|| u64::from_str_radix(text, 16).ok())
+                    .flatten()
+                    .map(|read| read >> (octets * 8 - bits));
+                Err(match as_octets {
+                    Some(other) => format!(
+                        "\"{text}\" is read in two ways, as the number {text} and as the octets \
+                         0x{text}, which are the number {other}: write the number without quotes, \
+                         {text} or {other}"
+                    ),
+                    None => {
+                        format!("\"{text}\" is a number in quotes: write {text} without quotes")
+                    }
+                })
             }
             Self::Address if text.contains(['.', ':']) => {
                 let mut octets = Vec::new();
@@ -270,19 +332,11 @@ pub fn read_readable(reading: &mut Reading, form: Form, value: &Value) -> Result
 
 // ── From JSON to a value ────────────────────────────────────────────────────
 
-/// The start of what is written, which says which value it is.
-fn written(value: &Value) -> String {
-    let text = value.to_string();
-    match text.char_indices().nth(40) {
-        Some((end, _)) => format!("{}…", &text[..end]),
-        None => text,
-    }
-}
-
 /// Refuse a value that is not written as its type is: `expected` says what is
-/// expected, where `found` is written.
+/// expected, where `found` is written, which the refusal shows the start of unless it is
+/// [secret](Reading::secret).
 fn mismatch(reading: &mut Reading, expected: &str, found: &Value) -> Refused {
-    let why = format!("{expected}, and {} is written", written(found));
+    let why = format!("{expected}, and {} is written", reading.shown(found));
     reading.refuse(Fault::Value, why)
 }
 
@@ -374,8 +428,12 @@ fn bit_octets(
         }
         (_, None) => return Err(mismatch(reading, WITH_LENGTH, value)),
     };
+    let shown = |reading: &Reading| reading.shown(&Value::String(digits.into()));
     let Some(octets) = unhex(digits) else {
-        let why = format!("{digits:?} is not hexadecimal, two digits for each octet");
+        let why = format!(
+            "{} is not hexadecimal, two digits for each octet",
+            shown(reading)
+        );
         return Err(reading.refuse(Fault::Value, why));
     };
     if octets.len() != length.div_ceil(8) {
@@ -392,8 +450,9 @@ fn bit_octets(
         .is_some_and(|last| last.trailing_zeros() < padding as u32)
     {
         let why = format!(
-            "the last {padding} bits of {digits:?} are after the {length} bits of the bit string, \
-             and are not zero"
+            "the last {padding} bits of {} are after the {length} bits of the bit string, and \
+             are not zero",
+            shown(reading)
         );
         return Err(reading.refuse(Fault::Value, why));
     }
@@ -401,7 +460,10 @@ fn bit_octets(
 }
 
 /// The character strings, by the characters that each has.
+///
+/// More strings may come with a later version: a `match` leaves the others to `_`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Characters {
     /// A UTF8String: every character.
     Utf8,

@@ -42,6 +42,9 @@ const RESERVED: usize = 4096;
 #[derive(Clone, Debug)]
 pub struct Reader<'a> {
     octets: &'a [u8],
+    /// How many octets follow those that the reader takes, as a count of bits holds no
+    /// more than `usize::MAX / 8` of them: what [`finish`](Self::finish) refuses too.
+    beyond: usize,
     /// How many bits are read.
     at: usize,
     /// What was read in another form than the one of its clause, when the reader
@@ -54,11 +57,18 @@ impl<'a> Reader<'a> {
     /// A reader at the first bit of `octets`.
     #[inline]
     pub fn new(octets: &'a [u8]) -> Self {
-        // The position is a count of bits.
-        let most = usize::MAX / 8;
-        let octets = octets.get(..most).unwrap_or(octets);
+        // The position is a count of bits: 512 MiB of octets at most on 32 bits.
+        Self::taking(octets, usize::MAX / 8)
+    }
+
+    /// A reader of the first `most` of `octets`, and of none of those that follow,
+    /// which only [`finish`](Self::finish) counts.
+    #[inline]
+    fn taking(octets: &'a [u8], most: usize) -> Self {
+        let beyond = octets.len().saturating_sub(most);
         Self {
-            octets,
+            octets: &octets[..octets.len() - beyond],
+            beyond,
             at: 0,
             faults: Faults::new(),
             noting: false,
@@ -138,13 +148,15 @@ impl<'a> Reader<'a> {
 
     /// The end of a complete encoding (X.691 §11.1.4): no octet follows the value,
     /// whose last octet may have padding bits. An encoding of no bit is one zero octet.
+    /// The octets that follow the most that a reader takes, `usize::MAX / 8` of them,
+    /// follow the value too.
     #[inline]
     pub fn finish(&self) -> Result<(), Error> {
         let rest = self.rest();
-        if rest.is_empty() || (self.at == 0 && self.octets == [0]) {
+        if self.beyond == 0 && (rest.is_empty() || (self.at == 0 && self.octets == [0])) {
             return Ok(());
         }
-        Err(followed(rest.len()))
+        Err(followed(rest.len() + self.beyond))
     }
 
     // ── Bits and octets ─────────────────────────────────────────────────────
@@ -1100,4 +1112,26 @@ fn followed(octets: usize) -> Error {
         1 => String::from("the value is followed by 1 octet"),
         octets => alloc::format!("the value is followed by {octets} octets"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Reader;
+    use alloc::string::ToString;
+
+    /// The review of the release candidate found that the octets after the most that a
+    /// reader takes, 512 MiB of them on 32 bits, were never refused: they follow the
+    /// value, as any other octets after it do.
+    #[test]
+    fn the_octets_after_those_that_a_reader_takes_follow_the_value() {
+        let octets = [0x05, 0x00, 0x00];
+        let mut reader = Reader::taking(&octets, 1);
+        assert_eq!(reader.unsigned(0, 255).unwrap(), 5);
+        assert!(reader.unsigned(0, 255).is_err());
+        let error = reader.finish().unwrap_err().to_string();
+        assert!(error.contains("followed by 2 octets"), "{error}");
+        let mut reader = Reader::taking(&octets[..1], 1);
+        assert_eq!(reader.unsigned(0, 255).unwrap(), 5);
+        assert!(reader.finish().is_ok());
+    }
 }

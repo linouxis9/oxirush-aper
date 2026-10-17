@@ -1355,11 +1355,15 @@ impl Bindings {
                     }
                     None => {
                         writeln!(out, "fn to_tree(&self) -> Value {{ {jer} }}")?;
+                        // A refusal of a key shows nothing of what is written.
+                        let read = match self.key_types.contains(name) {
+                            true => format!("reading.secret(|reading| {})", self.read_json(kind)),
+                            false => self.read_json(kind),
+                        };
                         writeln!(
                             out,
                             "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, \
-                             Refused> {{ Ok(Self({}?)) }}",
-                            self.read_json(kind)
+                             Refused> {{ Ok(Self({read}?)) }}"
                         )?;
                     }
                 }

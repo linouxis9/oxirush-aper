@@ -650,3 +650,85 @@ fn the_other_values_are_refused_as_what_they_are_not() {
         "{why}"
     );
 }
+
+/// A string of decimal digits of a PLMN identity or of a number is never read as octets:
+/// the review of the release candidate found `"310410"` read as the octets 31 04 10, the
+/// PLMN identity 134-001, and a TAC `"123456"` as 1193046. Such a string is refused with
+/// its two readings, and octets whose hexadecimal has no letter are written after `0x`.
+#[test]
+fn a_string_of_digits_is_never_read_as_octets() {
+    use json::Form;
+    let write = |form: Form, value: Value| form.write(&value);
+    // A PLMN identity: MCC-MNC, or its octets
+    assert_eq!(write(Form::Plmn, tree!("310-410")), Ok(tree!("134001")));
+    assert_eq!(write(Form::Plmn, tree!("0x134001")), Ok(tree!("134001")));
+    // Octets that are no digits alone are kept as they are, for the codec
+    assert_eq!(write(Form::Plmn, tree!("02F839")), Ok(tree!("02F839")));
+    assert_eq!(
+        write(Form::Plmn, tree!("310410")),
+        Err(
+            "310410 is read in two ways, as the PLMN identity 310-410 and as the octets \
+             0x310410, which are 134-001: write \"310-410\" or \"0x310410\""
+                .to_string()
+        )
+    );
+    for digits in ["001001", "208093", "134001"] {
+        let error = write(Form::Plmn, tree!(digits)).unwrap_err();
+        assert!(error.contains(&format!("0x{digits}")), "{error}");
+    }
+    assert_eq!(
+        write(Form::Plmn, tree!("20893")),
+        Err("20893: a PLMN identity is MCC-MNC: write \"208-93\"".to_string())
+    );
+    assert!(write(Form::Plmn, tree!("0x1340")).is_err());
+    // A number: a JSON number, or in hexadecimal after 0x, or the octets of its type
+    assert_eq!(write(Form::Number(24), tree!(123456)), Ok(tree!("01e240")));
+    assert_eq!(
+        write(Form::Number(24), tree!("0x01e240")),
+        Ok(tree!("01e240"))
+    );
+    assert_eq!(
+        write(Form::Number(24), tree!("00000a")),
+        Ok(tree!("00000a"))
+    );
+    assert_eq!(
+        write(Form::Number(24), tree!("123456")),
+        Err(
+            "\"123456\" is read in two ways, as the number 123456 and as the octets 0x123456, \
+             which are the number 1193046: write the number without quotes, 123456 or 1193046"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        write(Form::Number(36), tree!("0000000010")),
+        Err(
+            "\"0000000010\" is read in two ways, as the number 0000000010 and as the octets \
+             0x0000000010, which are the number 1: write the number without quotes, 0000000010 \
+             or 1"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        write(Form::Number(24), tree!("1")),
+        Err("\"1\" is a number in quotes: write 1 without quotes".to_string())
+    );
+    // The digits of an IMSI are digits, and their octets are written after 0x
+    assert_eq!(
+        write(Form::Digits, tree!("208930000000001")),
+        Ok(tree!("02980300000000f1"))
+    );
+    assert_eq!(
+        write(Form::Digits, tree!("0x02980300000000F1")),
+        Ok(tree!("02980300000000f1"))
+    );
+    // What the crate writes is read back
+    for (form, jer) in [
+        (Form::Plmn, tree!("134001")),
+        (Form::Plmn, tree!("02f839")),
+        (Form::Number(24), tree!("000102")),
+        (Form::Digits, tree!("02980300000000f1")),
+    ] {
+        let shown = json::readable(form, jer.clone());
+        assert_eq!(form.write(&shown), Ok(jer), "{shown}");
+    }
+}

@@ -593,6 +593,15 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
             "{other:?} is no member of a tree: {FORM}"
         )));
     }
+    // A member is read however its name is written, and is written once.
+    for known in MEMBERS {
+        let mut spellings = written.keys().filter(|key| same_name(known, key));
+        if let (Some(first), Some(second)) = (spellings.next(), spellings.next()) {
+            return Err(Error::form(format!(
+                "the member {known:?} of a tree is written twice, as {first:?} and as {second:?}"
+            )));
+        }
+    }
     let member = |name: &str| {
         let mut members = written.iter();
         members
@@ -605,7 +614,11 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
             let mut messages = protocol.messages.iter();
             let message = messages.find(|(_, _, known, ..)| same_name(known, name));
             let (direction, code, name, ..) = message.ok_or_else(|| {
-                Error::unknown_message(format!("{name:?} is not a message of {}", protocol.name))
+                let nearest = protocol.nearest_message(name);
+                Error::unknown_message(format!(
+                    "{name:?} is not a message of {}{nearest}",
+                    protocol.name
+                ))
             })?;
             if member("procedure_code").or(member("direction")).is_some() {
                 return Err(Error::form(format!(
