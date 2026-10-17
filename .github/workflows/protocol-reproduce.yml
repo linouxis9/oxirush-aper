@@ -66,9 +66,11 @@ jobs:
             crate/build
       - name: The ASN.1 modules, out of the archive of 3GPP
         run: |
-          curl -sS --fail -A "Mozilla/5.0" -o "$RUNNER_TEMP/specification.zip" \
+          # extract_asn1.py reads the number of the specification in the name of its archive
+          archive="$RUNNER_TEMP/$(basename "${{ inputs.archive }}")"
+          curl -sS --fail -A "Mozilla/5.0" -o "$archive" \
             "https://www.3gpp.org/ftp/Specs/archive/${{ inputs.archive }}"
-          python3 ../oxirush-aper/protocols/build/extract_asn1.py "$RUNNER_TEMP/specification.zip"
+          python3 ../oxirush-aper/protocols/build/extract_asn1.py "$archive"
       - name: The bindings, which the generator writes as they are committed
         run: |
           CARGO="$(command -v cargo)" cargo run --locked --manifest-path build/Cargo.toml
