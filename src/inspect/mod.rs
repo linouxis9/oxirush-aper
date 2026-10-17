@@ -27,27 +27,40 @@
 //! `@id=N`, a segment that names no member of an IE is taken in its value and one that
 //! names no member of a transfer in its decoded value, and the name of an IE stays on
 //! the entry that it is.
+//!
+//! It is the plumbing of the generated crates, which takes their tables as they are
+//! written today: hidden from the documentation, and no part of the API that a version
+//! number of this crate promises. A program calls the functions of oxirush-ngap and of
+//! oxirush-s1ap, which are.
 
 mod paths;
 mod views;
 
 use alloc::vec::Vec;
-use serde_json::Value;
+use oxirush_utils::tree::Value;
 
 use crate::Error;
 
+pub use crate::json::Form;
 pub use paths::{
     EDITED, Members, check_path, enumerated_at, extended, insert, listed_ies, member_shape,
     named_ies, of_a_transfer, open, paths, remove, select, set, written_ie,
 };
-pub use views::{Form, Parts, of_the_pdu, tree, tree_parts, view, view_parts};
+pub use views::{Parts, of_the_pdu, tree, tree_parts, view, view_parts};
+
+/// What a type of a protocol makes of octets: the JSON form of their value, and whether
+/// that value encodes back to them. It does not when they hold what a later version of
+/// the type adds, which the value has no place for, or are in another form than the
+/// canonical one.
+pub type Decoded = (Value, bool);
 
 /// The functions of a type of a protocol: the JSON form of the value that octets are,
 /// and the octets of the value that a JSON form writes.
 #[derive(Clone, Copy)]
 pub struct Typed {
-    /// The JSON form of the value of the type that the octets are.
-    pub decode: fn(&[u8]) -> Result<Value, Error>,
+    /// The JSON form of the value of the type that the octets are, and whether that
+    /// value encodes back to them.
+    pub decode: fn(&[u8]) -> Result<Decoded, Error>,
     /// The octets of the value of the type that the JSON form writes.
     pub encode: fn(&Value) -> Result<Vec<u8>, Error>,
 }
@@ -119,12 +132,9 @@ pub struct Protocol {
     /// The functions of the type that the octets of an IE contain, for an IE whose type
     /// is `OCTET STRING (CONTAINING ...)`.
     pub ie_contents: fn(u16) -> Option<Typed>,
-    /// How a view shows the value of an IE, by its identifier, where it is shown in a
-    /// readable form.
-    pub ie_form: fn(u16) -> Option<Form>,
-    /// How a view shows the value of a member, by its name, where it is shown in a
-    /// readable form.
-    pub member_form: fn(&str) -> Option<Form>,
+    /// The readable form of each well-known type, by the name that the bindings give it,
+    /// which its tree shows: what the JSON Encoding Rules write otherwise.
+    pub type_form: fn(&str) -> Option<Form>,
     /// The members that hold a transfer: octets that contain a value of a type.
     pub transfer_fields: &'static [&'static str],
     /// The functions of the type that a transfer of a member contains; an error for a
@@ -153,6 +163,10 @@ pub enum Shape {
     Message(Sent),
     /// A value without members.
     Plain,
+    /// The one value of the type NULL, which a CHOICE has as an alternative: `null`,
+    /// which is a value at a place of this shape, where it is the absence of a value
+    /// elsewhere.
+    Null,
     /// A bit string whose size varies: its `value` and its `length`, unless the view
     /// shows it as it is usually written.
     Bits,

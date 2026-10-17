@@ -2,10 +2,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Result, anyhow, bail, ensure};
 use regex::Regex;
 
-use crate::registry::{Ie, Registry, alone, canonical};
+use crate::registry::{Registry, alone, canonical};
 
 fn items<'a>(input: &'a [syn::Item], prefix: &str, output: &mut Vec<(String, &'a syn::Item)>) {
     for item in input {
@@ -143,38 +143,18 @@ fn bits(name: &str, wrapped: &Wrapped) -> Option<u32> {
     }
 }
 
-/// The well-known type that a member of type `ty` holds, alone or in a list: its ASN.1
-/// name and its form.
-fn readable(ty: &syn::Type, wrapped: &Wrapped, depth: u8) -> Option<(String, String)> {
-    let (name, arguments) = named(ty)?;
-    if matches!(name.as_str(), "Option" | "Box" | "Vec" | "SequenceOf") {
-        let inner = arguments.iter().find_map(|argument| match argument {
-            syn::GenericArgument::Type(inner) => Some(inner),
-            _ => None,
-        });
-        return readable(inner?, wrapped, depth + 1);
-    }
-    let (asn, inner) = wrapped.get(&name)?;
-    for (form, types) in READABLE {
-        if types.iter().any(|known| canonical(known) == canonical(asn)) {
-            let form = match *form {
-                "Number" => format!("Form::Number({})", bits(&name, wrapped)?),
-                form => format!("Form::{form}"),
-            };
-            return Some((asn.clone(), form));
-        }
-    }
-    // A type that only wraps another, or a list.
-    if depth < 8 {
-        readable(inner, wrapped, depth + 1)
-    } else {
-        None
-    }
+/// The readable form of the values of a type that ASN.1 names `asn`, when it is one of
+/// the well-known types: `Plmn`, `Digits`, `Address` or `Number`.
+pub(crate) fn well_known(asn: &str) -> Option<&'static str> {
+    let mut readable = READABLE.iter();
+    let known =
+        readable.find(|(_, types)| types.iter().any(|known| canonical(known) == canonical(asn)));
+    known.map(|(form, _)| *form)
 }
 
-/// The members and the IEs of the well-known types, by type, and the names of the
-/// ENUMERATED values.
-fn generate_readable(generated: &str, ies: &BTreeMap<u16, Ie>, out: &mut String) -> Result<()> {
+/// The readable form of each well-known type, by the name that the bindings give it,
+/// and the names of the values of each ENUMERATED.
+fn generate_readable(generated: &str, out: &mut String) -> Result<()> {
     use syn::ext::IdentExt;
     let syntax = syn::parse_file(generated)?;
     let mut declarations = Vec::new();
@@ -190,95 +170,46 @@ fn generate_readable(generated: &str, ies: &BTreeMap<u16, Ie>, out: &mut String)
             wrapped.insert(item.ident.to_string(), (asn, &fields.unnamed[0].ty));
         }
     }
-    // The forms of the members of each name, with the type that has each. A name that
-    // some type gives a member of another kind has several, and so has no form.
-    let mut members: BTreeMap<String, BTreeMap<Option<String>, String>> = BTreeMap::new();
     // The names of the values of each ENUMERATED, in the order of its definition.
     let mut enumerations: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (_, item) in &declarations {
-        let mut member = |attributes: &[syn::Attribute], ident: &syn::Ident, ty| -> Result<()> {
-            let name = rasn(attributes)?.0;
-            let name = name.unwrap_or_else(|| ident.unraw().to_string());
-            let (asn, form) = readable(ty, &wrapped, 0).unzip();
-            let forms = members.entry(name).or_default();
-            forms.insert(form, asn.unwrap_or_default());
-            Ok(())
-        };
-        match item {
-            syn::Item::Struct(item) => {
-                for field in &item.fields {
-                    if let Some(ident) = &field.ident {
-                        member(&field.attrs, ident, &field.ty)?;
-                    }
-                }
-            }
-            syn::Item::Enum(item) if rasn(&item.attrs)?.1 => {
-                for value in &item.variants {
-                    let name = rasn(&value.attrs)?.0;
-                    let name = name.unwrap_or_else(|| value.ident.unraw().to_string());
-                    enumerations
-                        .entry(item.ident.to_string())
-                        .or_default()
-                        .push(name);
-                }
-            }
-            syn::Item::Enum(item) => {
-                for alternative in &item.variants {
-                    if let Some(field) = alternative.fields.iter().next() {
-                        member(&alternative.attrs, &alternative.ident, &field.ty)?;
-                    }
-                }
-            }
-            _ => unreachable!(),
-        }
-    }
-    // One list for each well-known type: what selects it in a `match`, and its form.
-    type Lists = BTreeMap<String, (Vec<String>, String)>;
-    let mut by_member = Lists::new();
-    for (name, forms) in &members {
-        match (forms.len(), forms.first_key_value()) {
-            (1, Some((Some(form), asn))) => {
-                let list = by_member.entry(asn.clone()).or_default();
-                list.0.push(format!("{name:?}"));
-                list.1.clone_from(form);
-            }
-            _ if forms.keys().any(Option::is_some) => {
-                eprintln!("warning: the members named {name} have several types: not readable");
-            }
-            _ => {}
-        }
-    }
-    let mut by_ie = Lists::new();
-    for (id, ie) in ies {
-        if let Some(ty) = alone(&ie.types)
-            && let Some((asn, form)) = readable(&syn::parse_str(&ty)?, &wrapped, 0)
+        if let syn::Item::Enum(item) = item
+            && rasn(&item.attrs)?.1
         {
-            let list = by_ie.entry(asn).or_default();
-            list.0.push(id.to_string());
-            list.1 = form;
+            for value in &item.variants {
+                let name = rasn(&value.attrs)?.0;
+                let name = name.unwrap_or_else(|| value.ident.unraw().to_string());
+                enumerations
+                    .entry(item.ident.to_string())
+                    .or_default()
+                    .push(name);
+            }
         }
     }
-    for (function, selector, lists) in [
-        ("member_form", "name: &str", &by_member),
-        ("ie_form", "id: u16", &by_ie),
-    ] {
-        let selected = selector.split(':').next().expect("a name");
-        if lists.is_empty() {
-            let unused = selector.replace(selected, "_");
-            writeln!(
-                out,
-                "pub(crate) fn {function}({unused}) -> Option<Form> {{ None }}"
-            )?;
-            continue;
-        }
-        writeln!(
+    // One line for each well-known type, in the order of the names of the types.
+    let mut forms = Vec::new();
+    for (name, (asn, _)) in &wrapped {
+        let form = match well_known(asn) {
+            Some("Number") => match bits(name, &wrapped) {
+                Some(bits) => format!("Form::Number({bits})"),
+                None => bail!("{asn}: a number of a size that the type does not give"),
+            },
+            Some(form) => format!("Form::{form}"),
+            None => continue,
+        };
+        forms.push(format!("// {asn}\n{name:?} => {form},"));
+    }
+    match forms.is_empty() {
+        true => writeln!(
             out,
-            "pub(crate) fn {function}({selector}) -> Option<Form> {{ Some(match {selected} {{"
-        )?;
-        for (asn, (selectors, form)) in lists {
-            writeln!(out, "// {asn}\n{} => {form},", selectors.join(" | "))?;
-        }
-        writeln!(out, "_ => return None, }}) }}")?;
+            "pub(crate) fn type_form(_: &str) -> Option<Form> {{ None }}"
+        )?,
+        false => writeln!(
+            out,
+            "pub(crate) fn type_form(name: &str) -> Option<Form> {{ Some(match name {{\n{}\n_ \
+             => return None, }}) }}",
+            forms.join("\n")
+        )?,
     }
     writeln!(
         out,
@@ -303,11 +234,17 @@ const CONTAINERS: &[(&str, &str)] = &[
 ];
 
 /// How the list of the types writes a value of type `ty`, and whether a member of that
-/// type may be absent: `_` for a value without members, `bits` for a bit string whose
-/// size varies, the name of a SEQUENCE, of a CHOICE, of an ENUMERATED or of a type that
-/// is a list, a list in brackets and a container by its kind.
+/// type may be absent: `_` for a value without members, `null` for the one value of the
+/// type NULL, `bits` for a bit string whose size varies, the name of a SEQUENCE, of a
+/// CHOICE, of an ENUMERATED or of a type that is a list, a list in brackets and a
+/// container by its kind.
 fn shape(ty: &syn::Type, declared: &BTreeMap<String, &syn::Item>, depth: u8) -> (String, bool) {
     let plain = || ("_".to_string(), false);
+    if let syn::Type::Tuple(tuple) = ty
+        && tuple.elems.is_empty()
+    {
+        return ("null".to_string(), false);
+    }
     let Some((name, arguments)) = named(ty).filter(|_| depth < 16) else {
         return plain();
     };
@@ -325,6 +262,15 @@ fn shape(ty: &syn::Type, declared: &BTreeMap<String, &syn::Item>, depth: u8) -> 
             (format!("[{}]", shape(inner, declared, depth + 1).0), false)
         }
         ("BitString" | "SizedBitString", ..) => ("bits".to_string(), false),
+        // A well-known type has its name, which gives its readable form.
+        (_, _, Some(syn::Item::Struct(item)))
+            if rasn(&item.attrs)
+                .ok()
+                .and_then(|(asn, _)| well_known(&asn.unwrap_or_else(|| name.clone())))
+                .is_some() =>
+        {
+            (name.clone(), false)
+        }
         // A type that only wraps another is what it wraps, when that has no members.
         (_, _, Some(syn::Item::Struct(item))) => match &item.fields {
             syn::Fields::Named(_) => (name.clone(), false),
@@ -493,7 +439,7 @@ pub fn generate(
         writeln!(out, "    {id} {name:?} {ty};")?;
     }
     writeln!(out, "}}")?;
-    generate_readable(generated, &registry.ies, &mut out)?;
+    generate_readable(generated, &mut out)?;
     generate_types(generated, &transfers, &mut out)?;
     Ok(out)
 }

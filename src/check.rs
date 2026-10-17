@@ -39,6 +39,8 @@ pub trait Diagnostics {
     type Cause;
     /// The item of the Criticality Diagnostics that tells of an IE.
     type Item;
+    /// The Criticality Diagnostics IE of the protocol.
+    type CriticalityDiagnostics;
 
     /// The name that ASN.1 gives the IE of an identifier, after `id-`.
     fn name(id: u16) -> Option<&'static str>;
@@ -57,6 +59,15 @@ pub trait Diagnostics {
         id: u16,
         type_of_error: Self::TypeOfError,
     ) -> Self::Item;
+
+    /// The Criticality Diagnostics of a message of a procedure code, of a direction and
+    /// of a criticality, with `items` for its IEs, or none.
+    fn criticality_diagnostics(
+        procedure_code: u8,
+        direction: &str,
+        criticality: Self::Criticality,
+        items: Option<Vec<Self::Item>>,
+    ) -> Self::CriticalityDiagnostics;
 }
 
 /// The protocol causes that a receiver answers a message with for its deviations: those
@@ -212,6 +223,19 @@ pub enum Deviation<P: Diagnostics> {
         /// message.
         bit: usize,
     },
+    /// A procedure that this version of the specification does not have in the
+    /// direction of the PDU, as one that a later version adds: the receiver does not
+    /// comprehend its procedure code, and acts on the criticality of the PDU (clause
+    /// 10.3.4.1 of TS 38.413 and of TS 36.413). Its message is not compared with any
+    /// object set.
+    UnknownProcedure {
+        /// The procedure code.
+        procedure_code: u8,
+        /// `InitiatingMessage`, `SuccessfulOutcome` or `UnsuccessfulOutcome`.
+        direction: &'static str,
+        /// The criticality of the PDU.
+        criticality: P::Criticality,
+    },
 }
 
 impl<P: Diagnostics> Deviation<P> {
@@ -238,7 +262,10 @@ impl<P: Diagnostics> Deviation<P> {
             | Self::UndecodableIe {
                 id, criticality, ..
             } => Some((*id, *criticality)),
-            Self::RepeatedIe { .. } | Self::OutOfOrder { .. } | Self::NotCanonical { .. } => None,
+            Self::RepeatedIe { .. }
+            | Self::OutOfOrder { .. }
+            | Self::NotCanonical { .. }
+            | Self::UnknownProcedure { .. } => None,
         }
     }
 
@@ -284,11 +311,16 @@ impl<P: Diagnostics> Deviation<P> {
     ///   version of its type, by the criticality that it has, and for an IE that is
     ///   missing, by the criticality that the object set assigns it;
     /// - `abstract_syntax_error_falsely_constructed_message` for an IE that is there
-    ///   twice or in a wrong order.
+    ///   twice or in a wrong order;
+    /// - `abstract_syntax_error_reject` and `abstract_syntax_error_ignore_and_notify`
+    ///   for a procedure that the receiver does not comprehend, by the criticality of
+    ///   the PDU: it rejects the procedure, or ignores it and notifies the sender, with
+    ///   the Error Indication procedure (clause 10.3.4.1).
     ///
     /// `None` where the receiver goes on: for an IE of the criticality `ignore` that
-    /// it does not comprehend or that is missing, for a criticality that is not the
-    /// assigned one, and for an encoding that is not the canonical one.
+    /// it does not comprehend or that is missing, for a procedure of that criticality,
+    /// which it ignores, for a criticality that is not the assigned one, and for an
+    /// encoding that is not the canonical one.
     pub fn cause(&self) -> Option<P::Cause> {
         let by_criticality = |criticality: &P::Criticality| match (*criticality).into() {
             Criticality::Reject => Some(ProtocolCause::AbstractSyntaxErrorReject),
@@ -299,7 +331,8 @@ impl<P: Diagnostics> Deviation<P> {
             Self::UndecodableIe { .. } => Some(ProtocolCause::TransferSyntaxError),
             Self::UnexpectedIe { criticality, .. }
             | Self::MissingIe { criticality, .. }
-            | Self::OutsideRoot { criticality, .. } => by_criticality(criticality),
+            | Self::OutsideRoot { criticality, .. }
+            | Self::UnknownProcedure { criticality, .. } => by_criticality(criticality),
             Self::RepeatedIe { .. } | Self::OutOfOrder { .. } => {
                 Some(ProtocolCause::AbstractSyntaxErrorFalselyConstructedMessage)
             }
@@ -436,8 +469,41 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
                 formatter,
                 "the message is not written as its sender is to write it: at bit {bit}, {fault}"
             ),
+            Self::UnknownProcedure {
+                procedure_code,
+                direction,
+                criticality,
+            } => write!(
+                formatter,
+                "the {direction} of procedure {procedure_code} is no message of the \
+                 specification, and the criticality of the PDU is {criticality:?}"
+            ),
         }
     }
+}
+
+/// The Criticality Diagnostics IE with which a receiver answers a message of a
+/// procedure code, of a direction and of a criticality, for `deviations`: the procedure
+/// code, the triggering message and the procedure criticality, which clause 10.3.4.1
+/// has for a procedure that the receiver does not comprehend, and the item of each
+/// deviation that has one ([`Deviation::diagnostics_item`]), which clauses 10.3.4.2 and
+/// 10.3.5 have for an IE, 256 of them at most (`maxnoofErrors`). No list where no
+/// deviation has an item.
+pub fn criticality_diagnostics<P: Diagnostics>(
+    procedure_code: u8,
+    direction: &str,
+    criticality: P::Criticality,
+    deviations: &[Deviation<P>],
+) -> P::CriticalityDiagnostics {
+    /// How many items the IE has at most: `maxnoofErrors` of both specifications.
+    const MOST: usize = 256;
+    let items: Vec<P::Item> = deviations
+        .iter()
+        .filter_map(Deviation::diagnostics_item)
+        .take(MOST)
+        .collect();
+    let items = (!items.is_empty()).then_some(items);
+    P::criticality_diagnostics(procedure_code, direction, criticality, items)
 }
 
 /// What is wrong with the value of an IE, against the type that the bindings give it.

@@ -22,10 +22,8 @@
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use oxirush_utils::identity::Plmn;
-use serde_json::{Map, Value, json};
+use oxirush_utils::tree::{Map, Value};
 
 use super::paths::{EDITED, extended, member_shape, of_a_transfer, written_ie};
 use super::{Protocol, Shape, Typed, same_name};
@@ -34,6 +32,11 @@ use crate::json::{self, hex};
 
 /// How deep in a view an IE or a transfer is still decoded.
 const NESTING: usize = 64;
+/// The member of a view that marks an IE, a transfer or a message whose typed value
+/// encodes to other octets than those received: what a later version of its type adds,
+/// which the value has no place for, or another form than the canonical one. A tree has
+/// its octets in the place of its value.
+pub(crate) const LOSSY: &str = "_lossy";
 
 /// The octets that `value` writes in hexadecimal.
 fn unhex(value: &Value) -> Result<Vec<u8>, Error> {
@@ -47,172 +50,21 @@ fn unhex(value: &Value) -> Result<Vec<u8>, Error> {
     })
 }
 
-/// How a view and a tree show the values of a well-known type, and take them back.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Form {
-    /// A PLMN identity as its MCC and MNC: `"208-93"`.
-    Plmn,
-    /// The digits of an identity in TBCD, as an IMSI has them.
-    Digits,
-    /// An identifier or a counter of this many bits, as a number.
-    Number(u32),
-    /// A transport layer address: an IPv4 address, an IPv6 address, or both with a comma.
-    Address,
-}
-
-impl Form {
-    /// The readable form of a value as its ASN.1 type has it; `None` when it has none.
-    fn read(self, jer: &Value) -> Option<Value> {
-        // The decimal digits that these half octets are; none when one of them is no digit.
-        let digits = |digits: &[u8]| {
-            let text = digits
-                .iter()
-                .map(|digit| char::from_digit((*digit).into(), 10));
-            text.collect::<Option<String>>()
-        };
-        match self {
-            Self::Plmn => {
-                // Octets that are no PLMN identity stay octets.
-                let octets = <[u8; 3]>::try_from(unhex(jer).ok()?).ok()?;
-                let plmn = Plmn::from_ap_octets(octets).ok()?;
-                Some(json!(format!("{}-{}", plmn.mcc(), plmn.mnc())))
-            }
-            Self::Digits => {
-                let octets = unhex(jer).ok()?;
-                let nibbles: Vec<u8> = octets.iter().flat_map(|o| [o & 15, o >> 4]).collect();
-                // A filler takes the place of a last digit that is not there.
-                let nibbles = nibbles.strip_suffix(&[15]).unwrap_or(&nibbles);
-                digits(nibbles).map(Value::from)
-            }
-            Self::Number(bits) => {
-                let (text, octets) = (jer.as_str()?, bits.div_ceil(8));
-                let number = u64::from_str_radix(text, 16).ok()?;
-                (text.len() as u32 == octets * 2).then(|| json!(number >> (octets * 8 - bits)))
-            }
-            Self::Address => {
-                let octets = unhex(jer.get("value")?).ok()?;
-                let v4 = |octets: &[u8]| Some(Ipv4Addr::from(<[u8; 4]>::try_from(octets).ok()?));
-                let v6 = |octets: &[u8]| Some(Ipv6Addr::from(<[u8; 16]>::try_from(octets).ok()?));
-                Some(json!(match (jer.get("length")?.as_u64()?, octets.len()) {
-                    (32, 4) => v4(&octets)?.to_string(),
-                    (128, 16) => v6(&octets)?.to_string(),
-                    (160, 20) => format!("{},{}", v4(&octets[..4])?, v6(&octets[4..])?),
-                    _ => return None,
-                }))
-            }
-        }
-    }
-
-    /// The value as its ASN.1 type has it, from its readable form. A value in another
-    /// form is kept as it is: the form of the type is still taken, and the codec refuses
-    /// what is neither.
-    fn write(self, shown: &Value) -> Result<Value, Error> {
-        let number = |bits: u32, number: u64| {
-            if bits < 64 && number >> bits != 0 {
-                return Err(Error::value(format!(
-                    "{number} does not fit in {bits} bits"
-                )));
-            }
-            let octets = bits.div_ceil(8);
-            let width = octets as usize * 2;
-            Ok(json!(format!("{:0width$x}", number << (octets * 8 - bits))))
-        };
-        let Some(text) = shown.as_str() else {
-            return match (self, shown.as_u64()) {
-                (Self::Number(bits), Some(value)) => number(bits, value),
-                _ => Ok(shown.clone()),
-            };
-        };
-        let bcd = |digits: &str| digits.bytes().map(|digit| digit & 15).collect::<Vec<_>>();
-        let all_digits = |text: &str| text.bytes().all(|b| b.is_ascii_digit());
-        match self {
-            Self::Plmn if text.contains('-') => {
-                let (mcc, mnc) = text.split_once('-').unwrap_or_default();
-                // The three digits of an MCC, and the two or three of an MNC.
-                let plmn = (all_digits(mcc) && all_digits(mnc))
-                    .then(|| Plmn::new(mcc, mnc).ok())
-                    .flatten();
-                let plmn = plmn.ok_or_else(|| {
-                    Error::value(format!("{text}: a PLMN identity is MCC-MNC, as 208-93"))
-                })?;
-                Ok(Value::String(hex(&plmn.to_ap_octets())))
-            }
-            // Without a hyphen it is its three octets: what is neither says both forms,
-            // where the codec would say that it is no octets.
-            Self::Plmn if text.len() != 6 || !text.bytes().all(|b| b.is_ascii_hexdigit()) => {
-                Err(Error::value(format!(
-                    "{text}: a PLMN identity is MCC-MNC, as 208-93, or its three octets in \
-                     hexadecimal"
-                )))
-            }
-            Self::Digits if all_digits(text) => {
-                let pairs = bcd(text);
-                let pairs = pairs.chunks(2);
-                let octets = pairs.map(|pair| pair.get(1).copied().unwrap_or(15) << 4 | pair[0]);
-                Ok(Value::String(hex(&octets.collect::<Vec<_>>())))
-            }
-            Self::Number(bits) if text.starts_with("0x") => {
-                let value = u64::from_str_radix(&text[2..], 16).map_err(|error| {
-                    Error::value(format!("{text} is not a number in hexadecimal: {error}"))
-                })?;
-                number(bits, value)
-            }
-            Self::Address if text.contains(['.', ':']) => {
-                let mut octets = Vec::new();
-                for part in text.split(',') {
-                    match (octets.len(), part.trim().parse()) {
-                        (0, Ok(IpAddr::V4(address))) => octets.extend(address.octets()),
-                        (0 | 4, Ok(IpAddr::V6(address))) => octets.extend(address.octets()),
-                        _ => {
-                            return Err(Error::value(format!(
-                                "{text}: a transport layer address is an IPv4 address, an IPv6 \
-                                 address, or the two with a comma"
-                            )));
-                        }
-                    }
-                }
-                Ok(json!({"value": hex(&octets), "length": octets.len() * 8}))
-            }
-            _ => Ok(shown.clone()),
-        }
-    }
-}
-
-/// Show `value`, or each value of a list, in the readable form that it has: only a value
-/// that the form gives back as it was.
-fn show(form: Form, value: &mut Value) {
-    match value {
-        Value::Array(values) => values.iter_mut().for_each(|value| show(form, value)),
-        value => {
-            let shown = form.read(value);
-            if let Some(shown) =
-                shown.filter(|shown| form.write(shown).is_ok_and(|jer| jer == *value))
-            {
-                *value = shown;
-            }
-        }
-    }
-}
-
-/// `value`, or each value of a list, as its ASN.1 type has it again.
-fn unshow(form: Form, value: &mut Value) -> Result<(), Error> {
-    match value {
-        Value::Array(values) => values.iter_mut().try_for_each(|value| unshow(form, value)),
-        value => {
-            *value = form.write(value)?;
-            Ok(())
-        }
-    }
-}
-
 /// The value that the octets `raw` contain, beside them, or why they did not decode.
 fn contained(raw: Value, typed: Result<Typed, Error>) -> Value {
     let decoded = typed.and_then(|typed| (typed.decode)(&unhex(&raw)?));
     let mut transfer = Map::new();
     transfer.insert("_raw_transfer".into(), raw);
     match decoded {
-        Ok(decoded) => transfer.insert("decoded".into(), decoded),
-        Err(error) => transfer.insert("_decode_error".into(), error.to_string().into()),
+        Ok((decoded, exact)) => {
+            transfer.insert("decoded".into(), decoded);
+            if !exact {
+                transfer.insert(LOSSY.into(), true.into());
+            }
+        }
+        Err(error) => {
+            transfer.insert("_decode_error".into(), error.to_string().into());
+        }
     };
     Value::Object(transfer)
 }
@@ -306,15 +158,15 @@ impl Protocol {
                     }
                 };
                 match decoded {
-                    Ok(decoded) => {
+                    Ok((decoded, exact)) => {
+                        if !exact {
+                            object.insert(LOSSY.into(), true.into());
+                        }
                         // An OCTET STRING (CONTAINING ...) has the form of a transfer.
-                        let mut decoded = match (self.ie_contents)(id) {
+                        let decoded = match (self.ie_contents)(id) {
                             Some(contents) => contained(decoded, Ok(contents)),
                             None => decoded,
                         };
-                        if let Some(form) = (self.ie_form)(id) {
-                            show(form, &mut decoded);
-                        }
                         object.insert(field.into(), decoded);
                     }
                     // The value stays the octets that it was received as.
@@ -341,9 +193,6 @@ impl Protocol {
                         *child = contained(child.take(), typed);
                     }
                     self.expand(child, depth + 1, member_shape(&members, key));
-                    if let Some(form) = (self.member_form)(key) {
-                        show(form, child);
-                    }
                 }
             }
         } else if let Some(array) = value.as_array_mut() {
@@ -382,9 +231,6 @@ impl Protocol {
                     continue;
                 }
                 self.collapse(child, key, depth + 1, member_shape(&members, key))?;
-                if let Some(form) = (self.member_form)(key) {
-                    unshow(form, child)?;
-                }
                 if let Some(raw) = child.get("_raw_transfer").cloned() {
                     self.received_transfer(child, key, id, raw)?;
                 } else if let Some(members) = child.as_object() {
@@ -421,6 +267,7 @@ impl Protocol {
             let undecoded = object.shift_remove("_decode_error").is_some();
             object.shift_remove("_ie_name");
             object.shift_remove(EDITED);
+            object.shift_remove(LOSSY);
             if let Some(id) = id {
                 let wire =
                     self.ie_octets(object, member, shape, id, raw, original_id, undecoded)?;
@@ -449,7 +296,7 @@ impl Protocol {
     ) -> Result<(), Error> {
         // Nothing that is written is left out: a transfer has its decoded value beside
         // the octets that it was received as, and no other.
-        let known = ["_raw_transfer", "decoded", "_decode_error", EDITED];
+        let known = ["_raw_transfer", "decoded", "_decode_error", EDITED, LOSSY];
         let mut members = child.as_object().into_iter().flatten();
         if let Some((other, _)) = members.find(|(name, _)| !known.contains(&name.as_str())) {
             return Err(Error::no_such_member(format!(
@@ -472,7 +319,7 @@ impl Protocol {
                 None => (self.transfer_typed)(key)?,
             },
         };
-        let original = (transfer.decode)(&bytes)?;
+        let (original, _) = (transfer.decode)(&bytes)?;
         if &original == edited {
             *child = raw;
         } else {
@@ -492,7 +339,7 @@ impl Protocol {
     #[allow(clippy::too_many_arguments)]
     fn ie_octets(
         &self,
-        object: &mut Map<String, Value>,
+        object: &mut Map,
         member: &str,
         shape: Shape,
         id: u16,
@@ -516,12 +363,6 @@ impl Protocol {
             self.ie_type(id, shape)
                 .map_err(|error| error.reworded(|what| format!("{what}: {octets}")))
         };
-        if !undecoded
-            && let Some(form) = (self.ie_form)(id)
-            && let Some(value) = object.get_mut(field)
-        {
-            unshow(form, value)?;
-        }
         Ok(match (raw, object.get(field)) {
             // The octets alone are sent as they are.
             (Some(raw), None) => raw,
@@ -550,7 +391,7 @@ impl Protocol {
                 };
                 let bytes = unhex(&raw)?;
                 let received = self.ie_type(original_id, shape)?;
-                let original = (received.decode)(&bytes)?;
+                let (original, _) = (received.decode)(&bytes)?;
                 if &original == edited && id == original_id {
                     raw
                 } else if (received.encode)(&original)? != bytes {
@@ -605,7 +446,7 @@ pub fn view(
     criticality: Value,
     raw: &[u8],
 ) -> Result<Value, Error> {
-    let mut message = (protocol.message_typed(direction, code).decode)(raw)?;
+    let (mut message, exact) = (protocol.message_typed(direction, code).decode)(raw)?;
     protocol.expand(&mut message, 0, protocol.message_shape(direction, code));
     let mut view = Map::new();
     view.insert("procedure_code".into(), code.into());
@@ -613,39 +454,58 @@ pub fn view(
     view.insert("criticality".into(), criticality);
     view.insert("message".into(), message);
     view.insert("_raw_message".into(), hex(raw).into());
+    if !exact {
+        view.insert(LOSSY.into(), true.into());
+    }
     Ok(Value::Object(view))
 }
 
-/// The tree of the PDU of `protocol` whose view is `view`: the name of its message and
-/// its IEs by name, in their order, and its criticality when it is not the one of its
-/// procedure. The view is taken: its IEs are moved into the tree, and not copied.
+/// The tree of the PDU of `protocol` of a direction, a procedure code and a criticality,
+/// whose message is the octets `raw`: the name of its message and its IEs by name, in
+/// their order, and its criticality when it is not the one of its procedure.
 ///
-/// # Errors
-///
-/// A procedure that the protocol does not have in that direction, and a message without
-/// a list of IEs of the protocol.
-pub fn tree(protocol: &'static Protocol, mut view: Value) -> Result<Value, Error> {
-    let direction = view["direction"].as_str().unwrap_or_default();
-    let code = view["procedure_code"].as_u64().unwrap_or_default();
-    let known = u8::try_from(code).ok();
-    let name = known.and_then(|code| protocol.message_name_of(direction, code));
-    let name = name.ok_or_else(|| {
-        Error::unknown_message(format!(
-            "{} has no {direction} of procedure {code}",
-            protocol.name
-        ))
-    })?;
-    let listed = view.pointer_mut("/message/protocolIEs").map(Value::take);
-    let Some(listed) = listed.filter(Value::is_array) else {
-        return Err(Error::limit(format!("a message {name} has no list of IEs")));
-    };
+/// A procedure that the protocol does not have in that direction has its
+/// `procedure_code` and its `direction` in the place of the name, and its criticality,
+/// which the tables do not assign: its message is read as a container of IEs, which each
+/// message of the protocol but the private one is. A message that has no list of IEs, as
+/// the private one, one that does not decode, and one whose typed value has no place for
+/// what it was received with, which a later version of its type adds, has its `octets` in
+/// the place of its IEs. A PDU that decodes has a tree.
+pub fn tree(
+    protocol: &'static Protocol,
+    direction: &'static str,
+    code: u8,
+    criticality: Value,
+    raw: &[u8],
+) -> Value {
+    let name = protocol.message_name_of(direction, code);
     let mut tree = Map::new();
-    tree.insert("message".into(), name.into());
-    tree.insert("ies".into(), super::named_ies(protocol, name, listed)?);
-    if view["criticality"].as_str() != protocol.message_criticality(name) {
-        tree.insert("criticality".into(), view["criticality"].take());
+    match name {
+        Some(name) => {
+            tree.insert("message".into(), name.into());
+        }
+        None => {
+            tree.insert("procedure_code".into(), code.into());
+            tree.insert("direction".into(), direction.into());
+        }
     }
-    Ok(Value::Object(tree))
+    let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
+    // The view is taken: its IEs are moved into the tree, and not copied.
+    let ies = view(protocol, direction, code, Value::Null, raw)
+        .ok()
+        .filter(|view| view.get(LOSSY).is_none())
+        .and_then(|mut view| view.pointer_mut("/message/protocolIEs").map(Value::take))
+        .filter(Value::is_array)
+        .and_then(|listed| protocol.by_name(listed, Shape::Ies(sent)).ok());
+    match ies {
+        Some(ies) => tree.insert("ies".into(), ies),
+        None => tree.insert("octets".into(), hex(raw).into()),
+    };
+    let assigned = name.and_then(|name| protocol.message_criticality(name));
+    if assigned.is_none() || criticality.as_str() != assigned {
+        tree.insert("criticality".into(), criticality);
+    }
+    Value::Object(tree)
 }
 
 /// What the PDU that a view or a tree writes is made of: its direction, its procedure
@@ -691,7 +551,7 @@ fn message_octets(
         return (typed.encode)(&message);
     };
     let original = unhex(original)?;
-    let decoded = (typed.decode)(&original)?;
+    let (decoded, _) = (typed.decode)(&original)?;
     if decoded == message {
         return Ok(original);
     }
@@ -703,44 +563,105 @@ fn message_octets(
     (typed.encode)(&message)
 }
 
-/// The parts of the PDU of `protocol` that a tree writes: a message by its name and its
-/// IEs by name, as [`tree`] shows one.
+/// The parts of the PDU of `protocol` that a tree writes: a message by its name, or by
+/// the `procedure_code` and the `direction` of a procedure that the protocol does not
+/// have in that direction, with its IEs by name or its `octets`, as [`tree`] shows one.
 ///
 /// # Errors
 ///
-/// What is no tree, a name that is no message of the protocol, and an IE that is not
-/// written as its type.
+/// What is no tree, a name that is no message of the protocol, a procedure that the
+/// protocol has written by its code, a criticality that the tables do not assign and the
+/// tree does not write, and an IE that is not written as its type.
 pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Error> {
-    const FORM: &str = "a tree is {\"message\": NAME, \"ies\": [{NAME: VALUE}, …]}";
+    const FORM: &str = "a tree is {\"message\": NAME, \"ies\": [{NAME: VALUE}, …]}, with \
+                        \"octets\" in the place of the IEs for a message as it is sent";
     let form = || Error::form(FORM);
     let written = tree.as_object().ok_or_else(form)?;
+    const MEMBERS: [&str; 6] = [
+        "message",
+        "procedure_code",
+        "direction",
+        "ies",
+        "octets",
+        "criticality",
+    ];
     if let Some(other) = written
         .keys()
-        .find(|key| !["message", "ies", "criticality"].contains(&key.as_str()))
+        .find(|key| !MEMBERS.iter().any(|known| same_name(known, key)))
     {
         return Err(Error::form(format!(
             "{other:?} is no member of a tree: {FORM}"
         )));
     }
-    let name = written.get("message").and_then(Value::as_str);
-    let name = name.ok_or_else(form)?;
-    let mut messages = protocol.messages.iter();
-    let message = messages.find(|(_, _, known, ..)| same_name(known, name));
-    let (direction, code, name, ..) = message.ok_or_else(|| {
-        Error::unknown_message(format!("{name:?} is not a message of {}", protocol.name))
-    })?;
-    let assigned = json!(protocol.message_criticality(name));
-    let criticality = written.get("criticality").unwrap_or(&assigned).clone();
-    let listed = written.get("ies").filter(|ies| ies.is_array());
-    let mut message = Map::new();
-    message.insert(
-        "protocolIEs".into(),
-        super::listed_ies(protocol, name, listed.ok_or_else(form)?)?,
-    );
-    let message = message_octets(protocol, direction, *code, Value::Object(message), None)?;
+    let member = |name: &str| {
+        let mut members = written.iter();
+        members
+            .find(|(key, _)| same_name(key, name))
+            .map(|(_, value)| value)
+    };
+    let (direction, code, name) = match member("message") {
+        Some(name) => {
+            let name = name.as_str().ok_or_else(form)?;
+            let mut messages = protocol.messages.iter();
+            let message = messages.find(|(_, _, known, ..)| same_name(known, name));
+            let (direction, code, name, ..) = message.ok_or_else(|| {
+                Error::unknown_message(format!("{name:?} is not a message of {}", protocol.name))
+            })?;
+            if member("procedure_code").or(member("direction")).is_some() {
+                return Err(Error::form(format!(
+                    "{name} is named by its message alone: its procedure_code and its \
+                     direction are those of its name"
+                )));
+            }
+            (*direction, *code, Some(*name))
+        }
+        None => {
+            const UNKNOWN: &str = "a procedure that the protocol does not have is written by \
+                                   its procedure_code, a number from 0 to 255, and its \
+                                   direction";
+            let code = member("procedure_code").and_then(Value::as_u64);
+            let code = code.and_then(|code| u8::try_from(code).ok());
+            let direction = member("direction").and_then(Value::as_str);
+            let (Some(code), Some(direction)) = (code, direction) else {
+                return Err(Error::form(format!("{FORM}; {UNKNOWN}")));
+            };
+            let direction = direction_of(direction)?;
+            if let Some(name) = protocol.message_name_of(direction, code) {
+                return Err(Error::form(format!(
+                    "the {direction} of procedure {code} is {name}: it is written as \
+                     {{\"message\": \"{name}\"}}"
+                )));
+            }
+            (direction, code, None)
+        }
+    };
+    let assigned = name.and_then(|name| protocol.message_criticality(name));
+    let criticality = match (member("criticality"), assigned) {
+        (Some(criticality), _) => criticality.clone(),
+        (None, Some(assigned)) => assigned.into(),
+        (None, None) => {
+            return Err(Error::form(format!(
+                "the {direction} of procedure {code} says its \"criticality\": the tables \
+                 have none for it"
+            )));
+        }
+    };
+    let message = match (member("ies"), member("octets")) {
+        (Some(listed), None) if listed.is_array() => {
+            let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
+            let mut message = Map::new();
+            message.insert(
+                "protocolIEs".into(),
+                protocol.written(listed, Shape::Ies(sent), 0)?,
+            );
+            message_octets(protocol, direction, code, Value::Object(message), None)?
+        }
+        (None, Some(octets)) => unhex(octets)?,
+        _ => return Err(form()),
+    };
     Ok(Parts {
         direction,
-        code: *code,
+        code,
         criticality,
         message,
     })
@@ -755,12 +676,13 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
 ///
 /// What is no view, and a value that does not encode as its type.
 pub fn view_parts(protocol: &'static Protocol, view: &Value) -> Result<Parts, Error> {
-    const MEMBERS: [&str; 5] = [
+    const MEMBERS: [&str; 6] = [
         "procedure_code",
         "direction",
         "criticality",
         "message",
         "_raw_message",
+        LOSSY,
     ];
     const FORM: &str =
         "a view has its procedure_code, its direction, its criticality and its message";

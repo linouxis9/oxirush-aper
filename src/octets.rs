@@ -224,12 +224,12 @@ impl crate::Encode for Octets<'_> {
 impl crate::json::Tree for Octets<'_> {
     const NAME: &'static str = "OCTET STRING";
 
-    fn to_tree(&self) -> serde_json::Value {
+    fn to_tree(&self) -> crate::json::Value {
         crate::json::octets(self)
     }
 
     fn from_tree(
-        value: &serde_json::Value,
+        value: &crate::json::Value,
         reading: &mut crate::json::Reading,
     ) -> Result<Self, crate::json::Refused> {
         crate::json::read_octets(reading, value)

@@ -1,8 +1,9 @@
-//! The values of generated bindings as trees of `oxirush_utils::tree`: a
-//! [`serde_json::Value`] is written and read, and no text.
+//! The values of generated bindings as trees of `oxirush_utils::tree`: a [`Value`] is
+//! written and read, and no text.
 //!
 //! A value has the form of the JSON Encoding Rules, ITU-T X.697 (02/2021), but for what
-//! follows.
+//! follows, and but for the well-known types of 3GPP that have a readable [`Form`], as
+//! `"208-93"` for a PLMN identity, which their trees show and are read in as well.
 //!
 //! | ASN.1 | JSON |
 //! | --- | --- |
@@ -12,7 +13,7 @@
 //! | `BIT STRING` of one size | Its octets in hexadecimal, the last one padded with zero bits |
 //! | `BIT STRING` whose size varies | `{"value": HEXADECIMAL, "length": BITS}`. Where the type gives one size and an extension marker, a string of that size is its octets in hexadecimal, and one of another size has its length: X.697 §24.3 has every string of such a type with its length |
 //! | `OCTET STRING` | Its octets in hexadecimal |
-//! | `NULL` | `null` |
+//! | `NULL` | `null`, which is a value: an alternative of the type `NULL` is `{"pLMNWide": null}` |
 //! | `OBJECT IDENTIFIER` | Its arcs in decimal, with a full stop between them |
 //! | A character string | A string |
 //! | `SEQUENCE` | An object with a member for each component, by the name that ASN.1 gives it, in the order of the components, and none for a component that is absent |
@@ -22,9 +23,9 @@
 //!
 //! Hexadecimal is written in lower case and read in either, and the members of an
 //! object keep the order in which they are written: the forms are those of
-//! `oxirush_utils::tree`, whose feature `tree` turns on `serde_json/preserve_order`.
+//! `oxirush_utils::tree`, whose `Value` keeps the order of its members by itself.
 //!
-//! A type has the two forms through [`Tree`], which generated code implements with
+//! A type has its tree through [`Tree`], which generated code implements with
 //! the functions of this module and the [`Reading`] of `oxirush-utils`: the names of
 //! the members of a SEQUENCE are a table, and a constraint is the arguments of a call.
 //! Reading is strict, as nothing reads its result back to compare: a member that the
@@ -40,10 +41,12 @@ use alloc::vec::Vec;
 
 use oxirush_utils::tree::{self as utils, ErrorKind as Fault};
 pub use oxirush_utils::tree::{
-    Members, Read, Reading, Refused, Tree, alternative, hex, octets, same_name, signed, text,
-    unhex, unsigned,
+    Map, Members, Read, Reading, Refused, Tree, Value, alternative, hex, octets, same_name, signed,
+    text, unhex, unsigned,
 };
-use serde_json::Value;
+
+use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use oxirush_utils::identity::Plmn;
 
 use crate::reader::Alphabet;
 use crate::{BitString, Bits, Error, ErrorKind, ObjectIdentifier, Octets};
@@ -97,6 +100,172 @@ pub fn bit_string(value: &BitString<'_>, lower: usize, upper: usize, extensible:
 /// between them.
 pub fn object_identifier(identifier: &ObjectIdentifier) -> Value {
     Value::String(identifier.to_string())
+}
+
+// ── The readable forms ──────────────────────────────────────────────────────
+
+/// The readable form of the values of a well-known type, which its tree shows, and in
+/// which it is read as well as in the form of the JSON Encoding Rules: generated code
+/// writes its tree with [`readable`] and reads it with [`read_readable`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Form {
+    /// A PLMN identity as its MCC and MNC: `"208-93"`.
+    Plmn,
+    /// The digits of an identity in TBCD, as an IMSI has them.
+    Digits,
+    /// An identifier or a counter of this many bits, as a number.
+    Number(u32),
+    /// A transport layer address: an IPv4 address, an IPv6 address, or both with a comma.
+    Address,
+}
+
+impl Form {
+    /// The readable form of a value as its ASN.1 type has it; `None` when it has none.
+    pub fn read(self, jer: &Value) -> Option<Value> {
+        // The decimal digits that these half octets are; none when one of them is no digit.
+        let digits = |digits: &[u8]| {
+            let text = digits
+                .iter()
+                .map(|digit| char::from_digit((*digit).into(), 10));
+            text.collect::<Option<String>>()
+        };
+        match self {
+            Self::Plmn => {
+                // Octets that are no PLMN identity stay octets.
+                let octets = <[u8; 3]>::try_from(unhex(jer.as_str()?)?).ok()?;
+                let plmn = Plmn::from_ap_octets(octets).ok()?;
+                Some(oxirush_utils::tree!(format!(
+                    "{}-{}",
+                    plmn.mcc(),
+                    plmn.mnc()
+                )))
+            }
+            Self::Digits => {
+                let octets = unhex(jer.as_str()?)?;
+                let nibbles: Vec<u8> = octets.iter().flat_map(|o| [o & 15, o >> 4]).collect();
+                // A filler takes the place of a last digit that is not there.
+                let nibbles = nibbles.strip_suffix(&[15]).unwrap_or(&nibbles);
+                digits(nibbles).map(Value::from)
+            }
+            Self::Number(bits) => {
+                let (text, octets) = (jer.as_str()?, bits.div_ceil(8));
+                let number = u64::from_str_radix(text, 16).ok()?;
+                (text.len() as u32 == octets * 2)
+                    .then(|| oxirush_utils::tree!(number >> (octets * 8 - bits)))
+            }
+            Self::Address => {
+                let octets = unhex(jer.get("value")?.as_str()?)?;
+                let v4 = |octets: &[u8]| Some(Ipv4Addr::from(<[u8; 4]>::try_from(octets).ok()?));
+                let v6 = |octets: &[u8]| Some(Ipv6Addr::from(<[u8; 16]>::try_from(octets).ok()?));
+                Some(oxirush_utils::tree!(
+                    match (jer.get("length")?.as_u64()?, octets.len()) {
+                        (32, 4) => v4(&octets)?.to_string(),
+                        (128, 16) => v6(&octets)?.to_string(),
+                        (160, 20) => format!("{},{}", v4(&octets[..4])?, v6(&octets[4..])?),
+                        _ => return None,
+                    }
+                ))
+            }
+        }
+    }
+
+    /// The value as its ASN.1 type has it, from its readable form. A value in another
+    /// form is kept as it is: the form of the type is still taken, and the codec refuses
+    /// what is neither.
+    ///
+    /// # Errors
+    ///
+    /// Why what is written in the readable form is no value of it.
+    pub fn write(self, shown: &Value) -> Result<Value, String> {
+        let number = |bits: u32, number: u64| {
+            if bits < 64 && number >> bits != 0 {
+                return Err(format!("{number} does not fit in {bits} bits"));
+            }
+            let octets = bits.div_ceil(8);
+            let width = octets as usize * 2;
+            Ok(oxirush_utils::tree!(format!(
+                "{:0width$x}",
+                number << (octets * 8 - bits)
+            )))
+        };
+        let Some(text) = shown.as_str() else {
+            return match (self, shown.as_u64()) {
+                (Self::Number(bits), Some(value)) => number(bits, value),
+                _ => Ok(shown.clone()),
+            };
+        };
+        let bcd = |digits: &str| digits.bytes().map(|digit| digit & 15).collect::<Vec<_>>();
+        let all_digits = |text: &str| text.bytes().all(|b| b.is_ascii_digit());
+        match self {
+            Self::Plmn if text.contains('-') => {
+                let (mcc, mnc) = text.split_once('-').unwrap_or_default();
+                // The three digits of an MCC, and the two or three of an MNC.
+                let plmn = (all_digits(mcc) && all_digits(mnc))
+                    .then(|| Plmn::new(mcc, mnc).ok())
+                    .flatten();
+                let plmn =
+                    plmn.ok_or_else(|| format!("{text}: a PLMN identity is MCC-MNC, as 208-93"))?;
+                Ok(Value::String(hex(&plmn.to_ap_octets())))
+            }
+            // Without a hyphen it is its three octets: what is neither says both forms,
+            // where the codec would say that it is no octets.
+            Self::Plmn if text.len() != 6 || !text.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                Err(format!(
+                    "{text}: a PLMN identity is MCC-MNC, as 208-93, or its three octets in \
+                     hexadecimal"
+                ))
+            }
+            Self::Digits if all_digits(text) => {
+                let pairs = bcd(text);
+                let pairs = pairs.chunks(2);
+                let octets = pairs.map(|pair| pair.get(1).copied().unwrap_or(15) << 4 | pair[0]);
+                Ok(Value::String(hex(&octets.collect::<Vec<_>>())))
+            }
+            Self::Number(bits) if text.starts_with("0x") => {
+                let value = u64::from_str_radix(&text[2..], 16)
+                    .map_err(|error| format!("{text} is not a number in hexadecimal: {error}"))?;
+                number(bits, value)
+            }
+            Self::Address if text.contains(['.', ':']) => {
+                let mut octets = Vec::new();
+                for part in text.split(',') {
+                    match (octets.len(), part.trim().parse()) {
+                        (0, Ok(IpAddr::V4(address))) => octets.extend(address.octets()),
+                        (0 | 4, Ok(IpAddr::V6(address))) => octets.extend(address.octets()),
+                        _ => {
+                            return Err(format!(
+                                "{text}: a transport layer address is an IPv4 address, an IPv6 \
+                                 address, or the two with a comma"
+                            ));
+                        }
+                    }
+                }
+                Ok(oxirush_utils::tree!({"value": hex(&octets), "length": octets.len() * 8}))
+            }
+            _ => Ok(shown.clone()),
+        }
+    }
+}
+
+/// The tree of a value of a well-known type, whose tree in the form of the JSON
+/// Encoding Rules is `jer`: its readable form, where the form gives the value back as it
+/// was, and `jer` otherwise, as octets that are no PLMN identity.
+pub fn readable(form: Form, jer: Value) -> Value {
+    match form.read(&jer) {
+        Some(shown) if form.write(&shown).is_ok_and(|again| again == jer) => shown,
+        _ => jer,
+    }
+}
+
+/// The tree in the form of the JSON Encoding Rules of a value of a well-known type, which
+/// `value` writes in its readable form or in that one.
+///
+/// # Errors
+///
+/// What is written in the readable form and is no value of it, refused in `reading`.
+pub fn read_readable(reading: &mut Reading, form: Form, value: &Value) -> Result<Value, Refused> {
+    form.write(value)
+        .map_err(|why| reading.refuse(Fault::Value, why))
 }
 
 // ── From JSON to a value ────────────────────────────────────────────────────

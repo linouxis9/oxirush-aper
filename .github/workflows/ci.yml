@@ -15,7 +15,7 @@ env:
   # that build/revisions records, which build/pin.py writes here.
   UNPUBLISHED: >-
     --config patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"
-    --config patch.crates-io.oxirush-utils.rev="5c47d25abdddf234d4e4bc95b6f77c41f9372bdc"
+    --config patch.crates-io.oxirush-utils.rev="6b492da612f8050924d7f19b590c3fa77d2e3646"
 
 jobs:
   test:
@@ -37,6 +37,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo test $UNPUBLISHED --all-features
+
+  # 32 bits, where a `usize` holds less than a `u64`.
+  i686:
+    name: Tests on 32 bits (i686-unknown-linux-musl)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test $UNPUBLISHED --all-features --target i686-unknown-linux-musl
 
   no-std:
     name: no_std (thumbv7em-none-eabihf)

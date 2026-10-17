@@ -445,7 +445,9 @@ fn attributes(attributes: &[Attribute]) -> Result<Attributes> {
     let mut read = Attributes::default();
     for attribute in attributes {
         if attribute.path().is_ident("doc") {
-            if let syn::Meta::NameValue(doc) = &attribute.meta {
+            if let syn::Meta::NameValue(doc) = &attribute.meta
+                && sentence(&doc.value)
+            {
                 read.docs.push(tokens(&doc.value));
             }
         } else if attribute.path().is_ident("non_exhaustive") {
@@ -934,10 +936,8 @@ impl Bindings {
             writeln!(out, "#[cfg(feature = \"inspect\")]")?;
             writeln!(
                 out,
-                "use oxirush_aper::json::{{self, Reading, Refused, Tree}};"
+                "use oxirush_aper::json::{{self, Reading, Refused, Tree, Value}};"
             )?;
-            writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-            writeln!(out, "use serde_json::Value;")?;
             for entry in &module.entries {
                 match entry {
                     Entry::Constant { docs, text } => {
@@ -1336,17 +1336,33 @@ impl Bindings {
                 writeln!(out, "#[cfg(feature = \"inspect\")]")?;
                 writeln!(out, "impl Tree for {named} {{")?;
                 writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
-                writeln!(
-                    out,
-                    "fn to_tree(&self) -> Value {{ {} }}",
-                    self.to_json(kind, "self.0", false)
-                )?;
-                writeln!(
-                    out,
-                    "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{ \
-                     Ok(Self({}?)) }}",
-                    self.read_json(kind)
-                )?;
+                // A well-known type is shown in its readable form, and read in it or in
+                // the form of the JSON Encoding Rules.
+                let jer = self.to_json(kind, "self.0", false);
+                match readable_form(&definition.asn, kind)? {
+                    Some(form) => {
+                        writeln!(
+                            out,
+                            "fn to_tree(&self) -> Value {{ json::readable({form}, {jer}) }}"
+                        )?;
+                        writeln!(
+                            out,
+                            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, \
+                             Refused> {{ let value = &json::read_readable(reading, {form}, \
+                             value)?; Ok(Self({}?)) }}",
+                            self.read_json(kind)
+                        )?;
+                    }
+                    None => {
+                        writeln!(out, "fn to_tree(&self) -> Value {{ {jer} }}")?;
+                        writeln!(
+                            out,
+                            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, \
+                             Refused> {{ Ok(Self({}?)) }}",
+                            self.read_json(kind)
+                        )?;
+                    }
+                }
                 writeln!(out, "}}")?;
                 self.serde(out, &named)?;
             }
@@ -2227,9 +2243,44 @@ fn bounds(range: &Range) -> String {
     }
 }
 
+/// Whether a line of documentation that rasn-compiler takes from a comment of the ASN.1
+/// is a sentence, which says something of the type: the comments of the modules are
+/// also the banners of their sections, as `NAS TRANSPORT ELEMENTARY PROCEDURES` between
+/// lines of asterisks and the letter of a list, which the documentation of the type that
+/// comes after them does not have.
+fn sentence(doc: &syn::Expr) -> bool {
+    let syn::Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Str(text),
+        ..
+    }) = doc
+    else {
+        return true;
+    };
+    let text = text.value();
+    let text = text.trim();
+    text.ends_with('.') && text.chars().any(|letter| letter.is_ascii_lowercase())
+}
+
 fn write_docs(out: &mut String, docs: &[String]) -> Result<()> {
     for doc in docs {
         writeln!(out, "#[doc = {doc}]")?;
     }
     Ok(())
+}
+
+/// The readable form of the values of a type that ASN.1 names `asn`, of a kind, when it
+/// is one of the well-known types: an expression of the form in generated code.
+fn readable_form(asn: &str, kind: &Kind) -> Result<Option<String>> {
+    let Some(form) = crate::inspection::well_known(asn) else {
+        return Ok(None);
+    };
+    Ok(Some(match (form, kind) {
+        ("Number", Kind::OctetArray(size)) => format!("json::Form::Number({})", size * 8),
+        ("Number", Kind::Bits(range)) => match (range.lower, range.upper) {
+            (Some(lower), Some(upper)) if lower == upper => format!("json::Form::Number({upper})"),
+            _ => bail!("{asn}: a number of a size that the type does not give"),
+        },
+        ("Number", _) => bail!("{asn}: a number of a size that the type does not give"),
+        (form, _) => format!("json::Form::{form}"),
+    }))
 }

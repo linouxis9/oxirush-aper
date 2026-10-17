@@ -26,8 +26,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use oxirush_utils::tree::{self, Edit, Family, Key, Listed, Next, Place, Root, Step};
-use serde_json::{Map, Value, json};
+use oxirush_utils::tree::{Map, Value};
 
+use super::views::LOSSY;
 use super::{Kind, Member, Protocol, Sent, Shape, same_name, type_name};
 use crate::{Error, ErrorKind};
 
@@ -157,7 +158,7 @@ impl Protocol {
     }
 
     /// The message of a direction and a procedure code, or of a name.
-    fn sent(&self, of: impl Fn(&'static str, u8, &'static str) -> bool) -> Option<Sent> {
+    pub(crate) fn sent(&self, of: impl Fn(&'static str, u8, &'static str) -> bool) -> Option<Sent> {
         let mut messages = self.messages.iter();
         let message = messages.find(|(direction, code, name, ..)| of(direction, *code, name));
         message.map(|(_, _, name, _, ies, ty)| Sent {
@@ -230,7 +231,7 @@ impl Protocol {
 
     /// The members that a value of `shape` can have, which is `entry` in a view; `None`
     /// for a shape whose members are those that the view has.
-    pub fn members(&self, shape: Shape, entry: Option<&Map<String, Value>>) -> Option<Vec<Member>> {
+    pub fn members(&self, shape: Shape, entry: Option<&Map>) -> Option<Vec<Member>> {
         let has = |member: &str| entry.is_some_and(|entry| entry.contains_key(member));
         // The entry of an IE in a view says which IE its value was decoded as.
         let ie = |id: Option<u16>, extended: &str, value: &'static str, raw: &'static str| {
@@ -253,6 +254,7 @@ impl Protocol {
                 ("_ie_name", Shape::Plain, true),
                 ("_decode_error", Shape::Plain, true),
                 (EDITED, Shape::Plain, true),
+                (LOSSY, Shape::Plain, true),
             ]
         };
         Some(match shape {
@@ -267,6 +269,7 @@ impl Protocol {
                     false,
                 ),
                 ("_raw_message", Shape::Plain, true),
+                (LOSSY, Shape::Plain, true),
             ],
             // The IEs of the message of a PDU are those of its object set.
             Shape::Message(message) => {
@@ -306,6 +309,7 @@ impl Protocol {
                     ("_raw_transfer", Shape::Plain, true),
                     ("_decode_error", Shape::Plain, true),
                     (EDITED, Shape::Plain, true),
+                    (LOSSY, Shape::Plain, true),
                 ]
             }
             // Each type that the octets may carry, by the name that ASN.1 gives it.
@@ -315,7 +319,9 @@ impl Protocol {
                     .map(|(_, name, ty)| (*name, Shape::Transfer(type_name(ty)), true))
                     .collect()
             }
-            Shape::Plain | Shape::List(_) | Shape::Ies(_) | Shape::Extensions(_) => Vec::new(),
+            Shape::Plain | Shape::Null | Shape::List(_) | Shape::Ies(_) | Shape::Extensions(_) => {
+                Vec::new()
+            }
         })
     }
 
@@ -516,7 +522,7 @@ fn member<'m>(members: &'m [Member], part: &str) -> Option<&'m Member> {
 
 /// The member of the entry of a view that a segment names, where no table says what
 /// the entry has.
-fn key<'e>(entry: &'e Map<String, Value>, part: &str) -> Option<&'e str> {
+fn key<'e>(entry: &'e Map, part: &str) -> Option<&'e str> {
     let exact = entry.get_key_value(part).map(|(name, _)| name);
     let named = || {
         let mut names = entry.keys().filter(|name| !name.starts_with('_'));
@@ -636,16 +642,16 @@ fn shown(name: &str) -> bool {
 }
 
 /// The octets that an IE or a transfer was received as.
-fn received(entry: &Map<String, Value>) -> Option<(&'static str, &Value)> {
+fn received(entry: &Map) -> Option<(&'static str, &Value)> {
     let member = received_member(entry)?;
     Some((member, &entry[member]))
 }
 
 /// The member of an entry that holds the octets it was received as.
-fn received_member(entry: &Map<String, Value>) -> Option<&'static str> {
+fn received_member(entry: &Map) -> Option<&'static str> {
     ["_raw_value", "_raw_transfer"]
         .into_iter()
-        .find(|member| entry.contains_key(*member))
+        .find(|member| entry.contains_key(member))
 }
 
 // ── The family of the views ─────────────────────────────────────────────────
@@ -723,11 +729,7 @@ impl Family for Views<'_> {
     type Shape = At;
 
     fn root(&self) -> Root<'_> {
-        Root {
-            name: self.protocol.root,
-            stands_for: &[MESSAGE, IES],
-            required: false,
-        }
+        Root::new(self.protocol.root, &[MESSAGE, IES], false)
     }
 
     fn start(&self, tree: &Value, rooted: bool) -> At {
@@ -751,8 +753,11 @@ impl Family for Views<'_> {
         let taken = self.take(place, part, next);
         // An edit is done at each place that its path selects, or at none: a place that
         // cannot take it refuses the edit, where a selection takes what the others have.
+        // An opening is a selection that opens what it finds on its way.
         match (taken, next.edit()) {
-            (Err(reason), Some(_)) if reason.kind() != tree::ErrorKind::Refused => {
+            (Err(reason), Some(edit))
+                if edit != Edit::Open && reason.kind() != tree::ErrorKind::Refused =>
+            {
                 let again = refusal(ErrorKind::NoSuchMember, reason.reason());
                 Err(match reason.code() {
                     Some(code) => again.with_code(code),
@@ -763,13 +768,17 @@ impl Family for Views<'_> {
         }
     }
 
+    fn null_is_value(&self, at: &At) -> bool {
+        self.protocol.resolved(at.shape) == Shape::Null
+    }
+
     fn edited(&self, tree: &mut Value, keys: &[Key], at: &At, edit: Edit) {
         let Some((last, before)) = keys.split_last() else {
             return;
         };
         // Each value of an IE or of a transfer that the edit changed something under is
         // no longer what its octets say.
-        let mark = |entry: &mut Map<String, Value>, name: &str| {
+        let mark = |entry: &mut Map, name: &str| {
             if VALUES.contains(&name) && received_member(entry).is_some() {
                 entry.insert(EDITED.into(), true.into());
             }
@@ -860,7 +869,7 @@ impl Views<'_> {
         &self,
         place: &Place<'v, At>,
         whole: &'v Value,
-        entry: &'v Map<String, Value>,
+        entry: &'v Map,
         at: At,
         shape: Shape,
         part: &str,
@@ -882,7 +891,7 @@ impl Views<'_> {
             });
         }
         if part == "*" {
-            if edit.is_some() {
+            if edit.is_some_and(|edit| edit != Edit::Open) {
                 return Err(refusal(
                     ErrorKind::NoSuchMember,
                     format!("{part:?} selects among the entries of a list, and this is no list"),
@@ -1249,7 +1258,7 @@ impl Views<'_> {
 fn refuse(
     edit: Edit,
     name: &str,
-    entry: &Map<String, Value>,
+    entry: &Map,
     alternative: bool,
     optional: bool,
 ) -> Result<(), tree::Error> {
@@ -1280,7 +1289,7 @@ fn refuse(
             Ok(())
         }
         Edit::Insert => refused("insert adds to a list".to_string()),
-        Edit::Set | Edit::Open => Ok(()),
+        _ => Ok(()),
     }
 }
 
@@ -1453,7 +1462,7 @@ impl Paths {
         match value.and_then(Value::as_object) {
             Some(entry)
                 if received(entry).is_some()
-                    && !VALUES.iter().any(|value| entry.contains_key(*value)) =>
+                    && !VALUES.iter().any(|value| entry.contains_key(value)) =>
             {
                 Listing::Octets
             }
@@ -1466,11 +1475,7 @@ impl Family for Paths {
     type Shape = Listing;
 
     fn root(&self) -> Root<'_> {
-        Root {
-            name: self.0.root,
-            stands_for: &[MESSAGE, IES],
-            required: false,
-        }
+        Root::new(self.0.root, &[MESSAGE, IES], false)
     }
 
     fn start(&self, _tree: &Value, _rooted: bool) -> Listing {
@@ -1487,6 +1492,12 @@ impl Family for Paths {
 
     fn entry(&self, _shape: &Listing, value: Option<&Value>) -> Listing {
         Self::of(value)
+    }
+
+    /// A view has `null` for the alternatives of the type NULL alone: what is absent is
+    /// left out.
+    fn null_is_value(&self, _shape: &Listing) -> bool {
+        true
     }
 
     fn listed(&self, shape: &Listing, name: &str) -> Listed {
@@ -1548,12 +1559,9 @@ pub fn paths(protocol: &'static Protocol, view: &Value) -> Vec<(String, Value)> 
 ///
 /// An `id` that names no IE of the protocol, and an IE written with its value and its
 /// octets.
-pub fn written_ie(
-    protocol: &'static Protocol,
-    entry: &mut Map<String, Value>,
-) -> Result<(), Error> {
+pub fn written_ie(protocol: &'static Protocol, entry: &mut Map) -> Result<(), Error> {
     let id = match entry.get("id") {
-        Some(Value::String(name)) => Some(json!(protocol.ie_named(name)?)),
+        Some(Value::String(name)) => Some(oxirush_utils::tree!(protocol.ie_named(name)?)),
         Some(Value::Number(_)) => None,
         _ => return Ok(()),
     };
@@ -1561,7 +1569,7 @@ pub fn written_ie(
         entry.insert("id".into(), id);
     }
     if let Some(octets) = entry.shift_remove("octets") {
-        if VALUES.iter().any(|value| entry.contains_key(*value)) {
+        if VALUES.iter().any(|value| entry.contains_key(value)) {
             return Err(Error::new(
                 ErrorKind::Form,
                 "an IE is written with its value or its octets, not both",
@@ -1675,7 +1683,7 @@ pub enum Members {
 impl Protocol {
     /// The members that `entry`, a value of `shape` in a view, can have, each with its
     /// shape; none for a shape that the tables do not describe.
-    pub fn member_shapes(&self, shape: Shape, entry: &Map<String, Value>) -> Members {
+    pub fn member_shapes(&self, shape: Shape, entry: &Map) -> Members {
         let shape = match self.resolved(shape) {
             // A transfer that is written as its decoded value itself.
             Shape::Transfer(contained)
@@ -1717,14 +1725,17 @@ impl Protocol {
     /// decoded value, or as its `octets` when it has none, and each IE of a container as
     /// [`ie_by_name`](Self::ie_by_name) shows it. The view is taken: what the tree keeps
     /// of it is moved.
-    fn by_name(&self, value: Value, shape: Shape) -> Result<Value, Error> {
+    pub(crate) fn by_name(&self, value: Value, shape: Shape) -> Result<Value, Error> {
         let shape = self.resolved(shape);
         match value {
             Value::Object(mut entry) => match shape {
                 Shape::Transfer(_) => {
                     let members = self.members(shape, Some(&entry)).unwrap_or_default();
                     let of = member(&members, "decoded").map(|(_, of, _)| *of);
-                    match (entry.shift_remove("decoded"), of) {
+                    let decoded = entry.shift_remove("decoded");
+                    // What the typed value has no place for is kept in the octets.
+                    let decoded = decoded.filter(|_| !entry.contains_key(LOSSY));
+                    match (decoded, of) {
                         (Some(decoded), Some(of)) => self.by_name(decoded, of),
                         _ => {
                             let octets =
@@ -1766,12 +1777,7 @@ impl Protocol {
     /// of that type, has the octets that it was received as, as `{"octets": "…"}`. Its
     /// `criticality` is beside its name when it is not the one that the specification
     /// assigns it there, and where the tables do not have that one.
-    fn ie_by_name(
-        &self,
-        mut entry: Map<String, Value>,
-        shape: Shape,
-        container: Shape,
-    ) -> Result<Value, Error> {
+    fn ie_by_name(&self, mut entry: Map, shape: Shape, container: Shape) -> Result<Value, Error> {
         let id = match entry.get("id") {
             Some(Value::String(name)) => (self.ie_id)(name),
             Some(id) => id.as_u64().and_then(|id| u16::try_from(id).ok()),
@@ -1783,7 +1789,12 @@ impl Protocol {
             .map_or_else(|| id.to_string(), str::to_string);
         let field = value_member(shape).unwrap_or("value");
         let value = entry.shift_remove(field).unwrap_or_default();
-        let undecoded = entry.contains_key("_decode_error") || value.get("_decode_error").is_some();
+        // An IE that did not decode, or whose typed value has no place for what it was
+        // received with, is its octets.
+        let undecoded = entry.contains_key("_decode_error")
+            || entry.contains_key(LOSSY)
+            || value.get("_decode_error").is_some()
+            || value.get(LOSSY).is_some();
         let value = match undecoded {
             true => octets_alone(entry.shift_remove("_raw_value").unwrap_or_default()),
             false => self.by_name(value, self.ie_value(Some(id), extended(shape)))?,
@@ -1800,7 +1811,12 @@ impl Protocol {
     /// `value`, a value of `shape` of a tree, as a view has it: each IE of a container
     /// as the entry that [`entry_of`](Self::entry_of) gives it. A transfer keeps the form
     /// that it is written in, its decoded value alone or as its `decoded` member.
-    fn written(&self, value: &Value, shape: Shape, depth: usize) -> Result<Value, Error> {
+    pub(crate) fn written(
+        &self,
+        value: &Value,
+        shape: Shape,
+        depth: usize,
+    ) -> Result<Value, Error> {
         if depth > WRITTEN {
             return Err(Error::new(
                 ErrorKind::Limit,
@@ -1887,7 +1903,7 @@ impl Protocol {
             container,
         ) {
             (Some(criticality), ..) => criticality.clone(),
-            (None, Some(criticality), _) => json!(criticality),
+            (None, Some(criticality), _) => oxirush_utils::tree!(criticality),
             (None, None, Shape::Ies(Some(message))) => {
                 return Err(Error::new(
                     ErrorKind::Form,
@@ -1917,6 +1933,51 @@ impl Protocol {
             }
         };
         Ok(Value::Object(listed))
+    }
+}
+
+impl Protocol {
+    /// `value`, the tree of a value of the type that the bindings name `ty`, as the JSON
+    /// Encoding Rules (ITU-T X.697) write it: the values of the well-known types, which a
+    /// tree shows in their readable form, in the form of their ASN.1 type. The tests
+    /// compare it with what another implementation of these rules writes.
+    pub fn jer(&self, mut value: Value, ty: &'static str) -> Value {
+        self.to_jer(&mut value, Shape::Named(ty), 0);
+        value
+    }
+
+    /// `value`, a value of `shape`, as the JSON Encoding Rules write it.
+    fn to_jer(&self, value: &mut Value, shape: Shape, depth: usize) {
+        if depth > WRITTEN {
+            return;
+        }
+        match shape {
+            Shape::Named(name) => {
+                if let Some(form) = (self.type_form)(name) {
+                    if let Ok(jer) = form.write(value) {
+                        *value = jer;
+                    }
+                    return;
+                }
+                match (self.kind_of)(name) {
+                    Some(Kind::Sequence(members) | Kind::Choice(members)) => {
+                        for (key, child) in value.as_object_mut().into_iter().flatten() {
+                            if let Some((_, of, _)) = member(members, key) {
+                                self.to_jer(child, *of, depth + 1);
+                            }
+                        }
+                    }
+                    Some(Kind::Is(is)) => self.to_jer(value, *is, depth + 1),
+                    None => {}
+                }
+            }
+            Shape::List(of) => {
+                for entry in value.as_array_mut().into_iter().flatten() {
+                    self.to_jer(entry, *of, depth + 1);
+                }
+            }
+            _ => {}
+        }
     }
 }
 

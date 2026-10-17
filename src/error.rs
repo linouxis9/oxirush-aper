@@ -571,9 +571,14 @@ mod tests {
             shown,
             "Error { kind: Argument, message: \"an MCC has three digits\" }"
         );
-        // One pointer.
+        // One pointer, and a result has a number beside it: 16 octets on 64 bits, 12 on
+        // the 32 bits of x86, where a number of 64 bits is aligned on 4 octets.
         assert_eq!(size_of::<Error>(), size_of::<usize>());
-        assert_eq!(size_of::<Result<u64, Error>>(), 16);
+        let beside = size_of::<u64>() + size_of::<usize>();
+        assert_eq!(
+            size_of::<Result<u64, Error>>(),
+            beside.next_multiple_of(align_of::<u64>())
+        );
     }
 
     #[test]

@@ -914,7 +914,8 @@ fn a_number_of_more_octets_than_64_bits_have_is_refused_whatever_it_holds() {
     // The index of an addition above 63 is a semi-constrained number (X.691 §11.6.2),
     // which a writer gives its least octets (§11.3.6). Both readers take zero octets
     // before the number up to eight octets, and refuse nine, where rasn holds the
-    // index in 64 bits as the crate does.
+    // index in 64 bits as the crate does: rasn holds it in a `usize`, which has four
+    // octets on 32 bits, and the crate in a `u64`.
     for (octets, index) in [
         (&[0x80][..], Some(3)),
         (&[0xc0, 0x01, 0x00], Some(3)),
@@ -925,7 +926,9 @@ fn a_number_of_more_octets_than_64_bits_have_is_refused_whatever_it_holds() {
         (&[0xc0, 0x0b, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], None),
     ] {
         let theirs = rasn::aper::decode::<Extended>(octets).ok();
-        assert_eq!(theirs.map(|value| value as u64), index, "{octets:02x?}");
+        let held = octets.len().saturating_sub(2) <= size_of::<usize>();
+        let read = index.filter(|_| held);
+        assert_eq!(theirs.map(|value| value as u64), read, "{octets:02x?}");
         let ours = Reader::new(octets).enumerated(3, 2, true).ok();
         assert_eq!(ours, index, "{octets:02x?}");
     }

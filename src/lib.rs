@@ -90,7 +90,10 @@ mod bits;
 pub mod check;
 mod error;
 mod faults;
+// The plumbing of the generated crates, which changes with them in any release: hidden
+// from the documentation, and no part of the API that a version number promises.
 #[cfg(feature = "inspect")]
+#[doc(hidden)]
 pub mod inspect;
 #[cfg(feature = "inspect")]
 pub mod json;
