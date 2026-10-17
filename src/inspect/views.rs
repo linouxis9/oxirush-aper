@@ -115,7 +115,7 @@ impl Form {
             }
             let octets = bits.div_ceil(8);
             let width = octets as usize * 2;
-            Ok(json!(format!("{:0width$X}", number << (octets * 8 - bits))))
+            Ok(json!(format!("{:0width$x}", number << (octets * 8 - bits))))
         };
         let Some(text) = shown.as_str() else {
             return match (self, shown.as_u64()) {

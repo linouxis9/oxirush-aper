@@ -283,7 +283,8 @@ assert_eq!((extended, a, b), (true, true, Some(7)));
 
 With the `inspect` feature, `oxirush_aper::json` has what generated bindings
 write and read their JSON forms with: `serde_json` values in the form of the
-JSON Encoding Rules (X.697), with octets and open types in hexadecimal. And
+JSON Encoding Rules (X.697), with octets and open types in hexadecimal, as
+the trees of `oxirush_utils::tree`, whose `Tree` the bindings implement. And
 `oxirush_aper::inspect` has the views and the trees of the PDUs of an
 application protocol and the paths into a view, on the trees and the paths
 of `oxirush-utils`: a protocol crate gives the tables that its generator

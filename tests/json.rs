@@ -4,7 +4,9 @@
 
 use std::borrow::Cow;
 
-use oxirush_aper::json::{self, Json, Reading, Refused, from_value, hex, to_value, unhex};
+use oxirush_aper::json::{
+    self, Characters, Reading, Refused, Tree, from_value, hex, to_value, unhex,
+};
 use oxirush_aper::{AsnType, BitString, Bits, ErrorKind, ObjectIdentifier, Octets};
 use serde_json::{Value, json};
 
@@ -21,12 +23,14 @@ impl Kind {
     const NAMES: [&'static str; 3] = ["user-inactivity", "unspecified", "not-in-the-root"];
 }
 
-impl Json for Kind {
-    fn to_json(&self) -> Value {
+impl Tree for Kind {
+    const NAME: &'static str = "Kind";
+
+    fn to_tree(&self) -> Value {
         json::text(Self::NAMES[*self as usize])
     }
-    fn from_json(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-        Ok(Self::VALUES[reading.enumerated(value, &Self::NAMES)?])
+    fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+        Ok(Self::VALUES[reading.named(value, &Self::NAMES)?])
     }
 }
 
@@ -40,25 +44,27 @@ enum Either {
     Nothing,
 }
 
-impl Json for Either {
-    fn to_json(&self) -> Value {
+impl Tree for Either {
+    const NAME: &'static str = "Either";
+
+    fn to_tree(&self) -> Value {
         match self {
             Self::Number(value) => json::alternative("number", json::unsigned((*value).into())),
-            Self::Kind(value) => json::alternative("kind", value.to_json()),
+            Self::Kind(value) => json::alternative("kind", value.to_tree()),
             Self::HomeId(value) => json::alternative("home-ID", json::bits(*value, 28, 28)),
             Self::Nothing => json::alternative("nothing", Value::Null),
         }
     }
-    fn from_json(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+    fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
         let names = &["number", "kind", "home-ID", "nothing"];
         let (position, value) = reading.alternative(value, names)?;
         Ok(match position {
             0 => Self::Number(reading.within("number", value, |value, reading| {
                 Ok(reading.unsigned(value, 0, 255)? as u8)
             })?),
-            1 => Self::Kind(reading.within("kind", value, Kind::from_json)?),
+            1 => Self::Kind(reading.within("kind", value, Kind::from_tree)?),
             2 => Self::HomeId(reading.within("home-ID", value, |value, reading| {
-                reading.bits(value, 28, 28)
+                json::read_bits(reading, value, 28, 28)
             })?),
             _ => {
                 reading.within("nothing", value, |value, reading| reading.null(value))?;
@@ -134,15 +140,17 @@ const MEMBERS: &[&str] = &[
     "later",
 ];
 
-impl Json for Sample {
-    fn to_json(&self) -> Value {
+impl Tree for Sample {
+    const NAME: &'static str = "Sample";
+
+    fn to_tree(&self) -> Value {
         let mut members = json::Members::new();
         members.put("flag", Value::Bool(self.flag));
         members.put("id", json::unsigned(self.id));
         members.put("rate", json::unsigned(self.rate));
         members.put("small", json::signed(self.small.into()));
-        members.put("kind", self.kind.to_json());
-        members.put("either", self.either.to_json());
+        members.put("kind", self.kind.to_tree());
+        members.put("either", self.either.to_tree());
         members.put("octets", json::octets(&self.octets));
         members.put("plmn", json::octets(&self.plmn));
         members.put("fixed-bits", json::bits(self.fixed_bits, 12, 12));
@@ -157,39 +165,47 @@ impl Json for Sample {
         members.put("ia5", json::text(&self.ia5));
         members.put("object", json::object_identifier(&self.object));
         members.put("open", json::octets(&self.open));
-        let list = self.list.iter().map(|item| item.to_json()).collect();
+        let list = self.list.iter().map(|item| item.to_tree()).collect();
         members.put("list", Value::Array(list));
         let absent = self.absent.map(|value| json::unsigned(value.into()));
         members.put_optional("absent", absent);
-        members.put_optional("later", self.later.map(|value| value.to_json()));
+        members.put_optional("later", self.later.map(|value| value.to_tree()));
         members.finish()
     }
 
-    fn from_json(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+    fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
         let members = reading.members(value, MEMBERS)?;
         Ok(Self {
             flag: reading.member(&members, 0, |v, r| r.boolean(v))?,
             id: reading.member(&members, 1, |v, r| r.unsigned(v, 0, 1_099_511_627_775))?,
             rate: reading.member(&members, 2, |v, r| r.unsigned(v, u64::MIN, u64::MAX))?,
             small: reading.member(&members, 3, |v, r| Ok(r.signed(v, -8, 7)? as i8))?,
-            kind: reading.member(&members, 4, Kind::from_json)?,
-            either: reading.member(&members, 5, Either::from_json)?,
-            octets: reading.member(&members, 6, |v, r| r.octets(v))?,
+            kind: reading.member(&members, 4, Kind::from_tree)?,
+            either: reading.member(&members, 5, Either::from_tree)?,
+            octets: reading.member(&members, 6, |v, r| json::read_octets(r, v))?,
             plmn: reading.member(&members, 7, |v, r| r.octet_array(v))?,
-            fixed_bits: reading.member(&members, 8, |v, r| r.bits(v, 12, 12))?,
-            mask: reading.member(&members, 9, |v, r| r.bit_string(v, 16, 16, true))?,
-            address: reading.member(&members, 10, |v, r| r.bit_string(v, 1, 160, true))?,
-            day_of_week: reading.optional(&members, 11, |v, r| r.bits(v, 7, 7))?,
-            few: reading.member(&members, 12, |v, r| r.bits(v, 1, 32))?,
-            name: reading.member(&members, 13, |v, r| r.utf8_string(v))?,
-            printable: reading.member(&members, 14, |v, r| r.printable_string(v))?,
-            visible: reading.member(&members, 15, |v, r| r.visible_string(v))?,
-            ia5: reading.member(&members, 16, |v, r| r.ia5_string(v))?,
-            object: reading.member(&members, 17, |v, r| r.object_identifier(v))?,
-            open: reading.member(&members, 18, |v, r| r.octets(v))?,
-            list: reading.member(&members, 19, |v, r| r.list(v, Either::from_json))?,
+            fixed_bits: reading.member(&members, 8, |v, r| json::read_bits(r, v, 12, 12))?,
+            mask: reading.member(&members, 9, |v, r| {
+                json::read_bit_string(r, v, 16, 16, true)
+            })?,
+            address: reading.member(&members, 10, |v, r| {
+                json::read_bit_string(r, v, 1, 160, true)
+            })?,
+            day_of_week: reading.optional(&members, 11, |v, r| json::read_bits(r, v, 7, 7))?,
+            few: reading.member(&members, 12, |v, r| json::read_bits(r, v, 1, 32))?,
+            name: reading.member(&members, 13, |v, r| json::read_text(r, v, Characters::Utf8))?,
+            printable: reading.member(&members, 14, |v, r| {
+                json::read_text(r, v, Characters::Printable)
+            })?,
+            visible: reading.member(&members, 15, |v, r| {
+                json::read_text(r, v, Characters::Visible)
+            })?,
+            ia5: reading.member(&members, 16, |v, r| json::read_text(r, v, Characters::Ia5))?,
+            object: reading.member(&members, 17, |v, r| json::read_object_identifier(r, v))?,
+            open: reading.member(&members, 18, |v, r| json::read_octets(r, v))?,
+            list: reading.member(&members, 19, |v, r| r.list(v, Either::from_tree))?,
             absent: reading.optional(&members, 20, |v, r| Ok(r.unsigned(v, 0, 255)? as u8))?,
-            later: reading.optional(&members, 21, Kind::from_json)?,
+            later: reading.optional(&members, 21, Kind::from_tree)?,
         })
     }
 }
@@ -233,13 +249,13 @@ fn written() -> Value {
         "small": -8,
         "kind": "user-inactivity",
         "either": {"home-ID": "12345670"},
-        "octets": "00FF",
-        "plmn": "02F839",
-        "fixed-bits": "ABC0",
-        "mask": "C000",
-        "address": {"value": "0A000001", "length": 32},
-        "day-of-week": "FE",
-        "few": {"value": "A0", "length": 3},
+        "octets": "00ff",
+        "plmn": "02f839",
+        "fixed-bits": "abc0",
+        "mask": "c000",
+        "address": {"value": "0a000001", "length": 32},
+        "day-of-week": "fe",
+        "few": {"value": "a0", "length": 3},
         "name": "gnb-1",
         "printable": "AMF 1",
         "visible": "visible",
@@ -274,34 +290,35 @@ fn each_construct_has_its_form_and_is_read_back() {
 fn a_bit_string_of_one_size_is_its_octets_in_a_member_that_may_be_absent() {
     // X.697 (02/2021) §24.1: a bit string whose type has one size is a JSON string,
     // wherever a value of the type is.
-    assert_eq!(to_value(&sample())["day-of-week"], json!("FE"));
-    let read = from_value::<Sample>(&with("day-of-week", json!("fe"))).unwrap();
+    assert_eq!(to_value(&sample())["day-of-week"], json!("fe"));
+    let read = from_value::<Sample>(&with("day-of-week", json!("FE"))).unwrap();
     assert_eq!(read.day_of_week, sample().day_of_week);
     let (kind, why) = refused(&with("day-of-week", json!({"value": "FE", "length": 7})));
     assert_eq!(kind, ErrorKind::Value);
     assert!(
-        why.contains("at day-of-week: a bit string of 7 bits is expected, in hexadecimal"),
+        why.contains(": a bit string of 7 bits is expected, in hexadecimal"),
         "{why}"
     );
+    assert!(why.ends_with(", at day-of-week"), "{why}");
     // A number that may be absent has the constraint of its member too.
     let (_, why) = refused(&with("absent", json!(256)));
     assert!(
-        why.ends_with("at absent: 256 is outside its constraint (0..255)"),
+        why.ends_with("a number from 0 to 255 is expected, and 256 is written, at absent"),
         "{why}"
     );
 }
 
 #[test]
-fn hexadecimal_is_written_in_upper_case_and_read_in_either() {
-    assert_eq!(hex(&[0x00, 0x9a, 0xff]), "009AFF");
+fn hexadecimal_is_written_in_lower_case_and_read_in_either() {
+    assert_eq!(hex(&[0x00, 0x9a, 0xff]), "009aff");
     assert_eq!(unhex("009aFF"), Some(vec![0x00, 0x9a, 0xff]));
     assert_eq!(unhex(""), Some(vec![]));
     // Each octet, alone and among others, and each character that is no digit.
     let every: Vec<u8> = (0..=255).collect();
-    let text: String = every.iter().map(|octet| format!("{octet:02X}")).collect();
+    let text: String = every.iter().map(|octet| format!("{octet:02x}")).collect();
     assert_eq!(hex(&every), text);
     assert_eq!(unhex(&text), Some(every.clone()));
-    assert_eq!(unhex(&text.to_lowercase()), Some(every.clone()));
+    assert_eq!(unhex(&text.to_uppercase()), Some(every.clone()));
     for length in 0..=every.len() {
         assert_eq!(
             unhex(&hex(&every[..length])).as_deref(),
@@ -320,18 +337,18 @@ fn hexadecimal_is_written_in_upper_case_and_read_in_either() {
     for text in ["0", "0g", "000", " 00", "é0"] {
         assert_eq!(unhex(text), None, "{text}");
     }
-    let lower = with("octets", json!("00ff"));
-    assert_eq!(from_value::<Sample>(&lower).unwrap(), sample());
+    let upper = with("octets", json!("00FF"));
+    assert_eq!(from_value::<Sample>(&upper).unwrap(), sample());
     let (kind, why) = refused(&with("octets", json!("0")));
     assert_eq!(kind, ErrorKind::Value);
     assert_eq!(
         why,
-        "this is not a value of Sample, at octets: octets in hexadecimal, two digits for each, \
-         are expected, and \"0\" is written"
+        "this is not a value of Sample: octets in hexadecimal, two digits for each, are \
+         expected, and \"0\" is written, at octets"
     );
     let (_, why) = refused(&with("plmn", json!("02F8")));
     assert!(
-        why.ends_with("at plmn: 2 octets are written for an OCTET STRING of 3"),
+        why.ends_with(": 3 octets are expected, and 02f8 has 2, at plmn"),
         "{why}"
     );
 }
@@ -350,24 +367,29 @@ fn an_integer_is_a_number_of_64_bits() {
         json!("+1"),
         json!(""),
         json!(1.5),
-        json!(null),
     ] {
         let error = read(other.clone()).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Value);
         assert_eq!(
             error.to_string(),
             format!(
-                "this is not a value of Sample, at rate: a number is expected, and {other} is \
-                 written"
+                "this is not a value of Sample: a number from 0 to 18446744073709551615 is \
+                 expected, and {other} is written, at rate"
             )
         );
     }
+    // A member that is null is one that is not there, as a tree reads every member.
+    let error = read(json!(null)).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "this is not a value of Sample: the member is missing, at rate"
+    );
     // A number without a sign is not below zero.
     let error = read(json!(-1)).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "this is not a value of Sample, at rate: -1 is outside its constraint \
-         (0..18446744073709551615)"
+        "this is not a value of Sample: a number from 0 to 18446744073709551615 is expected, \
+         and -1 is written, at rate"
     );
 }
 
@@ -377,24 +399,22 @@ fn an_integer_outside_its_constraint_is_refused_where_it_is() {
     assert_eq!(kind, ErrorKind::Value);
     assert_eq!(
         why,
-        "this is not a value of Sample, at id: 1099511627776 is outside its constraint \
-         (0..1099511627775)"
+        "this is not a value of Sample: a number from 0 to 1099511627775 is expected, and \
+         1099511627776 is written, at id"
     );
-    for (value, why) in [
-        (json!(8), "8 is outside its constraint (-8..7)"),
-        (json!(-9), "-9 is outside its constraint (-8..7)"),
-        (
-            json!(u64::MAX),
-            "18446744073709551615 is outside its constraint (-8..7)",
-        ),
-    ] {
-        let (_, text) = refused(&with("small", value));
-        let expected = format!("this is not a value of Sample, at small: {why}");
+    for value in [json!(8), json!(-9), json!(u64::MAX)] {
+        let (_, text) = refused(&with("small", value.clone()));
+        let expected = format!(
+            "this is not a value of Sample: a number from -8 to 7 is expected, and {value} is \
+             written, at small"
+        );
         assert_eq!(text, expected);
     }
     let (_, why) = refused(&with("id", json!("one")));
     assert!(
-        why.ends_with("at id: a number is expected, and \"one\" is written"),
+        why.ends_with(
+            "a number from 0 to 1099511627775 is expected, and \"one\" is written, at id"
+        ),
         "{why}"
     );
     // A constraint that has an extension marker takes any number of 64 bits.
@@ -417,11 +437,12 @@ fn a_name_of_an_enumerated_is_taken_whatever_its_case_and_separators() {
     assert_eq!(kind, ErrorKind::Value);
     assert_eq!(
         why,
-        "this is not a value of Sample, at kind: \"no-such-kind\" is no value of the ENUMERATED"
+        "this is not a value of Sample: \"no-such-kind\" is none of its names: user-inactivity, \
+         unspecified, not-in-the-root, at kind"
     );
     let (_, why) = refused(&with("kind", json!(0)));
     assert!(
-        why.ends_with("the name of a value of the ENUMERATED is expected, and 0 is written"),
+        why.ends_with("a name is expected, and 0 is written, at kind"),
         "{why}"
     );
 }
@@ -432,9 +453,9 @@ fn a_bit_string_has_its_length_unless_its_type_gives_it() {
     // and one of another size has its length.
     let mask = |bits: BitString<'static>| json::bit_string(&bits, 16, 16, true);
     let read = |value: Value| from_value::<Sample>(&with("mask", value)).map(|read| read.mask);
-    assert_eq!(mask(BitString::from([0xc0, 0x00])), json!("C000"));
+    assert_eq!(mask(BitString::from([0xc0, 0x00])), json!("c000"));
     let twenty = BitString::new(vec![0xc0, 0x00, 0x00], 20).unwrap();
-    let longer = json!({"value": "C00000", "length": 20});
+    let longer = json!({"value": "c00000", "length": 20});
     assert_eq!(mask(twenty.clone()), longer);
     assert_eq!(read(longer).unwrap(), twenty);
     assert_eq!(read(json!("c000")).unwrap(), BitString::from([0xc0, 0x00]));
@@ -445,13 +466,13 @@ fn a_bit_string_has_its_length_unless_its_type_gives_it() {
     let error = read(json!(16)).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "this is not a value of Sample, at mask: a bit string of 16 bits is expected, in \
-         hexadecimal, or one of another size as {\"value\": HEXADECIMAL, \"length\": BITS}, and \
-         16 is written"
+        "this is not a value of Sample: a bit string of 16 bits is expected, in hexadecimal, or \
+         one of another size as {\"value\": HEXADECIMAL, \"length\": BITS}, and 16 is written, \
+         at mask"
     );
     // A string of a type of one size and no marker is its octets, whatever its size.
     let other = BitString::new(vec![0xc0], 4).unwrap();
-    assert_eq!(json::bit_string(&other, 16, 16, false), json!("C0"));
+    assert_eq!(json::bit_string(&other, 16, 16, false), json!("c0"));
 
     // What is not the string that it says.
     for (member, value, why) in [
@@ -503,7 +524,7 @@ fn a_bit_string_has_its_length_unless_its_type_gives_it() {
     ] {
         let (kind, text) = refused(&with(member, value));
         assert_eq!(kind, ErrorKind::Value);
-        let expected = format!("this is not a value of Sample, at {member}: {why}");
+        let expected = format!("this is not a value of Sample: {why}, at {member}");
         assert_eq!(text, expected);
     }
 }
@@ -514,7 +535,9 @@ fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
     assert_eq!(kind, ErrorKind::NoSuchMember);
     assert_eq!(
         why,
-        "this is not a value of Sample: \"other\" is not a member that its type has"
+        "this is not a value of Sample: \"other\" is not a member that its type has: it has \
+         flag, id, rate, small, kind, either, octets, plmn, fixed-bits, mask, address, \
+         day-of-week, few, name, printable, visible, ia5, object, open, list, absent, later"
     );
 
     let mut without = written();
@@ -523,7 +546,7 @@ fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
     assert_eq!(kind, ErrorKind::Value);
     assert_eq!(
         why,
-        "this is not a value of Sample, at flag: the member is missing"
+        "this is not a value of Sample: the member is missing, at flag"
     );
 
     // A member that may be absent is.
@@ -544,8 +567,8 @@ fn a_choice_is_one_alternative_that_its_type_has() {
     assert_eq!(kind, ErrorKind::NoSuchMember);
     assert_eq!(
         why,
-        "this is not a value of Sample, at either: \"other\" is not an alternative that its \
-         type has: it has number, kind, home-ID, nothing"
+        "this is not a value of Sample: \"other\" is not an alternative that its type has: it \
+         has number, kind, home-ID, nothing, at either"
     );
     for other in [
         json!({}),
@@ -556,22 +579,24 @@ fn a_choice_is_one_alternative_that_its_type_has() {
         assert_eq!(kind, ErrorKind::Value);
         assert!(
             why.starts_with(
-                "this is not a value of Sample, at either: an object with one member is \
-                 expected, the name of an alternative with its value, and "
+                "this is not a value of Sample: an object with one member, the name of an \
+                 alternative with its value, is expected, and "
             ),
             "{why}"
         );
+        assert!(why.ends_with(", at either"), "{why}");
     }
     // The fault of an entry of a list is at its position.
     let list = json!([{"number": 7}, {"number": 256}]);
     let (_, why) = refused(&with("list", list));
     assert_eq!(
         why,
-        "this is not a value of Sample, at list/1/number: 256 is outside its constraint (0..255)"
+        "this is not a value of Sample: a number from 0 to 255 is expected, and 256 is written, \
+         at list/1/number"
     );
     let (_, why) = refused(&with("list", json!({})));
     assert!(
-        why.ends_with("at list: a list is expected, and {} is written"),
+        why.ends_with("a list is expected, and {} is written, at list"),
         "{why}"
     );
 }
@@ -615,12 +640,12 @@ fn the_other_values_are_refused_as_what_they_are_not() {
     ] {
         let (kind, text) = refused(&with(member, value));
         assert_eq!(kind, ErrorKind::Value);
-        let expected = format!("this is not a value of Sample, at {member}: {why}");
+        let expected = format!("this is not a value of Sample: {why}, at {member}");
         assert_eq!(text, expected);
     }
     let (_, why) = refused(&with("either", json!({"nothing": 0})));
     assert!(
-        why.ends_with("at either/nothing: null is expected, and 0 is written"),
+        why.ends_with("null is expected, and 0 is written, at either/nothing"),
         "{why}"
     );
 }

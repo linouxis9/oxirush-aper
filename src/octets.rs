@@ -221,16 +221,18 @@ impl crate::Encode for Octets<'_> {
 }
 
 #[cfg(feature = "inspect")]
-impl crate::json::Json for Octets<'_> {
-    fn to_json(&self) -> serde_json::Value {
+impl crate::json::Tree for Octets<'_> {
+    const NAME: &'static str = "OCTET STRING";
+
+    fn to_tree(&self) -> serde_json::Value {
         crate::json::octets(self)
     }
 
-    fn from_json(
+    fn from_tree(
         value: &serde_json::Value,
         reading: &mut crate::json::Reading,
     ) -> Result<Self, crate::json::Refused> {
-        reading.octets(value)
+        crate::json::read_octets(reading, value)
     }
 }
 

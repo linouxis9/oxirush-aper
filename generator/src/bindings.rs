@@ -934,7 +934,7 @@ impl Bindings {
             writeln!(out, "#[cfg(feature = \"inspect\")]")?;
             writeln!(
                 out,
-                "use oxirush_aper::json::{{self, Json, Reading, Refused}};"
+                "use oxirush_aper::json::{{self, Reading, Refused, Tree}};"
             )?;
             writeln!(out, "#[cfg(feature = \"inspect\")]")?;
             writeln!(out, "use serde_json::Value;")?;
@@ -1226,17 +1226,19 @@ impl Bindings {
                 self.asn_type(out, &named, &definition.asn)?;
                 self.enumerated_codec(out, definition, members)?;
                 writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-                writeln!(out, "impl Json for {name} {{")?;
+                writeln!(out, "impl Tree for {name} {{")?;
+                writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
                 writeln!(
                     out,
-                    "fn to_json(&self) -> Value {{ json::text(Self::NAMES[self.index() as usize]) }}"
+                    "fn to_tree(&self) -> Value {{ json::text(Self::NAMES[self.index() as usize]) }}"
                 )?;
                 writeln!(
                     out,
-                    "fn from_json(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{ \
-                     Ok(Self::VALUES[reading.enumerated(value, &Self::NAMES)?]) }}"
+                    "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{ \
+                     Ok(Self::VALUES[reading.named(value, &Self::NAMES)?]) }}"
                 )?;
                 writeln!(out, "}}")?;
+                self.serde(out, name)?;
             }
             Shape::Alias(kind) => {
                 let ty = self.ty(kind, "'a");
@@ -1331,19 +1333,21 @@ impl Bindings {
                 writeln!(out, "Ok(())")?;
                 writeln!(out, "}} }}")?;
                 writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-                writeln!(out, "impl Json for {named} {{")?;
+                writeln!(out, "impl Tree for {named} {{")?;
+                writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
                 writeln!(
                     out,
-                    "fn to_json(&self) -> Value {{ {} }}",
+                    "fn to_tree(&self) -> Value {{ {} }}",
                     self.to_json(kind, "self.0", false)
                 )?;
                 writeln!(
                     out,
-                    "fn from_json(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{ \
+                    "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{ \
                      Ok(Self({}?)) }}",
                     self.read_json(kind)
                 )?;
                 writeln!(out, "}}")?;
+                self.serde(out, &named)?;
             }
         }
         Ok(())
@@ -1731,8 +1735,9 @@ impl Bindings {
 
     fn sequence_json(&self, out: &mut String, members: &[Member], named: &str) -> Result<()> {
         writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-        writeln!(out, "impl Json for {named} {{")?;
-        writeln!(out, "fn to_json(&self) -> Value {{")?;
+        writeln!(out, "impl Tree for {named} {{")?;
+        writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
+        writeln!(out, "fn to_tree(&self) -> Value {{")?;
         writeln!(out, "let mut members = json::Members::new();")?;
         for member in members {
             let (name, asn) = (&member.name, &member.asn);
@@ -1754,7 +1759,7 @@ impl Bindings {
         writeln!(out, "}}")?;
         writeln!(
             out,
-            "fn from_json(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
+            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
         )?;
         let names: Vec<String> = members
             .iter()
@@ -1767,7 +1772,7 @@ impl Bindings {
         )?;
         for (position, member) in members.iter().enumerate() {
             let read = match &member.kind {
-                Kind::Named(name) => format!("{name}::from_json"),
+                Kind::Named(name) => format!("{name}::from_tree"),
                 kind => format!("|value, reading| {}", self.read_json(kind)),
             };
             let how = if member.optional {
@@ -1784,13 +1789,14 @@ impl Bindings {
         let names: Vec<&str> = members.iter().map(|member| member.name.as_str()).collect();
         writeln!(out, "Ok(Self {{ {} }})", names.join(", "))?;
         writeln!(out, "}} }}")?;
-        Ok(())
+        self.serde(out, named)
     }
 
     fn choice_json(&self, out: &mut String, members: &[Member], named: &str) -> Result<()> {
         writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-        writeln!(out, "impl Json for {named} {{")?;
-        writeln!(out, "fn to_json(&self) -> Value {{ match self {{")?;
+        writeln!(out, "impl Tree for {named} {{")?;
+        writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
+        writeln!(out, "fn to_tree(&self) -> Value {{ match self {{")?;
         for member in members {
             let value = self.to_json(&member.kind, "value", true);
             writeln!(
@@ -1805,7 +1811,7 @@ impl Bindings {
         }
         writeln!(
             out,
-            "fn from_json(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
+            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
         )?;
         let names: Vec<String> = members
             .iter()
@@ -1823,7 +1829,7 @@ impl Bindings {
                 false => position.to_string(),
             };
             let read = match &member.kind {
-                Kind::Named(name) => format!("{name}::from_json"),
+                Kind::Named(name) => format!("{name}::from_tree"),
                 kind => format!("|value, reading| {}", self.read_json(kind)),
             };
             writeln!(
@@ -1834,6 +1840,16 @@ impl Bindings {
         }
         writeln!(out, "}})")?;
         writeln!(out, "}} }}")?;
+        self.serde(out, named)
+    }
+
+    /// `Serialize` and `Deserialize` for the type that the bindings name `named`, with
+    /// the feature `serde`: through its tree, as `oxirush_utils::tree::serde` has them.
+    fn serde(&self, out: &mut String, named: &str) -> Result<()> {
+        // A type that borrows is named with the lifetime that the macro declares.
+        let named = named.replace("<'_>", "<'a>");
+        writeln!(out, "#[cfg(feature = \"serde\")]")?;
+        writeln!(out, "oxirush_utils::impl_serde!({named});")?;
         Ok(())
     }
 
@@ -1870,7 +1886,7 @@ impl Bindings {
             }
             Kind::Text { .. } => format!("json::text({referred})"),
             Kind::ObjectIdentifier => format!("json::object_identifier({referred})"),
-            Kind::Named(_) => format!("{value}.to_json()"),
+            Kind::Named(_) => format!("{value}.to_tree()"),
             Kind::List { of, .. } => {
                 let item = self.to_json(of, "item", true);
                 format!("Value::Array({value}.iter().map(|item| {item}).collect())")
@@ -1908,18 +1924,26 @@ impl Bindings {
                 }
             }
             Kind::OctetArray(size) => format!("reading.octet_array::<{size}>(value)"),
-            Kind::Octets(_) | Kind::Open => "reading.octets(value)".into(),
-            Kind::Bits(range) => format!("reading.bits(value, {})", bounds(range)),
+            Kind::Octets(_) | Kind::Open => "json::read_octets(reading, value)".into(),
+            Kind::Bits(range) => format!("json::read_bits(reading, value, {})", bounds(range)),
             Kind::BitString(range) => {
                 format!(
-                    "reading.bit_string(value, {}, {})",
+                    "json::read_bit_string(reading, value, {}, {})",
                     bounds(range),
                     range.extensible
                 )
             }
-            Kind::Text { of, .. } => format!("reading.{of}(value)"),
-            Kind::ObjectIdentifier => "reading.object_identifier(value)".into(),
-            Kind::Named(name) => format!("{name}::from_json(value, reading)"),
+            Kind::Text { of, .. } => {
+                let characters = match *of {
+                    "printable_string" => "Printable",
+                    "visible_string" => "Visible",
+                    "ia5_string" => "Ia5",
+                    _ => "Utf8",
+                };
+                format!("json::read_text(reading, value, json::Characters::{characters})")
+            }
+            Kind::ObjectIdentifier => "json::read_object_identifier(reading, value)".into(),
+            Kind::Named(name) => format!("{name}::from_tree(value, reading)"),
             Kind::List { of, .. } => {
                 format!(
                     "reading.list(value, |value, reading| {})",

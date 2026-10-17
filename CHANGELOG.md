@@ -42,7 +42,12 @@ and S1AP (TS 36.413) uses.
   constructors of `Error`: `wrong_message`, `missing_ie`, `undecodable_ie`
   and the others.
 - The `inspect` feature: `json`, with which bindings write and read their
-  values as `serde_json` values in the form of the JSON Encoding Rules.
+  values as `serde_json` values in the form of the JSON Encoding Rules: the
+  trees of `oxirush_utils::tree`, whose `Tree` the bindings implement, with
+  octets in hexadecimal in lower case, the members in their order and names
+  read however they are written, and the readers of the ASN.1 types that the
+  trees do not know (`read_bits`, `read_bit_string`, `read_text`,
+  `read_object_identifier`, `read_octets`).
   And `inspect`, the views and the trees of the PDUs of an application
   protocol and the paths into a view, which NGAP and S1AP share, on the
   trees and the paths of `oxirush-utils`: a protocol gives its tables and
