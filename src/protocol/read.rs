@@ -560,34 +560,35 @@ impl<'s, L: List> Iterator for Items<'s, L> {
                 continue;
             }
             // The single container of the next item: its IE and its value, decoded as the
-            // type of the item when it is that IE, and the octets that it takes.
+            // type of the item when it is that IE, and the octet after it, read as the IEs
+            // of a message are.
             let read = match &walking.octets {
                 Cow::Borrowed(octets) => {
                     let octets: &'s [u8] = octets;
-                    let mut reader = Reader::new(&octets[walking.at..]);
-                    <L::Protocol as Protocol>::Field::decode(&mut reader).map(|field| {
-                        let value = (field.id() == L::Item::ID).then(|| {
-                            match field.value().as_borrowed() {
-                                Some(value) => crate::decode(value),
-                                None => L::Item::__owned(field.value()),
-                            }
+                    field::<L::Protocol>(octets, walking.at).map(
+                        |(id, criticality, value, next)| {
+                            let value = (id == L::Item::ID).then(|| match value {
+                                Value::Whole(value) => crate::decode(value),
+                                value => value
+                                    .octets::<L::Protocol>()
+                                    .and_then(|octets| L::Item::__owned(&octets)),
+                            });
+                            (value, id, criticality, next)
+                        },
+                    )
+                }
+                Cow::Owned(octets) => field::<L::Protocol>(octets, walking.at).map(
+                    |(id, criticality, value, next)| {
+                        let value = (id == L::Item::ID).then(|| {
+                            let octets = value.octets::<L::Protocol>();
+                            octets.and_then(|octets| L::Item::__owned(&octets))
                         });
-                        let used = reader.position() / 8;
-                        (value, field.id(), field.criticality(), used)
-                    })
-                }
-                Cow::Owned(octets) => {
-                    let mut reader = Reader::new(&octets[walking.at..]);
-                    <L::Protocol as Protocol>::Field::decode(&mut reader).map(|field| {
-                        let value =
-                            (field.id() == L::Item::ID).then(|| L::Item::__owned(field.value()));
-                        let used = reader.position() / 8;
-                        (value, field.id(), field.criticality(), used)
-                    })
-                }
+                        (value, id, criticality, next)
+                    },
+                ),
             };
-            let read = read.map(|(value, id, criticality, used)| {
-                let index = walking.advance(used);
+            let read = read.map(|(value, id, criticality, next)| {
+                let index = walking.advance(next - walking.at);
                 value.map(|value| (value, id, criticality, index))
             });
             match read {
