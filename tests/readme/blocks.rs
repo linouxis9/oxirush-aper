@@ -4,6 +4,9 @@
 
 use std::cell::RefCell;
 
+// The toy protocol, for the blocks that include it.
+use super::{ie, toy};
+
 thread_local!(static PRINTED: RefCell<String> = const { RefCell::new(String::new()) });
 
 // What a block prints is kept, to be compared with what the README shows.
@@ -40,6 +43,8 @@ pub const BLOCKS: &[fn()] = &[
     block_6,
     block_7,
     block_8,
+    block_9,
+    block_10,
 ];
 
 /// The Rust block 1 of README.md.
@@ -260,6 +265,77 @@ fn block_8() {
 
         // And a receiver that takes the one encoding alone
         println!("{}", decode_strict::<Octets>(&octets).unwrap_err());
+        Ok(())
+    }
+
+    main().unwrap();
+}
+
+/// The Rust block 9 of README.md.
+fn block_9() {
+    // The toy protocol: a SETUP REQUEST of an Identity, a Name and a list of Items
+    use toy::*;
+
+    fn main() -> Result<(), oxirush_aper::Error> {
+        // A PDU by the names of its IEs, each with the criticality that the object
+        // set of the message assigns it
+        let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
+            Identity(7u32),
+            Name("gNB-1"),
+        )?;
+        let octets = pdu.encode()?;
+        println!("{}", octets.iter().map(|octet| format!("{octet:02x}")).collect::<String>());
+
+        // Its IEs, read in one pass over the octets of its message, without
+        // `decode_value`: each that a field asks for is decoded, and no other
+        let pdu = TOYPDU::decode(&octets)?;
+        extract_toy_ies!(pdu, SetupRequest,
+            req identity: u32 = Identity(id),
+            opt name: Vec<u8> = Name(name) => name.0.to_vec(),
+        );
+        println!("{identity} {:?}", name.as_deref().map(String::from_utf8_lossy));
+
+        // One IE by its marker type, which has its identifier
+        println!("{:?}, IE {}", pdu.ie::<ie::Identity>(), <ie::Identity as oxirush_aper::protocol::Ie>::ID);
+        Ok(())
+    }
+
+    main().unwrap();
+}
+
+/// The Rust block 10 of README.md.
+fn block_10() {
+    use toy::*;
+
+    fn main() -> Result<(), oxirush_aper::Error> {
+        // A list of single containers: each item is an IE of its own
+        let items = vec![build_toy_ie!(REJECT Item(1u8))?, build_toy_ie!(REJECT Item(2u8))?];
+        let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
+            Identity(7u32),
+            Items(items),
+        )?;
+        // Each item, where it is in the octets of the PDU
+        for item in pdu.items::<ie::Items>() {
+            println!("item {}", item?.0);
+        }
+
+        // An IE of a message, changed in place
+        let mut request: SetupRequest = pdu.decode_value()?;
+        with_toy_ie_mut!(request, SetupRequest, Identity(id) = 9)?;
+        println!("{:?}", request.ie::<ie::Identity>());
+
+        // A SETUP REQUEST of two Identities: `ies::<T>()` gives each, the macros
+        // take the first, and its container is checked against the object set of
+        // its message without decoding a value
+        let twice = build_toy!(InitiatingMessage, Setup, SetupRequest,
+            Identity(7u32),
+            Identity(8u32),
+        )?;
+        let every: Vec<_> = twice.ies::<ie::Identity>().collect::<Result<_, _>>()?;
+        println!("{every:?}");
+        for deviation in twice.check_structure()? {
+            println!("{deviation}");
+        }
         Ok(())
     }
 

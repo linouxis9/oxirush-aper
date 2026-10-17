@@ -164,7 +164,7 @@ macro_rules! __procedures {
         pub(crate) fn message_read_and_written<'a>(
             pdu: &'a crate::$bindings::$pdu<'_>,
         ) -> Option<Result<Vec<u8>, $crate::Error>> {
-            fn rewritten<'a, T: $crate::protocol::Message<'a>>(
+            fn rewritten<'a, T: $crate::protocol::Message<'a, Protocol = crate::$protocol>>(
                 pdu: &'a crate::$bindings::$pdu<'_>,
             ) -> Result<Vec<u8>, $crate::Error> {
                 let message: T = pdu.decode_value()?;
@@ -239,15 +239,15 @@ macro_rules! __procedures {
             &str,
         )] = &[
             $($(("InitiatingMessage", $code, $initiating_name,
-                || crate::inspect::typed!($initiating_type),
+                || $crate::__typed!($initiating_type),
                 &[$($(($initiating_ie, $crate::__presence!($initiating_presence))),*)?],
                 stringify!($initiating_type)),)?)*
             $($(("SuccessfulOutcome", $code, $successful_name,
-                || crate::inspect::typed!($successful_type),
+                || $crate::__typed!($successful_type),
                 &[$($(($successful_ie, $crate::__presence!($successful_presence))),*)?],
                 stringify!($successful_type)),)?)*
             $($(("UnsuccessfulOutcome", $code, $unsuccessful_name,
-                || crate::inspect::typed!($unsuccessful_type),
+                || $crate::__typed!($unsuccessful_type),
                 &[$($(($unsuccessful_ie, $crate::__presence!($unsuccessful_presence))),*)?],
                 stringify!($unsuccessful_type)),)?)*
         ];
@@ -564,7 +564,7 @@ macro_rules! __ies {
         pub(crate) fn extension(id: u16, extended: &str) -> Option<$crate::inspect::Typed> {
             match (id, extended) {
                 $($($($(($id, stringify!($extended)) => {
-                    Some(crate::inspect::typed!($extending))
+                    Some($crate::__typed!($extending))
                 })+)+)?)*
                 _ => None,
             }
@@ -573,7 +573,7 @@ macro_rules! __ies {
         #[cfg(feature = "inspect")]
         pub(crate) fn ie(id: u16) -> Result<$crate::inspect::Typed, $crate::Error> {
             match id {
-                $($($id => Ok(crate::inspect::typed!($ie)),)?)*
+                $($($id => Ok($crate::__typed!($ie)),)?)*
                 _ => {
                     // An IE that has a type for each type that it extends has none
                     // elsewhere.
@@ -595,7 +595,7 @@ macro_rules! __ies {
         #[allow(clippy::match_single_binding)]
         pub(crate) fn ie_contents(id: u16) -> Option<$crate::inspect::Typed> {
             match id {
-                $($($($id => Some(crate::inspect::typed!($contents)),)?)?)*
+                $($($($id => Some($crate::__typed!($contents)),)?)?)*
                 _ => None,
             }
         }
@@ -886,6 +886,48 @@ macro_rules! __protocol {
                 let message = <Self as $crate::protocol::__Holds<N>>::__message(self)?;
                 let octets = <Self as $crate::protocol::Pdu<'p>>::value(self);
                 Ok($crate::protocol::Source::__of_octets(message, octets.as_slice()))
+            }
+        }
+
+        /// The tables of the registry, which `check()` of a PDU and the readers read: the
+        /// object set of each message, and the names of the IEs.
+        #[cfg(test)]
+        mod tables {
+            use crate::registry::{IE_NAMES, OBJECT_SETS};
+            use $crate::protocol::{name, object_set};
+
+            #[test]
+            fn the_ies_are_listed_in_the_order_of_their_identifiers() {
+                // The name of an IE is found by a binary search of its identifier.
+                assert!(IE_NAMES.windows(2).all(|pair| pair[0].0 < pair[1].0));
+                for (id, known) in IE_NAMES {
+                    assert_eq!(name::<super::$protocol>(*id), Some(*known));
+                }
+                assert_eq!(name::<super::$protocol>(u16::MAX), None);
+            }
+
+            #[test]
+            fn each_message_but_the_private_one_has_an_object_set() {
+                let without = OBJECT_SETS.iter().filter(|set| set.ies.is_none());
+                assert!(without.map(|set| set.name).eq(["PrivateMessage"]));
+                // A message is found by its direction and its procedure code.
+                for message in OBJECT_SETS {
+                    let found = object_set::<super::$protocol>(message.direction, message.procedure_code);
+                    assert_eq!(found.map(|found| found.name), Some(message.name));
+                }
+                assert!(object_set::<super::$protocol>("InitiatingMessage", 255).is_none());
+            }
+
+            #[test]
+            fn every_ie_of_an_object_set_has_a_name_and_is_there_once() {
+                for message in OBJECT_SETS {
+                    for (index, (id, ..)) in message.ies.into_iter().flatten().enumerate() {
+                        assert!(name::<super::$protocol>(*id).is_some(), "IE {id} of {}", message.name);
+                        let before = &message.ies.unwrap_or_default()[..index];
+                        let again = before.iter().any(|(known, ..)| known == id);
+                        assert!(!again, "IE {id} is twice in the set of {}", message.name);
+                    }
+                }
             }
         }
     };

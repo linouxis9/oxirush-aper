@@ -1,0 +1,89 @@
+name: Protocol reproduce
+
+# The bindings and the oracle of the tests of oxirush-ngap or oxirush-s1ap from the ASN.1
+# of the specification, and the vectors from pycrate: what the README of each says anyone
+# can check. The Reproduce workflow of each calls it, at the revision of this repository
+# that its build/revisions records, with the name of its protocol and the archive of its
+# specification. It fetches the archive from 3GPP and pycrate from PyPI.
+on:
+  workflow_call:
+    inputs:
+      protocol:
+        description: The protocol of the crate, `ngap` or `s1ap`
+        required: true
+        type: string
+      archive:
+        description: The archive of the specification, after https://www.3gpp.org/ftp/Specs/archive/
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # As in the CI workflow: the tests need no debug information.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  reproduce:
+    name: Bindings and vectors
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      # The generator, the tools and the crate that every build takes, beside the
+      # repository: the revision that wrote the bindings, which build/revisions records.
+      # oxirush-utils, which is not on crates.io yet either, comes from its repository.
+      - id: revisions
+        name: The revisions of build/revisions
+        run: |
+          revision() { awk -v name="$1" '$1 == name { print $2 }' build/revisions; }
+          echo "aper=$(revision oxirush-aper)" >> "$GITHUB_OUTPUT"
+          {
+            printf 'UNPUBLISHED='
+            printf -- '--config patch.crates-io.oxirush-aper.path="%s" ' "$GITHUB_WORKSPACE/oxirush-aper"
+            printf -- '--config patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils" '
+            printf -- '--config patch.crates-io.oxirush-utils.rev="%s"\n' "$(revision oxirush-utils)"
+          } >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ steps.revisions.outputs.aper }}
+          path: oxirush-aper
+      # The generated files are formatted with the rustfmt of this version.
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crate
+            crate/build
+      - name: The ASN.1 modules, out of the archive of 3GPP
+        run: |
+          curl -sS --fail -A "Mozilla/5.0" -o "$RUNNER_TEMP/specification.zip" \
+            "https://www.3gpp.org/ftp/Specs/archive/${{ inputs.archive }}"
+          python3 ../oxirush-aper/protocols/build/extract_asn1.py "$RUNNER_TEMP/specification.zip"
+      - name: The bindings, which the generator writes as they are committed
+        run: |
+          CARGO="$(command -v cargo)" cargo run --locked --manifest-path build/Cargo.toml
+          rustfmt --edition 2024 "src/${{ inputs.protocol }}.rs" src/registry.rs \
+            src/inspect_registry.rs oracle/src/bindings.rs oracle/src/types.rs
+          git diff --exit-code -- src oracle
+      - name: The vectors, which pycrate writes as they are committed
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install pycrate==0.8.1
+          generate=../oxirush-aper/protocols/tests/fixtures/generate.py
+          "$RUNNER_TEMP/venv/bin/python" "$generate" --check
+          "$RUNNER_TEMP/venv/bin/python" "$generate" --values "$RUNNER_TEMP/values.jsonl"
+          git diff --exit-code -- tests/fixtures
+      - name: The values of pycrate, which the crate writes to the octets of pycrate
+        run: cargo test $UNPUBLISHED --features inspect --test vectors -- --ignored
+        env:
+          REFERENCE_VALUES: ${{ runner.temp }}/values.jsonl

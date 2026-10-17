@@ -131,3 +131,7 @@ jobs:
       - run: cargo fmt --check --manifest-path generator/Cargo.toml
       - run: cargo fmt --check --manifest-path benches/Cargo.toml
       - run: cargo fmt --check --manifest-path fuzz/Cargo.toml
+      # What oxirush-ngap and oxirush-s1ap take from `protocols/`, which no package of this
+      # repository builds; the program of hampi is of the edition 2021.
+      - run: rustfmt --edition 2024 --check $(git ls-files 'protocols/*.rs' ':!:protocols/benches/compare/hampi/*')
+      - run: rustfmt --edition 2021 --check $(git ls-files 'protocols/benches/compare/hampi/*.rs')

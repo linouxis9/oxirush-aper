@@ -50,6 +50,7 @@
 
 mod build;
 mod errors;
+mod inspection;
 mod macros;
 mod pdu;
 mod read;

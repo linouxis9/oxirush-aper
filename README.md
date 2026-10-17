@@ -362,6 +362,100 @@ extension bit without an addition that is present, an addition of no octet, a
 number of no octet or of more octets than 64 bits may have, a number, a size
 or an index outside its constraint, and octets after a complete encoding.
 
+## The macros of a protocol crate
+
+oxirush-ngap and oxirush-s1ap give macros that build a message and read and
+change its IEs by name (`build_ngap!`, `extract_ngap_ies!`,
+`with_ngap_ie_mut!`, and the same with `s1ap`), and readers of one IE of a
+PDU or a message by its marker type. Their code is here, in the module
+`protocol`: the traits that the registry of a protocol implements, the
+readers, and the bodies of the macros, hidden from the documentation, which
+the macros of each crate forward to with its paths. The generator of the
+repository writes the registry of each protocol from its ASN.1. Here they are
+on the protocol of `tests/toy/mod.rs`, which is written as the generator
+writes one:
+
+```rust
+// The toy protocol: a SETUP REQUEST of an Identity, a Name and a list of Items
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/toy/mod.rs"));
+use toy::*;
+
+fn main() -> Result<(), oxirush_aper::Error> {
+    // A PDU by the names of its IEs, each with the criticality that the object
+    // set of the message assigns it
+    let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
+        Identity(7u32),
+        Name("gNB-1"),
+    )?;
+    let octets = pdu.encode()?;
+    println!("{}", octets.iter().map(|octet| format!("{octet:02x}")).collect::<String>());
+
+    // Its IEs, read in one pass over the octets of its message, without
+    // `decode_value`: each that a field asks for is decoded, and no other
+    let pdu = TOYPDU::decode(&octets)?;
+    extract_toy_ies!(pdu, SetupRequest,
+        req identity: u32 = Identity(id),
+        opt name: Vec<u8> = Name(name) => name.0.to_vec(),
+    );
+    println!("{identity} {:?}", name.as_deref().map(String::from_utf8_lossy));
+
+    // One IE by its marker type, which has its identifier
+    println!("{:?}, IE {}", pdu.ie::<ie::Identity>(), <ie::Identity as oxirush_aper::protocol::Ie>::ID);
+    Ok(())
+}
+```
+
+```text
+000100130000020001000200070002400605674e422d31
+7 Some("gNB-1")
+Some(Ok(Identity(7))), IE 1
+```
+
+```rust
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/toy/mod.rs"));
+use toy::*;
+
+fn main() -> Result<(), oxirush_aper::Error> {
+    // A list of single containers: each item is an IE of its own
+    let items = vec![build_toy_ie!(REJECT Item(1u8))?, build_toy_ie!(REJECT Item(2u8))?];
+    let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
+        Identity(7u32),
+        Items(items),
+    )?;
+    // Each item, where it is in the octets of the PDU
+    for item in pdu.items::<ie::Items>() {
+        println!("item {}", item?.0);
+    }
+
+    // An IE of a message, changed in place
+    let mut request: SetupRequest = pdu.decode_value()?;
+    with_toy_ie_mut!(request, SetupRequest, Identity(id) = 9)?;
+    println!("{:?}", request.ie::<ie::Identity>());
+
+    // A SETUP REQUEST of two Identities: `ies::<T>()` gives each, the macros
+    // take the first, and its container is checked against the object set of
+    // its message without decoding a value
+    let twice = build_toy!(InitiatingMessage, Setup, SetupRequest,
+        Identity(7u32),
+        Identity(8u32),
+    )?;
+    let every: Vec<_> = twice.ies::<ie::Identity>().collect::<Result<_, _>>()?;
+    println!("{every:?}");
+    for deviation in twice.check_structure()? {
+        println!("{deviation}");
+    }
+    Ok(())
+}
+```
+
+```text
+item 1
+item 2
+Some(Ok(Identity(9)))
+[Identity(7), Identity(8)]
+Identity (IE 1), at position 1, is in the message already, at position 0
+```
+
 ## Limits
 
 - The unaligned variant.
@@ -372,7 +466,9 @@ or an index outside its constraint, and octets after a complete encoding.
 - An `INTEGER` beyond 64 bits, which is a decoding error.
 - Parsing ASN.1: bindings are written by a generator, `generator/` of the
   repository, which oxirush-ngap and oxirush-s1ap share and which is not
-  published.
+  published, as `protocols/` is: the tools, the programs and the tests that
+  the two crates share beside their code, which each takes from a checkout of
+  this repository, with the jobs of `.github/workflows/protocol*.yml`.
 
 ## Performance
 

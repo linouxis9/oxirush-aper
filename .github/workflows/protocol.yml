@@ -1,0 +1,325 @@
+name: Protocol
+
+# The CI of oxirush-ngap and oxirush-s1ap, which the CI workflow of each calls, at the
+# revision of this repository that its build/revisions records, with the name of its
+# protocol. The tools and the programs of `protocols/` are those of that revision: a job
+# that runs one checks the repository of the crate out in `crate`, and this one at that
+# revision beside it, in `oxirush-aper`, where the crate takes them from.
+on:
+  workflow_call:
+    inputs:
+      protocol:
+        description: The protocol of the crate, `ngap` or `s1ap`
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The tests need no debug information: without it the bindings, and for the job
+  # of the oracle the types of the protocol once more with the codec of rasn, build
+  # faster and in less memory.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  # oxirush-aper 0.1.0 and oxirush-utils 0.1.0 are not on crates.io yet: each job takes
+  # them at the revisions of build/revisions, which this one reads. `unpublished` has the
+  # options of cargo that take them from their repositories.
+  revisions:
+    name: The revisions of oxirush-aper and oxirush-utils
+    runs-on: ubuntu-24.04
+    outputs:
+      aper: ${{ steps.read.outputs.aper }}
+      unpublished: ${{ steps.read.outputs.unpublished }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: read
+        run: |
+          revision() { awk -v name="$1" '$1 == name { print $2 }' build/revisions; }
+          echo "aper=$(revision oxirush-aper)" >> "$GITHUB_OUTPUT"
+          {
+            printf 'unpublished='
+            printf -- '--config patch.crates-io.oxirush-aper.git="https://github.com/linouxis9/oxirush-aper" '
+            printf -- '--config patch.crates-io.oxirush-aper.rev="%s" ' "$(revision oxirush-aper)"
+            printf -- '--config patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils" '
+            printf -- '--config patch.crates-io.oxirush-utils.rev="%s"\n' "$(revision oxirush-utils)"
+          } >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test
+    needs: revisions
+    runs-on: ubuntu-24.04
+    env:
+      UNPUBLISHED: ${{ needs.revisions.outputs.unpublished }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test $UNPUBLISHED --all-features
+      - run: cargo test $UNPUBLISHED --features inspect
+      - run: cargo test $UNPUBLISHED
+
+  # 32 bits, where a `usize` holds less than a `u64`.
+  i686:
+    name: Tests on 32 bits (i686-unknown-linux-musl)
+    needs: revisions
+    runs-on: ubuntu-24.04
+    env:
+      UNPUBLISHED: ${{ needs.revisions.outputs.unpublished }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test $UNPUBLISHED --all-features --target i686-unknown-linux-musl
+
+  msrv:
+    name: MSRV (1.88)
+    needs: revisions
+    runs-on: ubuntu-24.04
+    env:
+      UNPUBLISHED: ${{ needs.revisions.outputs.unpublished }}
+    defaults:
+      run:
+        working-directory: crate
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crate
+            crate/oracle
+      - run: cargo test $UNPUBLISHED --all-features
+      - run: cargo test
+        working-directory: crate/oracle
+
+  # The crate against its oracle: the same types with the codec of rasn, which each
+  # vector and each captured PDU, and what a peer may send in its place, is compared
+  # with. The oracle is a package of its own, which depends on the crate, and the
+  # crate does not depend on it. cargo is run from its directory, whose
+  # `.cargo/config.toml` builds the crate with its hooks; its manifest takes
+  # oxirush-aper from beside the repository and oxirush-utils from its repository, so
+  # its commands need no `--config`.
+  oracle:
+    name: The crate against the codec of rasn
+    needs: revisions
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate/oracle
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crate/oracle
+      - run: cargo test
+      - run: cargo clippy --all-targets -- -D warnings
+
+  # What crates.io would hold of the crate: cargo makes the package, and its tests
+  # are built and run from it alone, outside the repository, with every feature and
+  # with none.
+  package:
+    name: The tests of the package, from the package alone
+    needs: revisions
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@stable
+      - run: ../oxirush-aper/protocols/tests/package.sh "$RUNNER_TEMP/package"
+
+  clippy:
+    name: Clippy
+    needs: revisions
+    runs-on: ubuntu-24.04
+    env:
+      UNPUBLISHED: ${{ needs.revisions.outputs.unpublished }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy $UNPUBLISHED --all-targets --all-features -- -D warnings
+      - run: cargo clippy $UNPUBLISHED --all-targets --features inspect -- -D warnings
+      - run: cargo clippy $UNPUBLISHED --all-targets -- -D warnings
+
+  doc:
+    name: Doc
+    needs: revisions
+    runs-on: ubuntu-24.04
+    env:
+      UNPUBLISHED: ${{ needs.revisions.outputs.unpublished }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc $UNPUBLISHED --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  # A product that keeps the crate beside its own crates has it as a member of its
+  # workspace: cargo loads such a workspace, and clippy and rustdoc accept its
+  # members.
+  workspace:
+    name: A member of a larger workspace
+    needs: revisions
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: ../oxirush-aper/protocols/tests/workspace_member.sh "$RUNNER_TEMP/workspace"
+
+  benches:
+    name: Benchmarks build
+    needs: revisions
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crate/benches
+      # The package takes oxirush-aper from beside the repository and oxirush-utils
+      # from its repository by a patch of its own manifest, so its commands need no
+      # `--config`. The inputs of the benchmarks are messages that the codec gives back.
+      - run: cargo test --manifest-path benches/Cargo.toml
+      - run: cargo clippy --manifest-path benches/Cargo.toml --all-targets --all-features -- -D warnings
+      - run: cargo bench --manifest-path benches/Cargo.toml --no-run
+
+  # Each target gives its octets to the crate and to its oracle, the codec of rasn,
+  # and compares what the two read and write.
+  fuzz:
+    name: Fuzz the codec and the JSON forms against the oracle (3 minutes)
+    needs: revisions
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate
+    env:
+      # What the targets take from the inside of the crate.
+      RUSTFLAGS: --cfg oxirush_${{ inputs.protocol }}_hooks
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crate/fuzz
+      - run: cargo install cargo-fuzz --locked
+      # Each corpus starts from the PDUs of tests/fixtures, and from each under a procedure
+      # code that the specification does not have. A minute for each target is then enough
+      # for what a corpus of the PDUs shows: the fault that the review of the release
+      # candidate found under an unknown procedure (tests/fixtures/null_paths.tsv), which
+      # 30 minutes from the PDUs alone did not show, shows in 9 seconds from them.
+      - run: ../oxirush-aper/protocols/fuzz/seed.sh
+      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096
+      - run: cargo fuzz run view -- -max_total_time=60 -max_len=4096
+      - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096
+
+  # The files that the tools of `protocols/` write, as they write them: the revisions
+  # of build/revisions wherever the repository names one, and the test of the README.
+  written:
+    name: Revisions and the test of the README
+    needs: revisions
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - run: python3 ../oxirush-aper/protocols/build/pin.py --check
+      - run: python3 ../oxirush-aper/protocols/tests/readme.py --check
+
+  fmt:
+    name: Format
+    needs: revisions
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crate
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.revisions.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+      - run: cargo fmt --check --manifest-path benches/Cargo.toml
+      - run: cargo fmt --check --manifest-path oracle/Cargo.toml
+      - run: cargo fmt --check --manifest-path fuzz/Cargo.toml
+      # What the shared programs include of the protocol, which cargo fmt does not reach.
+      - run: rustfmt --edition 2024 --check benches/src/protocol.rs benches/src/readers.rs fuzz/src/protocol.rs

@@ -336,7 +336,7 @@ fn generate_types(
         Ok(format!("{name:?}{presence} {written}"))
     };
     // rustfmt leaves the lines of a macro called with braces as they are.
-    writeln!(out, "types! {{")?;
+    writeln!(out, "oxirush_aper::__types! {{")?;
     for (name, item) in &declared {
         if CONTAINERS.iter().any(|(container, _)| container == name) {
             continue;
@@ -411,14 +411,14 @@ pub fn generate(
     // One line for each transfer: rustfmt leaves the lines of a macro called with braces
     // as they are.
     let mut out = String::from(
-        "// Auto-generated from ASN.1 by the generator of oxirush-aper; do not edit.\nuse crate::inspect::{Form, Typed, carried, transfers};\nuse crate::inspect_paths::types;\npub(crate) use crate::registry::{IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGE_IE_CRITICALITIES, MESSAGES, PROCEDURE_CRITICALITIES, ie, ie_contents};\n",
+        "// Auto-generated from ASN.1 by the generator of oxirush-aper; do not edit.\nuse oxirush_aper::inspect::Form;\npub(crate) use crate::registry::{IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGE_IE_CRITICALITIES, MESSAGES, PROCEDURE_CRITICALITIES, ie, ie_contents};\n",
     );
     writeln!(
         out,
         "pub(crate) const PROTOCOL: &str = {protocol:?};\npub(crate) const ROOT: &str = {module:?};"
     )?;
     // The member that holds a transfer, and the type that its octets contain.
-    writeln!(out, "transfers! {{")?;
+    writeln!(out, "oxirush_aper::__transfers! {{")?;
     for (field, alternatives) in &transfers {
         match alone(alternatives) {
             Some(ty) => writeln!(out, "    {field:?} {ty};")?,
@@ -428,7 +428,7 @@ pub fn generate(
     writeln!(out, "}}")?;
     // The identifier of an IE whose octets may carry a type, the name that ASN.1 gives
     // that type, and the type.
-    writeln!(out, "carried! {{")?;
+    writeln!(out, "oxirush_aper::__carried! {{")?;
     for (ie, name) in carried {
         let mut ies = registry.ies.iter();
         let (id, _) = ies

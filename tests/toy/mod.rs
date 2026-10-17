@@ -35,7 +35,6 @@
 // ```
 
 
-pub use oxirush_aper as aper;
 pub use registry::{Deviation, Toy, ToyPduKind, ie};
 
 /// The bindings, as the generator writes them for a protocol.
@@ -608,25 +607,28 @@ oxirush_aper::__lists! {
 /// The functions of a type for the trees of `inspect`, which the toy protocol has none of.
 #[cfg(feature = "inspect")]
 pub mod inspect {
-    macro_rules! typed {
-        ($type:ty) => {{
-            fn decode(_: &[u8]) -> Result<oxirush_aper::inspect::Decoded, oxirush_aper::Error> {
-                Err(oxirush_aper::Error::new(oxirush_aper::ErrorKind::Form, "no tree"))
-            }
-            fn encode(_: &oxirush_aper::json::Value) -> Result<Vec<u8>, oxirush_aper::Error> {
-                Err(oxirush_aper::Error::new(oxirush_aper::ErrorKind::Form, "no tree"))
-            }
-            oxirush_aper::inspect::Typed { decode, encode }
-        }};
+    use oxirush_aper::{Error, ErrorKind, inspect::Decoded, json::Value};
+
+    #[allow(clippy::extra_unused_type_parameters)]
+    pub(crate) fn __decode_typed<T>(_: &'static str, _: &[u8]) -> Result<Decoded, Error> {
+        Err(Error::new(ErrorKind::Form, "no tree"))
     }
-    pub(crate) use typed;
+
+    #[allow(clippy::extra_unused_type_parameters)]
+    pub(crate) fn __encode_typed<T>(_: &Value) -> Result<Vec<u8>, Error> {
+        Err(Error::new(ErrorKind::Form, "no tree"))
+    }
 }
+
+// The macros of a protocol crate call those of oxirush-aper through its re-export,
+// `$crate::aper`, as a user of the crate may not depend on oxirush-aper; the toy calls them
+// by the name of the crate, which a documentation test cannot re-export.
 
 /// Build a PDU of the toy protocol, as `build_ngap!` builds one of NGAP.
 #[macro_export]
 macro_rules! build_toy {
     ($($arguments:tt)*) => {
-        $crate::aper::__build!($crate, toy, "build_toy!", $($arguments)*)
+        ::oxirush_aper::__build!($crate, toy, "build_toy!", $($arguments)*)
     };
 }
 
@@ -634,7 +636,7 @@ macro_rules! build_toy {
 #[macro_export]
 macro_rules! build_toy_ie {
     ($($arguments:tt)*) => {
-        $crate::aper::__build_ie!($crate, toy, "build_toy_ie!", $($arguments)*)
+        ::oxirush_aper::__build_ie!($crate, toy, "build_toy_ie!", $($arguments)*)
     };
 }
 
@@ -643,7 +645,7 @@ macro_rules! build_toy_ie {
 #[macro_export]
 macro_rules! extract_toy_ies {
     ($($arguments:tt)*) => {
-        $crate::aper::__extract_ies!($crate, toy, $($arguments)*)
+        ::oxirush_aper::__extract_ies!($crate, toy, $($arguments)*)
     };
 }
 
@@ -651,6 +653,6 @@ macro_rules! extract_toy_ies {
 #[macro_export]
 macro_rules! with_toy_ie_mut {
     ($($arguments:tt)*) => {
-        $crate::aper::__with_ie_mut!($crate, toy, $($arguments)*)
+        ::oxirush_aper::__with_ie_mut!($crate, toy, $($arguments)*)
     };
 }

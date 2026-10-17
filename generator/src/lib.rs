@@ -33,13 +33,15 @@
 //! - [`asn1`] reads the modules, each checked against the digest that is recorded
 //!   for it.
 //!
-//! The generator of a protocol, in the `build/` of its crate, runs rasn-compiler, calls
-//! these in that order and adds what has the names of the protocol.
+//! - [`protocol`] runs rasn-compiler and these in that order, and adds what a PDU of the
+//!   protocol does: the `build/` of a protocol crate calls it with the names of its
+//!   protocol.
 
 pub mod asn1;
 pub mod bindings;
 pub mod containers;
 pub mod inspection;
 pub mod names;
+pub mod protocol;
 pub mod rasn_fix;
 pub mod registry;

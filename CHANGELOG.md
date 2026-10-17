@@ -98,7 +98,11 @@ and S1AP (TS 36.413) uses.
   for the container alone without decoding a value (`check::structure_deviations`),
   `protocol_ies`, `set_protocol_ies`, `of_message`, and the macros of the
   protocol crates, hidden from the documentation, which their public macros
-  call with their own path: `build_ngap!` is `__build!` of this crate.
+  call with their own path: `build_ngap!` is `__build!` of this crate. The
+  registry of a protocol invokes the macros that write its procedures, its
+  IEs with their marker types, its lists, the tables of `inspect`, the
+  module `hooks` of its fuzz targets and its oracle, and the tests of its
+  tables. The README shows the macros on the protocol of `tests/toy/`.
 - `#![no_std]` with `alloc`, no dependency without a feature, no `unsafe`.
 - The crate, oxirush-ngap and oxirush-s1ap are released in step: the two
   depend on one version of it exactly (`=0.1.0`), re-export it with its value
@@ -110,6 +114,13 @@ and S1AP (TS 36.413) uses.
 - In the repository and not in the crate: `generator/`, the library that
   writes the bindings of a protocol on this crate, with the type of ASN.1 of
   each binding as the first line of its documentation and none of the
-  banners of the sections of the modules, fuzz targets and benchmarks.
+  banners of the sections of the modules, and the driver that the generator
+  of each protocol crate configures (`generator::protocol`); fuzz targets and
+  benchmarks; and what oxirush-ngap and oxirush-s1ap share beside their code,
+  which each takes from a checkout of the repository at the revision that it
+  records: `protocols/` (the oracle and its tests, the fuzz targets, the
+  benchmarks, the scripts of the fixtures, of the package, of a workspace and
+  of the revisions, and the writer of the test of a README) and the jobs of
+  `.github/workflows/protocol.yml` and `protocol-reproduce.yml`.
 - The tests hold on 32 bits as on 64, which CI runs on
   `i686-unknown-linux-musl`.

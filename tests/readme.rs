@@ -22,9 +22,16 @@
 
 use std::fmt::Write;
 
+// The toy protocol, which the blocks of the macros of a protocol crate include at the root
+// of their documentation test: the functions of the blocks have it from here.
+include!("toy/mod.rs");
+
 #[rustfmt::skip]
 #[path = "readme/blocks.rs"]
 mod blocks;
+
+/// The line of a block that includes the toy protocol.
+const TOY: &str = r#"include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/toy/mod.rs"));"#;
 
 const README: &str = include_str!("../README.md");
 const BLOCKS: &str = include_str!("readme/blocks.rs");
@@ -93,7 +100,8 @@ fn generated(examples: &[Example]) -> String {
     for (example, rank) in examples.iter().zip(1..) {
         writeln!(file, "\n/// The Rust block {rank} of README.md.").unwrap();
         writeln!(file, "fn block_{rank}() {{").unwrap();
-        for code in example.code.lines() {
+        // The toy protocol is at the root of this crate.
+        for code in example.code.lines().filter(|code| *code != TOY) {
             match code.is_empty() {
                 true => writeln!(file).unwrap(),
                 false => writeln!(file, "    {code}").unwrap(),
@@ -117,6 +125,9 @@ const HEAD: &str = r#"// The Rust blocks of README.md, each as a function. `test
 #![allow(unused)]
 
 use std::cell::RefCell;
+
+// The toy protocol, for the blocks that include it.
+use super::{ie, toy};
 
 thread_local!(static PRINTED: RefCell<String> = const { RefCell::new(String::new()) });
 
