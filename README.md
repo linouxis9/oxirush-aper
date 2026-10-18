@@ -96,7 +96,7 @@ cargo resolves an optional dependency without its feature too.
 oxirush-aper = { git = "https://github.com/linouxis9/oxirush-aper" }
 
 [patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "eb1c453cd08dc3d0b712f53d4273595793cb9106" }
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "2f99edcc40baa5cf7397f94ecfc131dc1143bac5" }
 ```
 
 In a clone of the repository, a cargo command takes it with `--config`, as CI
@@ -105,7 +105,7 @@ does:
 ```sh
 cargo test --all-features \
   --config 'patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"' \
-  --config 'patch.crates-io.oxirush-utils.rev="eb1c453cd08dc3d0b712f53d4273595793cb9106"'
+  --config 'patch.crates-io.oxirush-utils.rev="2f99edcc40baa5cf7397f94ecfc131dc1143bac5"'
 ```
 
 The minimum supported Rust version is 1.88. The crate is `#![no_std]`, needs

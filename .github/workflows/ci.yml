@@ -15,7 +15,7 @@ env:
   # that build/revisions records, which build/pin.py writes here.
   UNPUBLISHED: >-
     --config patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"
-    --config patch.crates-io.oxirush-utils.rev="eb1c453cd08dc3d0b712f53d4273595793cb9106"
+    --config patch.crates-io.oxirush-utils.rev="2f99edcc40baa5cf7397f94ecfc131dc1143bac5"
 
 jobs:
   test:
