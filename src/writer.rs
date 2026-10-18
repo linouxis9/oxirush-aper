@@ -368,6 +368,20 @@ impl<'a> Writer<'a> {
     /// The size of a string or of a list whose size constraint is `lower..=upper`,
     /// with an upper bound below 64K: a constrained whole number (X.691 §11.9.3.3).
     ///
+    /// ```
+    /// use oxirush_aper::{Reader, Writer};
+    ///
+    /// // SEQUENCE (SIZE (1..16)) OF: a count of three, in four bits
+    /// let mut octets = Vec::new();
+    /// Writer::new(&mut octets).size(3, 1, 16)?;
+    /// assert_eq!(octets, [0x20]);
+    /// assert_eq!(Reader::new(&octets).size(1, 16)?, 3);
+    ///
+    /// // A count outside the constraint
+    /// assert!(Writer::new(&mut Vec::new()).size(17, 1, 16).is_err());
+    /// # Ok::<(), oxirush_aper::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// A size outside the constraint is an error.
@@ -393,6 +407,17 @@ impl<'a> Writer<'a> {
     /// CHOICE (§23) that has `root` of them before its extension marker, when it is
     /// `extensible`. The first addition has the index `root`, and the alternative of a
     /// CHOICE that is an addition follows in an open type.
+    ///
+    /// ```
+    /// use oxirush_aper::{Reader, Writer};
+    ///
+    /// // ENUMERATED { a, b, c, ... }: the extension bit, then c in two bits
+    /// let mut octets = Vec::new();
+    /// Writer::new(&mut octets).index(2, 3, true);
+    /// assert_eq!(octets, [0x40]);
+    /// assert_eq!(Reader::new(&octets).enumerated(3, 0, true)?, 2);
+    /// # Ok::<(), oxirush_aper::Error>(())
+    /// ```
     #[inline]
     pub fn index(&mut self, index: u64, root: u64, extensible: bool) {
         debug_assert!(root > 0 && (extensible || index < root));
@@ -411,6 +436,21 @@ impl<'a> Writer<'a> {
     /// The bitmap of the extension additions of a SEQUENCE (X.691 §19.7, §19.8),
     /// whose extension bit is set: whether each addition is present, in their order.
     /// Each one that is present follows in an open type.
+    ///
+    /// ```
+    /// use oxirush_aper::Writer;
+    ///
+    /// // Two additions, of which the second is present, in an open type of one octet
+    /// let mut octets = Vec::new();
+    /// let mut writer = Writer::new(&mut octets);
+    /// writer.additions(&[false, true])?;
+    /// writer.open_type(&[0xaa]);
+    /// assert_eq!(octets, [0b0000_0010, 0b1000_0000, 0x01, 0xaa]);
+    ///
+    /// // With none present, the extension bit is not set and no bitmap is written
+    /// assert!(Writer::new(&mut Vec::new()).additions(&[false, false]).is_err());
+    /// # Ok::<(), oxirush_aper::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -543,6 +583,22 @@ impl<'a> Writer<'a> {
 
     /// End the open type that started at `start`: its value is whole, padded to an
     /// octet, and its length is written before it.
+    ///
+    /// ```
+    /// use oxirush_aper::Writer;
+    ///
+    /// // An open type of 130 octets: from 128, its length takes two octets
+    /// let mut octets = Vec::new();
+    /// let mut writer = Writer::new(&mut octets);
+    /// let start = writer.begin_open_type();
+    /// for value in 0..130 {
+    ///     writer.unsigned(value, 0, 255)?;
+    /// }
+    /// writer.end_open_type(start);
+    /// assert_eq!(octets[..4], [0x80, 0x82, 0x00, 0x01]);
+    /// assert_eq!(octets.len(), 132);
+    /// # Ok::<(), oxirush_aper::Error>(())
+    /// ```
     #[inline]
     pub fn end_open_type(&mut self, start: usize) {
         self.free = 0;

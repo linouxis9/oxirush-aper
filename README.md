@@ -9,66 +9,46 @@ and a writer of the fields, and the types of the values. `no_std`, and without
 a feature no dependency.
 
 ```rust
-use oxirush_aper::{AsnType, Decode, Encode, Error, Octets, Reader, Writer};
+use oxirush_aper::{Reader, Writer};
 
-// Sample ::= SEQUENCE { id INTEGER (0..65535), payload OCTET STRING OPTIONAL, ... }
-#[derive(Debug, PartialEq)]
-struct Sample<'a> {
-    id: u16,
-    payload: Option<Octets<'a>>,
-}
+fn main() -> Result<(), oxirush_aper::Error> {
+    let mut octets = Vec::new();
+    let mut writer = Writer::new(&mut octets);
+    // INTEGER (0..7): three bits
+    writer.unsigned(5, 0, 7)?;
+    // INTEGER (0..255, ...): the extension bit, then one octet, aligned
+    writer.unsigned_extensible(200, 0, 255)?;
+    // ENUMERATED with 6 root values and an extension marker: the fourth
+    writer.index(3, 6, true);
+    // SIZE (1..256) of a SEQUENCE OF: its count, then its items
+    writer.size(2, 1, 256)?;
+    writer.unsigned(1, 0, 1)?;
+    writer.unsigned(0, 0, 1)?;
+    println!("{octets:02x?}");
 
-impl AsnType for Sample<'_> {
-    const NAME: &'static str = "Sample";
-}
+    let mut reader = Reader::new(&octets);
+    println!("{}", reader.unsigned(0, 7)?);
+    println!("{}", reader.unsigned_extensible(0, 255)?);
+    println!("{}", reader.enumerated(6, 0, true)?);
+    println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
 
-impl<'a> Decode<'a> for Sample<'a> {
-    fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-        // The extension bit, then a bit for the member that may be absent
-        let extended = reader.bit()?;
-        let has_payload = reader.bit()?;
-        let id = reader.unsigned(0, 65535)? as u16;
-        let payload = match has_payload {
-            true => Some(reader.octet_string(0, oxirush_aper::UNBOUNDED)?),
-            false => None,
-        };
-        if extended {
-            reader.skip_additions()?;
-        }
-        Ok(Self { id, payload })
-    }
-}
-
-impl Encode for Sample<'_> {
-    fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-        writer.bit(false);
-        writer.bit(self.payload.is_some());
-        writer.unsigned(self.id.into(), 0, 65535)?;
-        if let Some(payload) = &self.payload {
-            writer.octet_string(payload, 0, oxirush_aper::UNBOUNDED)?;
-        }
-        Ok(())
-    }
-}
-
-fn main() -> Result<(), Error> {
-    // The payload of what is decoded is a slice of the octets
-    let octets = [0x40, 0x12, 0x34, 0x02, 0xca, 0xfe];
-    let sample: Sample = oxirush_aper::decode(&octets)?;
-    println!("{sample:?}, borrowed: {}", sample.payload.as_ref().unwrap().is_borrowed());
-    println!("{:02x?}", oxirush_aper::encode(&sample)?);
-
-    // Octets that end early
-    println!("{}", oxirush_aper::decode::<Sample>(&octets[..5]).unwrap_err());
+    println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7).unwrap_err());
     Ok(())
 }
 ```
 
 ```text
-Sample { id: 4660, payload: Some(CAFE) }, borrowed: true
-[40, 12, 34, 02, ca, fe]
-these octets do not decode as Sample: the octets end before the value does
+[a0, c8, 30, 01, 80]
+5
+200
+3
+2 items: true false
+the value does not encode: 8 is outside its constraint (0..7)
 ```
+
+A `Reader` and a `Writer` have one method for each field of X.691 that NGAP
+and S1AP use, and the bounds of a constraint are their arguments. The text
+under a block is what the block prints.
 
 This page describes 0.1.0, which is not on crates.io yet.
 
@@ -112,6 +92,117 @@ The minimum supported Rust version is 1.88. The crate is `#![no_std]`, needs
 `alloc`, and has no `unsafe`. oxirush-ngap and oxirush-s1ap of a release
 depend on this crate at one version exactly, and are released with it: a
 program takes it through them, as `oxirush_ngap::aper`.
+
+## A protocol of its own
+
+The codec of a type is its fields in order, each with the bounds of its
+constraint, as the generated bindings of oxirush-ngap and oxirush-s1ap
+write theirs. Here a SEQUENCE with an extension marker, an OPTIONAL member,
+an extensible ENUMERATED, a character string and a SEQUENCE OF:
+
+```rust
+use oxirush_aper::{AsnType, Decode, Encode, Error, Reader, Writer};
+use std::borrow::Cow;
+
+// Cell ::= SEQUENCE {
+//     id          INTEGER (0..4095),
+//     kind        ENUMERATED { macro, small, ... },
+//     name        PrintableString (SIZE (1..150)) OPTIONAL,
+//     neighbours  SEQUENCE (SIZE (0..8)) OF INTEGER (0..4095),
+//     ...
+// }
+#[derive(Debug, PartialEq)]
+enum Kind {
+    Macro,
+    Small,
+}
+
+#[derive(Debug, PartialEq)]
+struct Cell<'a> {
+    id: u16,
+    kind: Kind,
+    name: Option<Cow<'a, str>>,
+    neighbours: Vec<u16>,
+}
+
+impl AsnType for Cell<'_> {
+    const NAME: &'static str = "Cell";
+}
+
+impl<'a> Decode<'a> for Cell<'a> {
+    fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+        // The extension bit, then a bit for each member that may be absent
+        let extended = reader.bit()?;
+        let has_name = reader.bit()?;
+        let id = reader.unsigned(0, 4095)? as u16;
+        // An index among two values of the root, and none added that is known
+        let kind = match reader.enumerated(2, 0, true)? {
+            0 => Kind::Macro,
+            _ => Kind::Small,
+        };
+        let name = match has_name {
+            true => Some(reader.printable_string(1, 150)?),
+            false => None,
+        };
+        let count = reader.size(0, 8)?;
+        let neighbours = (0..count)
+            .map(|_| reader.unsigned(0, 4095).map(|id| id as u16))
+            .collect::<Result<_, _>>()?;
+        // What a later version adds is skipped
+        if extended {
+            reader.skip_additions()?;
+        }
+        Ok(Self { id, kind, name, neighbours })
+    }
+}
+
+impl Encode for Cell<'_> {
+    fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+        writer.bit(false);
+        writer.bit(self.name.is_some());
+        writer.unsigned(self.id.into(), 0, 4095)?;
+        writer.index(match self.kind { Kind::Macro => 0, Kind::Small => 1 }, 2, true);
+        if let Some(name) = &self.name {
+            writer.printable_string(name, 1, 150)?;
+        }
+        writer.size(self.neighbours.len(), 0, 8)?;
+        for neighbour in &self.neighbours {
+            writer.unsigned((*neighbour).into(), 0, 4095)?;
+        }
+        Ok(())
+    }
+}
+
+fn main() -> Result<(), Error> {
+    let cell = Cell {
+        id: 0x123,
+        kind: Kind::Small,
+        name: Some("cell-1".into()),
+        neighbours: vec![0x124, 0x125],
+    };
+    let octets = oxirush_aper::encode(&cell)?;
+    println!("{octets:02x?}");
+
+    // The name of what is decoded is a slice of the octets
+    let read: Cell = oxirush_aper::decode(&octets)?;
+    println!("{read:?}");
+    println!("borrowed: {}", matches!(read.name, Some(Cow::Borrowed(_))));
+
+    // What its constraints do not hold is an error of the writer and of the reader
+    let crowded = Cell { neighbours: vec![0; 9], ..read };
+    println!("{}", oxirush_aper::encode(&crowded).unwrap_err());
+    println!("{}", oxirush_aper::decode::<Cell>(&octets[..5]).unwrap_err());
+    Ok(())
+}
+```
+
+```text
+[40, 01, 23, 41, 40, 63, 65, 6c, 6c, 2d, 31, 20, 01, 24, 01, 25]
+Cell { id: 291, kind: Small, name: Some("cell-1"), neighbours: [292, 293] }
+borrowed: true
+a value of Cell does not encode: a size of 9 is outside its constraint (0..8)
+these octets do not decode as Cell: the octets end before the value does
+```
 
 ## The types of the values
 
@@ -178,50 +269,6 @@ true
 [10, 0, 0, 1] of 32 bits
 ```
 
-## Read and write the fields
-
-A `Reader` and a `Writer` have one method for each field of X.691 that NGAP
-and S1AP use, and the bounds of a constraint are its arguments. A number
-outside its constraint is an error of the writer and of the reader.
-
-```rust
-use oxirush_aper::{Reader, Writer};
-
-fn main() -> Result<(), oxirush_aper::Error> {
-    let mut octets = Vec::new();
-    let mut writer = Writer::new(&mut octets);
-    // INTEGER (0..7): three bits
-    writer.unsigned(5, 0, 7)?;
-    // INTEGER (0..255, ...): the extension bit, then one octet, aligned
-    writer.unsigned_extensible(200, 0, 255)?;
-    // ENUMERATED with 6 root values and an extension marker: the fourth
-    writer.index(3, 6, true);
-    // SIZE (1..256) of a SEQUENCE OF: its count, then its items
-    writer.size(2, 1, 256)?;
-    writer.unsigned(1, 0, 1)?;
-    writer.unsigned(0, 0, 1)?;
-    println!("{octets:02x?}");
-
-    let mut reader = Reader::new(&octets);
-    println!("{}", reader.unsigned(0, 7)?);
-    println!("{}", reader.unsigned_extensible(0, 255)?);
-    println!("{}", reader.enumerated(6, 0, true)?);
-    println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
-
-    println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7).unwrap_err());
-    Ok(())
-}
-```
-
-```text
-[a0, c8, 30, 01, 80]
-5
-200
-3
-2 items: true false
-the value does not encode: 8 is outside its constraint (0..7)
-```
-
 ## An open type
 
 An open type is read as its octets, which borrow from the input, and decoded
@@ -250,36 +297,8 @@ fn main() -> Result<(), oxirush_aper::Error> {
 1234: 0x1234
 ```
 
-A value that is decoded from an open type borrows from the input too, when it
-is read from the octets that `as_borrowed()` gives: they live as long as the
-input, where `&held` lives as long as the variable. An open type of 16384
-octets or more comes in fragments, which are gathered: it owns its octets, and
-what is decoded from it is copied out.
-
-```rust
-use oxirush_aper::{Error, Octets, Reader};
-
-// The OCTET STRING (SIZE (0..255)) that an open type holds
-fn held(input: &[u8]) -> Result<Octets<'_>, Error> {
-    let open = Reader::new(input).open_type()?;
-    match open.as_borrowed() {
-        // In one piece: the string is a part of `input`
-        Some(octets) => Reader::new(octets).octet_string(0, 255),
-        // Gathered from fragments: the string is copied out of them
-        None => Ok(Reader::new(&open).octet_string(0, 255)?.into_owned()),
-    }
-}
-
-fn main() -> Result<(), Error> {
-    let string = held(&[0x03, 0x02, 0xab, 0xcd])?;
-    println!("{string:?} borrowed: {}", string.is_borrowed());
-    Ok(())
-}
-```
-
-```text
-ABCD borrowed: true
-```
+`Octets::as_borrowed` gives the octets of an open type for as long as the
+input, to decode a value that borrows from it.
 
 ## Extension additions
 
@@ -366,13 +385,10 @@ or an index outside its constraint, and octets after a complete encoding.
 
 oxirush-ngap and oxirush-s1ap give macros that build a message and read and
 change its IEs by name (`build_ngap!`, `extract_ngap_ies!`,
-`with_ngap_ie_mut!`, and the same with `s1ap`), and readers of one IE of a
-PDU or a message by its marker type. Their code is here, in the module
-`protocol`: the traits that the registry of a protocol implements, the
-readers, and the bodies of the macros, hidden from the documentation, which
-the macros of each crate forward to with its paths. The generator of the
-repository writes the registry of each protocol from its ASN.1. Here they are
-on the protocol of `tests/toy/mod.rs`, which is written as the generator
+`with_ngap_ie_mut!`, and the same with `s1ap`), and readers of one IE by its
+marker type. Their code is here, in the module `protocol`, and the generator
+of the repository writes the registry of each protocol from its ASN.1. Here
+they are on the protocol of `tests/toy/mod.rs`, written as the generator
 writes one:
 
 ```rust
@@ -464,11 +480,9 @@ Identity (IE 1), at position 1, is in the message already, at position 0
 - `DEFAULT` members and extension addition groups: a caller writes the bits of
   the preamble.
 - An `INTEGER` beyond 64 bits, which is a decoding error.
-- Parsing ASN.1: bindings are written by a generator, `generator/` of the
-  repository, which oxirush-ngap and oxirush-s1ap share and which is not
-  published, as `protocols/` is: the tools, the programs and the tests that
-  the two crates share beside their code, which each takes from a checkout of
-  this repository, with the jobs of `.github/workflows/protocol*.yml`.
+- Parsing ASN.1: the bindings of oxirush-ngap and oxirush-s1ap are written
+  ahead of time by the generator in `generator/`, which is in this repository
+  but not published.
 
 ## Performance
 
@@ -537,7 +551,8 @@ A pull request comes with a test for what it changes; the Rust blocks of
 this page are checked with what they print ([`tests/readme.rs`](tests/readme.rs)
 says how). Sign off your commits (`git commit -s`): by contributing you agree
 to the [Developer Certificate of Origin](https://developercertificate.org/).
-[SECURITY.md](SECURITY.md) says how to report a vulnerability.
+[CONTRIBUTING.md](CONTRIBUTING.md) has what the repository holds beside the
+crate, and [SECURITY.md](SECURITY.md) how to report a vulnerability.
 
 ## The OxiRush family
 

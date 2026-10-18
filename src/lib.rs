@@ -18,57 +18,59 @@
 //! Aligned PER (ITU-T X.691, the ALIGNED variant of BASIC-PER) for generated bindings
 //! of 3GPP-style ASN.1: a reader, a writer, and the types of the values.
 //!
+//! ```rust
+//! use oxirush_aper::{Reader, Writer};
+//!
+//! fn main() -> Result<(), oxirush_aper::Error> {
+//!     let mut octets = Vec::new();
+//!     let mut writer = Writer::new(&mut octets);
+//!     // INTEGER (0..7): three bits
+//!     writer.unsigned(5, 0, 7)?;
+//!     // INTEGER (0..255, ...): the extension bit, then one octet, aligned
+//!     writer.unsigned_extensible(200, 0, 255)?;
+//!     // ENUMERATED with 6 root values and an extension marker: the fourth
+//!     writer.index(3, 6, true);
+//!     // SIZE (1..256) of a SEQUENCE OF: its count, then its items
+//!     writer.size(2, 1, 256)?;
+//!     writer.unsigned(1, 0, 1)?;
+//!     writer.unsigned(0, 0, 1)?;
+//!     println!("{octets:02x?}");
+//!
+//!     let mut reader = Reader::new(&octets);
+//!     println!("{}", reader.unsigned(0, 7)?);
+//!     println!("{}", reader.unsigned_extensible(0, 255)?);
+//!     println!("{}", reader.enumerated(6, 0, true)?);
+//!     println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
+//!
+//!     println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7).unwrap_err());
+//!     Ok(())
+//! }
 //! ```
-//! use oxirush_aper::{AsnType, Decode, Encode, Error, Octets, Reader, Writer};
 //!
-//! // Sample ::= SEQUENCE { id INTEGER (0..65535), payload OCTET STRING OPTIONAL, ... }
-//! #[derive(Debug, PartialEq)]
-//! struct Sample<'a> {
-//!     id: u16,
-//!     payload: Option<Octets<'a>>,
-//! }
-//!
-//! impl AsnType for Sample<'_> {
-//!     const NAME: &'static str = "Sample";
-//! }
-//!
-//! impl<'a> Decode<'a> for Sample<'a> {
-//!     fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-//!         // The extension bit, then a bit for the member that may be absent
-//!         let extended = reader.bit()?;
-//!         let has_payload = reader.bit()?;
-//!         let id = reader.unsigned(0, 65535)? as u16;
-//!         let payload = match has_payload {
-//!             true => Some(reader.octet_string(0, oxirush_aper::UNBOUNDED)?),
-//!             false => None,
-//!         };
-//!         if extended {
-//!             reader.skip_additions()?;
-//!         }
-//!         Ok(Self { id, payload })
-//!     }
-//! }
-//!
-//! impl Encode for Sample<'_> {
-//!     fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-//!         writer.bit(false);
-//!         writer.bit(self.payload.is_some());
-//!         writer.unsigned(self.id.into(), 0, 65535)?;
-//!         if let Some(payload) = &self.payload {
-//!             writer.octet_string(payload, 0, oxirush_aper::UNBOUNDED)?;
-//!         }
-//!         Ok(())
-//!     }
-//! }
-//!
-//! // The payload of what is decoded is a slice of the octets
-//! let octets = [0x40, 0x12, 0x34, 0x02, 0xca, 0xfe];
-//! let sample: Sample = oxirush_aper::decode(&octets)?;
-//! assert_eq!(sample.id, 0x1234);
-//! assert!(sample.payload.as_ref().is_some_and(|payload| payload.is_borrowed()));
-//! assert_eq!(oxirush_aper::encode(&sample)?, octets);
-//! # Ok::<(), Error>(())
+//! ```text
+//! [a0, c8, 30, 01, 80]
+//! 5
+//! 200
+//! 3
+//! 2 items: true false
+//! the value does not encode: 8 is outside its constraint (0..7)
 //! ```
+//!
+//! # Tasks
+//!
+//! The [README](https://github.com/linouxis9/oxirush-aper#readme) has an example of
+//! each, with what it prints.
+//!
+//! | Task | Items |
+//! |------|-------|
+//! | Write the codec of a type | [`AsnType`], [`Decode`], [`Encode`], [`decode`], [`encode`], [`encode_into`] |
+//! | Read and write the fields | [`Reader`], [`Writer`], [`UNBOUNDED`] |
+//! | Bit strings | [`Bits`], [`BitString`] |
+//! | An open type | [`Reader::open_type`], [`Writer::begin_open_type`], [`Writer::end_open_type`], [`Octets`] |
+//! | Extension additions | [`Reader::additions`], [`Additions`], [`Writer::additions`], [`Reader::skip_additions`] |
+//! | What the reader accepts | [`decode_with_faults`], [`decode_strict`], [`Fault`], [`Reader::noting`] |
+//! | Check a PDU against the object set of its message | [`check`] |
+//! | The macros and the readers of a protocol crate | [`protocol`] |
 //!
 //! A [`Reader`] and a [`Writer`] have a method for each field of X.691 that the two
 //! protocols of the family use. They work on octets where the encoding is aligned and
@@ -80,6 +82,17 @@
 //! for the others and for an open type, [`Bits`] for a BIT STRING of 64 bits at most,
 //! [`BitString`] for a longer one, `Cow<str>` for a character string and
 //! [`ObjectIdentifier`].
+//!
+//! # The OxiRush family
+//!
+//! - [oxirush-utils](https://docs.rs/oxirush-utils): the 3GPP identities, and the JSON tree with its paths that the others share.
+//! - [oxirush-aper](https://docs.rs/oxirush-aper): aligned PER, the runtime of the NGAP and S1AP codecs.
+//! - [oxirush-nas](https://docs.rs/oxirush-nas): the NAS messages of 5GS and EPS.
+//! - [oxirush-security](https://docs.rs/oxirush-security): NAS security, AKA and the derivation of keys.
+//! - [oxirush-ngap](https://docs.rs/oxirush-ngap): NGAP, between a gNB and an AMF.
+//! - [oxirush-s1ap](https://docs.rs/oxirush-s1ap): S1AP, between an eNB and an MME.
+//! - [oxirush-gtp-u](https://docs.rs/oxirush-gtp-u): GTP-U tunnels, with a test UPF.
+//! - [oxirush-sctp](https://docs.rs/oxirush-sctp): SCTP sockets, which carry NGAP and S1AP.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -121,9 +134,20 @@ pub use reader::{Additions, Reader};
 pub use writer::Writer;
 
 /// The upper bound of a size constraint that has none, as `SIZE (1..MAX)`.
+///
+/// ```
+/// use oxirush_aper::{Reader, UNBOUNDED, Writer};
+///
+/// // OCTET STRING (SIZE (1..MAX)): the length of the octets, then the octets
+/// let mut octets = Vec::new();
+/// Writer::new(&mut octets).octet_string(&[0xca, 0xfe], 1, UNBOUNDED)?;
+/// assert_eq!(octets, [0x02, 0xca, 0xfe]);
+/// assert_eq!(Reader::new(&octets).octet_string(1, UNBOUNDED)?, [0xca, 0xfe]);
+/// # Ok::<(), oxirush_aper::Error>(())
+/// ```
 pub const UNBOUNDED: usize = usize::MAX;
 
-/// A type of an ASN.1 module.
+/// A type of an ASN.1 module. The example of [`Decode`] implements it.
 pub trait AsnType {
     /// The name that ASN.1 gives the type, as `AMF-UE-NGAP-ID`: an error names the
     /// type by it.
@@ -132,12 +156,45 @@ pub trait AsnType {
 
 /// A type whose values are read in aligned PER. `'a` is how long the octets live that a
 /// value borrows from.
+///
+/// A type of a module implements [`AsnType`], `Decode` and [`Encode`]:
+///
+/// ```
+/// use oxirush_aper::{AsnType, Decode, Encode, Error, Reader, Writer};
+///
+/// // AMF-UE-NGAP-ID ::= INTEGER (0..1099511627775)
+/// #[derive(Debug, PartialEq)]
+/// struct AmfUeNgapId(u64);
+///
+/// impl AsnType for AmfUeNgapId {
+///     const NAME: &'static str = "AMF-UE-NGAP-ID";
+/// }
+///
+/// impl Decode<'_> for AmfUeNgapId {
+///     fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+///         Ok(Self(reader.unsigned(0, 1_099_511_627_775)?))
+///     }
+/// }
+///
+/// impl Encode for AmfUeNgapId {
+///     fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+///         writer.unsigned(self.0, 0, 1_099_511_627_775)
+///     }
+/// }
+///
+/// // The length of the number in three bits, then its octet, aligned
+/// let octets = oxirush_aper::encode(&AmfUeNgapId(42))?;
+/// assert_eq!(octets, [0x00, 0x2a]);
+/// assert_eq!(oxirush_aper::decode::<AmfUeNgapId>(&octets)?, AmfUeNgapId(42));
+/// # Ok::<(), Error>(())
+/// ```
 pub trait Decode<'a>: AsnType + Sized {
     /// The value at the reader, which is moved after it.
     fn decode(reader: &mut Reader<'a>) -> Result<Self, Error>;
 }
 
-/// A type whose values are written in aligned PER.
+/// A type whose values are written in aligned PER. The example of [`Decode`]
+/// implements it.
 pub trait Encode: AsnType {
     /// Write the value.
     fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error>;
@@ -181,6 +238,20 @@ impl Encode for bool {
 /// The value of the type `T` that `octets` are the complete encoding of (X.691 §11.1):
 /// one value, whole, and no octet after it. What the value holds of octets and of
 /// strings is borrowed from `octets`.
+///
+/// ```
+/// use oxirush_aper::Octets;
+///
+/// // An OCTET STRING without a constraint, whose octets stay in the input
+/// let input = [0x02, 0xca, 0xfe];
+/// let octets: Octets = oxirush_aper::decode(&input)?;
+/// assert_eq!(octets.as_borrowed(), Some(&input[1..]));
+///
+/// // Octets that end early, and an octet after the value
+/// assert!(oxirush_aper::decode::<Octets>(&input[..2]).is_err());
+/// assert!(oxirush_aper::decode::<Octets>(&[0x01, 0xca, 0xfe]).is_err());
+/// # Ok::<(), oxirush_aper::Error>(())
+/// ```
 ///
 /// # Errors
 ///
@@ -245,6 +316,15 @@ pub fn decode_with_faults<'a, T: Decode<'a>>(octets: &'a [u8]) -> Result<(T, Fau
 /// the one encoding that X.691 gives the value: what [`decode`] reads in another form,
 /// a [`Fault`], is an error here. The counterpart of [`encode_strict`].
 ///
+/// ```
+/// use oxirush_aper::{Octets, decode, decode_strict};
+///
+/// // An OCTET STRING of one octet, whose length is in two octets
+/// let input = [0x80, 0x01, 0xaa];
+/// assert!(decode::<Octets>(&input).is_ok());
+/// assert!(decode_strict::<Octets>(&input).is_err());
+/// ```
+///
 /// # Errors
 ///
 /// Those of [`decode`], and an error of the kind `Decode` that says the first fault,
@@ -269,6 +349,15 @@ pub fn decode_strict<'a, T: Decode<'a>>(octets: &'a [u8]) -> Result<T, Error> {
 ///
 /// An error of the kind `Encode`, which names the type and says why, as for a number
 /// outside its constraint.
+///
+/// ```
+/// use oxirush_aper::Octets;
+///
+/// // An OCTET STRING without a constraint: its length, then its octets
+/// let octets = Octets::from(&[0xca, 0xfe][..]);
+/// assert_eq!(oxirush_aper::encode(&octets)?, [0x02, 0xca, 0xfe]);
+/// # Ok::<(), oxirush_aper::Error>(())
+/// ```
 pub fn encode<T: Encode>(value: &T) -> Result<Vec<u8>, Error> {
     let mut octets = Vec::new();
     encode_into(value, &mut octets)?;
@@ -303,6 +392,15 @@ pub fn encode_strict<T: Encode>(value: &T) -> Result<Vec<u8>, Error> {
 
 /// Append the complete encoding of `value` to `octets`. After an error, `octets` are
 /// as they were.
+///
+/// ```
+/// // A BOOLEAN, one bit in an octet, then a NULL, no bit, which is one zero octet
+/// let mut octets = vec![0xff];
+/// oxirush_aper::encode_into(&true, &mut octets)?;
+/// oxirush_aper::encode_into(&(), &mut octets)?;
+/// assert_eq!(octets, [0xff, 0x80, 0x00]);
+/// # Ok::<(), oxirush_aper::Error>(())
+/// ```
 pub fn encode_into<T: Encode>(value: &T, octets: &mut Vec<u8>) -> Result<(), Error> {
     let start = octets.len();
     match value.encode(&mut Writer::new(octets)) {

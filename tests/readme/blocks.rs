@@ -1,5 +1,5 @@
-// The Rust blocks of README.md, each as a function. `tests/readme.rs` writes
-// this file and says how: do not edit it.
+// The Rust blocks of the README and of the documentation, each as a function.
+// `tests/readme.rs` writes this file and says how: do not edit it.
 #![allow(unused)]
 
 use std::cell::RefCell;
@@ -9,7 +9,7 @@ use super::{ie, toy};
 
 thread_local!(static PRINTED: RefCell<String> = const { RefCell::new(String::new()) });
 
-// What a block prints is kept, to be compared with what the README shows.
+// What a block prints is kept, to be compared with what its page shows.
 macro_rules! print {
     ($($argument:tt)*) => {{
         let text = format!($($argument)*);
@@ -49,100 +49,6 @@ pub const BLOCKS: &[fn()] = &[
 
 /// The Rust block 1 of README.md.
 fn block_1() {
-    use oxirush_aper::{AsnType, Decode, Encode, Error, Octets, Reader, Writer};
-
-    // Sample ::= SEQUENCE { id INTEGER (0..65535), payload OCTET STRING OPTIONAL, ... }
-    #[derive(Debug, PartialEq)]
-    struct Sample<'a> {
-        id: u16,
-        payload: Option<Octets<'a>>,
-    }
-
-    impl AsnType for Sample<'_> {
-        const NAME: &'static str = "Sample";
-    }
-
-    impl<'a> Decode<'a> for Sample<'a> {
-        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            // The extension bit, then a bit for the member that may be absent
-            let extended = reader.bit()?;
-            let has_payload = reader.bit()?;
-            let id = reader.unsigned(0, 65535)? as u16;
-            let payload = match has_payload {
-                true => Some(reader.octet_string(0, oxirush_aper::UNBOUNDED)?),
-                false => None,
-            };
-            if extended {
-                reader.skip_additions()?;
-            }
-            Ok(Self { id, payload })
-        }
-    }
-
-    impl Encode for Sample<'_> {
-        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.bit(false);
-            writer.bit(self.payload.is_some());
-            writer.unsigned(self.id.into(), 0, 65535)?;
-            if let Some(payload) = &self.payload {
-                writer.octet_string(payload, 0, oxirush_aper::UNBOUNDED)?;
-            }
-            Ok(())
-        }
-    }
-
-    fn main() -> Result<(), Error> {
-        // The payload of what is decoded is a slice of the octets
-        let octets = [0x40, 0x12, 0x34, 0x02, 0xca, 0xfe];
-        let sample: Sample = oxirush_aper::decode(&octets)?;
-        println!("{sample:?}, borrowed: {}", sample.payload.as_ref().unwrap().is_borrowed());
-        println!("{:02x?}", oxirush_aper::encode(&sample)?);
-
-        // Octets that end early
-        println!("{}", oxirush_aper::decode::<Sample>(&octets[..5]).unwrap_err());
-        Ok(())
-    }
-
-    main().unwrap();
-}
-
-/// The Rust block 2 of README.md.
-fn block_2() {
-    use oxirush_aper::Octets;
-
-    let received = vec![0x7e, 0x00, 0x41];
-    let borrowed = Octets::from(&received[..]);
-    println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
-
-    let kept: Octets<'static> = borrowed.into_owned();
-    drop(received);
-    println!("{kept:?} borrowed: {}", kept.is_borrowed());
-}
-
-/// The Rust block 3 of README.md.
-fn block_3() {
-    use oxirush_aper::{BitString, Bits};
-
-    fn main() -> Result<(), oxirush_aper::Error> {
-        // AMF Set ID ::= BIT STRING (SIZE (10)): its octets start with its first bit
-        let set = Bits::new(0x155, 10)?;
-        println!("{:#x} of {} bits: {:02x?}", set.value(), set.len(), set.to_vec());
-        println!("{}", Bits::from_octets(&[0x55, 0x40], 10)? == set);
-
-        // A value that its length does not hold
-        println!("{}", Bits::new(0x400, 10).unwrap_err());
-
-        // TransportLayerAddress ::= BIT STRING (SIZE (1..160, ...))
-        let address = BitString::from([10, 0, 0, 1]);
-        println!("{:?} of {} bits", address.as_octets(), address.len());
-        Ok(())
-    }
-
-    main().unwrap();
-}
-
-/// The Rust block 4 of README.md.
-fn block_4() {
     use oxirush_aper::{Reader, Writer};
 
     fn main() -> Result<(), oxirush_aper::Error> {
@@ -173,6 +79,140 @@ fn block_4() {
     main().unwrap();
 }
 
+/// The Rust block 2 of README.md.
+fn block_2() {
+    use oxirush_aper::{AsnType, Decode, Encode, Error, Reader, Writer};
+    use std::borrow::Cow;
+
+    // Cell ::= SEQUENCE {
+    //     id          INTEGER (0..4095),
+    //     kind        ENUMERATED { macro, small, ... },
+    //     name        PrintableString (SIZE (1..150)) OPTIONAL,
+    //     neighbours  SEQUENCE (SIZE (0..8)) OF INTEGER (0..4095),
+    //     ...
+    // }
+    #[derive(Debug, PartialEq)]
+    enum Kind {
+        Macro,
+        Small,
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct Cell<'a> {
+        id: u16,
+        kind: Kind,
+        name: Option<Cow<'a, str>>,
+        neighbours: Vec<u16>,
+    }
+
+    impl AsnType for Cell<'_> {
+        const NAME: &'static str = "Cell";
+    }
+
+    impl<'a> Decode<'a> for Cell<'a> {
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            // The extension bit, then a bit for each member that may be absent
+            let extended = reader.bit()?;
+            let has_name = reader.bit()?;
+            let id = reader.unsigned(0, 4095)? as u16;
+            // An index among two values of the root, and none added that is known
+            let kind = match reader.enumerated(2, 0, true)? {
+                0 => Kind::Macro,
+                _ => Kind::Small,
+            };
+            let name = match has_name {
+                true => Some(reader.printable_string(1, 150)?),
+                false => None,
+            };
+            let count = reader.size(0, 8)?;
+            let neighbours = (0..count)
+                .map(|_| reader.unsigned(0, 4095).map(|id| id as u16))
+                .collect::<Result<_, _>>()?;
+            // What a later version adds is skipped
+            if extended {
+                reader.skip_additions()?;
+            }
+            Ok(Self { id, kind, name, neighbours })
+        }
+    }
+
+    impl Encode for Cell<'_> {
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.bit(false);
+            writer.bit(self.name.is_some());
+            writer.unsigned(self.id.into(), 0, 4095)?;
+            writer.index(match self.kind { Kind::Macro => 0, Kind::Small => 1 }, 2, true);
+            if let Some(name) = &self.name {
+                writer.printable_string(name, 1, 150)?;
+            }
+            writer.size(self.neighbours.len(), 0, 8)?;
+            for neighbour in &self.neighbours {
+                writer.unsigned((*neighbour).into(), 0, 4095)?;
+            }
+            Ok(())
+        }
+    }
+
+    fn main() -> Result<(), Error> {
+        let cell = Cell {
+            id: 0x123,
+            kind: Kind::Small,
+            name: Some("cell-1".into()),
+            neighbours: vec![0x124, 0x125],
+        };
+        let octets = oxirush_aper::encode(&cell)?;
+        println!("{octets:02x?}");
+
+        // The name of what is decoded is a slice of the octets
+        let read: Cell = oxirush_aper::decode(&octets)?;
+        println!("{read:?}");
+        println!("borrowed: {}", matches!(read.name, Some(Cow::Borrowed(_))));
+
+        // What its constraints do not hold is an error of the writer and of the reader
+        let crowded = Cell { neighbours: vec![0; 9], ..read };
+        println!("{}", oxirush_aper::encode(&crowded).unwrap_err());
+        println!("{}", oxirush_aper::decode::<Cell>(&octets[..5]).unwrap_err());
+        Ok(())
+    }
+
+    main().unwrap();
+}
+
+/// The Rust block 3 of README.md.
+fn block_3() {
+    use oxirush_aper::Octets;
+
+    let received = vec![0x7e, 0x00, 0x41];
+    let borrowed = Octets::from(&received[..]);
+    println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
+
+    let kept: Octets<'static> = borrowed.into_owned();
+    drop(received);
+    println!("{kept:?} borrowed: {}", kept.is_borrowed());
+}
+
+/// The Rust block 4 of README.md.
+fn block_4() {
+    use oxirush_aper::{BitString, Bits};
+
+    fn main() -> Result<(), oxirush_aper::Error> {
+        // AMF Set ID ::= BIT STRING (SIZE (10)): its octets start with its first bit
+        let set = Bits::new(0x155, 10)?;
+        println!("{:#x} of {} bits: {:02x?}", set.value(), set.len(), set.to_vec());
+        println!("{}", Bits::from_octets(&[0x55, 0x40], 10)? == set);
+
+        // A value that its length does not hold
+        println!("{}", Bits::new(0x400, 10).unwrap_err());
+
+        // TransportLayerAddress ::= BIT STRING (SIZE (1..160, ...))
+        let address = BitString::from([10, 0, 0, 1]);
+        println!("{:?} of {} bits", address.as_octets(), address.len());
+        Ok(())
+    }
+
+    main().unwrap();
+}
+
 /// The Rust block 5 of README.md.
 fn block_5() {
     use oxirush_aper::{Reader, Writer};
@@ -196,30 +236,6 @@ fn block_5() {
 
 /// The Rust block 6 of README.md.
 fn block_6() {
-    use oxirush_aper::{Error, Octets, Reader};
-
-    // The OCTET STRING (SIZE (0..255)) that an open type holds
-    fn held(input: &[u8]) -> Result<Octets<'_>, Error> {
-        let open = Reader::new(input).open_type()?;
-        match open.as_borrowed() {
-            // In one piece: the string is a part of `input`
-            Some(octets) => Reader::new(octets).octet_string(0, 255),
-            // Gathered from fragments: the string is copied out of them
-            None => Ok(Reader::new(&open).octet_string(0, 255)?.into_owned()),
-        }
-    }
-
-    fn main() -> Result<(), Error> {
-        let string = held(&[0x03, 0x02, 0xab, 0xcd])?;
-        println!("{string:?} borrowed: {}", string.is_borrowed());
-        Ok(())
-    }
-
-    main().unwrap();
-}
-
-/// The Rust block 7 of README.md.
-fn block_7() {
     use oxirush_aper::{Reader, Writer};
 
     fn main() -> Result<(), oxirush_aper::Error> {
@@ -250,8 +266,8 @@ fn block_7() {
     main().unwrap();
 }
 
-/// The Rust block 8 of README.md.
-fn block_8() {
+/// The Rust block 7 of README.md.
+fn block_7() {
     use oxirush_aper::{Octets, decode, decode_strict, decode_with_faults};
 
     fn main() -> Result<(), oxirush_aper::Error> {
@@ -271,8 +287,8 @@ fn block_8() {
     main().unwrap();
 }
 
-/// The Rust block 9 of README.md.
-fn block_9() {
+/// The Rust block 8 of README.md.
+fn block_8() {
     // The toy protocol: a SETUP REQUEST of an Identity, a Name and a list of Items
     use toy::*;
 
@@ -303,8 +319,8 @@ fn block_9() {
     main().unwrap();
 }
 
-/// The Rust block 10 of README.md.
-fn block_10() {
+/// The Rust block 9 of README.md.
+fn block_9() {
     use toy::*;
 
     fn main() -> Result<(), oxirush_aper::Error> {
@@ -336,6 +352,38 @@ fn block_10() {
         for deviation in twice.check_structure()? {
             println!("{deviation}");
         }
+        Ok(())
+    }
+
+    main().unwrap();
+}
+
+/// The Rust block 1 of src/lib.rs.
+fn block_10() {
+    use oxirush_aper::{Reader, Writer};
+
+    fn main() -> Result<(), oxirush_aper::Error> {
+        let mut octets = Vec::new();
+        let mut writer = Writer::new(&mut octets);
+        // INTEGER (0..7): three bits
+        writer.unsigned(5, 0, 7)?;
+        // INTEGER (0..255, ...): the extension bit, then one octet, aligned
+        writer.unsigned_extensible(200, 0, 255)?;
+        // ENUMERATED with 6 root values and an extension marker: the fourth
+        writer.index(3, 6, true);
+        // SIZE (1..256) of a SEQUENCE OF: its count, then its items
+        writer.size(2, 1, 256)?;
+        writer.unsigned(1, 0, 1)?;
+        writer.unsigned(0, 0, 1)?;
+        println!("{octets:02x?}");
+
+        let mut reader = Reader::new(&octets);
+        println!("{}", reader.unsigned(0, 7)?);
+        println!("{}", reader.unsigned_extensible(0, 255)?);
+        println!("{}", reader.enumerated(6, 0, true)?);
+        println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
+
+        println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7).unwrap_err());
         Ok(())
     }
 

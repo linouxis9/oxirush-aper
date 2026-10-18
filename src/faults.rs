@@ -25,6 +25,18 @@ use core::fmt;
 ///
 /// What announces something that is not there is no fault, and does not decode: an
 /// extension bit without an addition, or a length that the octets do not have.
+///
+/// ```
+/// use oxirush_aper::{Fault, Octets, Reader};
+///
+/// // An OCTET STRING of one octet, whose length is in two octets
+/// let mut reader = Reader::noting(&[0x80, 0x01, 0xaa]);
+/// reader.octet_string(0, oxirush_aper::UNBOUNDED)?;
+/// let noted = reader.faults()[0];
+/// assert_eq!(noted.fault, Fault::LengthInTwoOctets);
+/// assert_eq!(noted.fault.clause(), "11.9.3.6");
+/// # Ok::<(), oxirush_aper::Error>(())
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Fault {

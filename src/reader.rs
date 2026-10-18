@@ -636,6 +636,20 @@ impl<'a> Reader<'a> {
     /// that is present. A later version of a specification adds them, and a reader of
     /// an earlier one does not know them.
     ///
+    /// ```
+    /// use oxirush_aper::Reader;
+    ///
+    /// // Two additions that this reader does not know, the second present, then the
+    /// // octet of what follows the SEQUENCE
+    /// let mut reader = Reader::new(&[0b0000_0010, 0b1000_0000, 0x01, 0xaa, 0x07]);
+    /// reader.skip_additions()?;
+    /// assert_eq!(reader.unsigned(0, 255)?, 7);
+    ///
+    /// // A bitmap of two additions of which none is present has no encoding
+    /// assert!(Reader::new(&[0b0000_0010, 0b0000_0000]).skip_additions().is_err());
+    /// # Ok::<(), oxirush_aper::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// What the clauses give no encoding for is an error: a bitmap of no bit or of
@@ -730,6 +744,31 @@ impl<'a> Reader<'a> {
 
     /// The octets of an open type (X.691 §11.2): the complete encoding of a value,
     /// after its length. The octets are borrowed, unless they are in fragments.
+    ///
+    /// A value that is decoded from an open type borrows from the input too, when it
+    /// is read from the octets that [`Octets::as_borrowed`] gives: they live as long as
+    /// the input. An open type of 16384 octets or more comes in fragments, which are
+    /// gathered: it owns its octets, and what is decoded from it is copied out.
+    ///
+    /// ```
+    /// use oxirush_aper::{Error, Octets, Reader};
+    ///
+    /// // The OCTET STRING (SIZE (0..255)) that an open type holds
+    /// fn held(input: &[u8]) -> Result<Octets<'_>, Error> {
+    ///     let open = Reader::new(input).open_type()?;
+    ///     match open.as_borrowed() {
+    ///         // In one piece: the string is a part of `input`
+    ///         Some(octets) => Reader::new(octets).octet_string(0, 255),
+    ///         // Gathered from fragments: the string is copied out of them
+    ///         None => Ok(Reader::new(&open).octet_string(0, 255)?.into_owned()),
+    ///     }
+    /// }
+    ///
+    /// let string = held(&[0x03, 0x02, 0xab, 0xcd])?;
+    /// assert_eq!(format!("{string:?}"), "ABCD");
+    /// assert!(string.is_borrowed());
+    /// # Ok::<(), Error>(())
+    /// ```
     #[inline]
     pub fn open_type(&mut self) -> Result<Octets<'a>, Error> {
         self.octets_in_fragments()
@@ -1006,7 +1045,7 @@ impl<'a> Reader<'a> {
 }
 
 /// The extension additions of a SEQUENCE that a reader was given: which of them are
-/// present, in their order.
+/// present, in their order. [`Reader::additions`] gives it, and has an example.
 #[derive(Clone, Debug)]
 pub struct Additions<'a> {
     bitmap: BitString<'a>,
