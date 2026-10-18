@@ -481,31 +481,31 @@ Decoding, per call:
 
 | Value (octets) | this crate | rasn 0.29 | rasn / this crate |
 |---|---|---|---|
-| AMF-UE-NGAP-ID (2) | 11 ns, 47 cycles, 190 instructions, 0 allocations | 40 ns, 176 cycles, 587 instructions, 0 allocations | 3.7x the time, 3.1x the instructions |
-| NAS-PDU (61) | 12 ns, 50 cycles, 155 instructions, 0 allocations | 60 ns, 262 cycles, 579 instructions, 1 allocation (60 octets) | 5.1x the time, 3.7x the instructions |
-| AMFName (18) | 32 ns, 136 cycles, 663 instructions, 0 allocations | 193 ns, 828 cycles, 3,285 instructions, 2 allocations (32 octets) | 6.1x the time, 5.0x the instructions |
-| GUAMI (7) | 34 ns, 136 cycles, 317 instructions, 0 allocations | 347 ns, 1,495 cycles, 4,631 instructions, 3 allocations (24 octets) | 10.1x the time, 14.6x the instructions |
-| UserLocationInformationNR (19) | 38 ns, 171 cycles, 393 instructions, 0 allocations | 320 ns, 1,391 cycles, 4,034 instructions, 1 allocation (8 octets) | 8.3x the time, 10.3x the instructions |
+| AMF-UE-NGAP-ID (2) | 11 ns, 48 cycles, 193 instructions, 0 allocations | 31 ns, 142 cycles, 494 instructions, 0 allocations | 2.9x the time, 2.6x the instructions |
+| NAS-PDU (61) | 11 ns, 51 cycles, 148 instructions, 0 allocations | 50 ns, 249 cycles, 517 instructions, 1 allocation (60 octets) | 4.6x the time, 3.5x the instructions |
+| AMFName (18) | 34 ns, 156 cycles, 649 instructions, 0 allocations | 147 ns, 672 cycles, 2,995 instructions, 2 allocations (32 octets) | 4.3x the time, 4.6x the instructions |
+| GUAMI (7) | 30 ns, 131 cycles, 306 instructions, 0 allocations | 262 ns, 1,197 cycles, 3,977 instructions, 3 allocations (24 octets) | 8.8x the time, 13.0x the instructions |
+| UserLocationInformationNR (19) | 35 ns, 163 cycles, 383 instructions, 0 allocations | 286 ns, 1,322 cycles, 3,675 instructions, 1 allocation (8 octets) | 8.1x the time, 9.6x the instructions |
 
 Encoding, per call:
 
 | Value (octets) | this crate | rasn 0.29 | rasn / this crate |
 |---|---|---|---|
-| AMF-UE-NGAP-ID (2) | 22 ns, 103 cycles, 304 instructions, 1 allocation (8 octets) | 65 ns, 280 cycles, 1,041 instructions, 1 allocation (8 octets) | 2.9x the time, 3.4x the instructions |
-| NAS-PDU (61) | 62 ns, 252 cycles, 1,125 instructions, 2 allocations (69 octets) | 86 ns, 371 cycles, 1,496 instructions, 2 allocations (69 octets) | 1.4x the time, 1.3x the instructions |
-| AMFName (18) | 45 ns, 200 cycles, 835 instructions, 2 allocations (26 octets) | 200 ns, 832 cycles, 3,480 instructions, 2 allocations (26 octets) | 4.5x the time, 4.2x the instructions |
-| GUAMI (7) | 31 ns, 218 cycles, 483 instructions, 1 allocation (8 octets) | 162 ns, 691 cycles, 2,641 instructions, 1 allocation (8 octets) | 5.2x the time, 5.5x the instructions |
-| UserLocationInformationNR (19) | 70 ns, 307 cycles, 1,293 instructions, 3 allocations (56 octets) | 306 ns, 1,334 cycles, 4,454 instructions, 3 allocations (56 octets) | 4.4x the time, 3.4x the instructions |
+| AMF-UE-NGAP-ID (2) | 21 ns, 95 cycles, 278 instructions, 1 allocation (8 octets) | 58 ns, 266 cycles, 994 instructions, 1 allocation (8 octets) | 2.7x the time, 3.6x the instructions |
+| NAS-PDU (61) | 60 ns, 276 cycles, 1,110 instructions, 2 allocations (69 octets) | 80 ns, 357 cycles, 1,478 instructions, 2 allocations (69 octets) | 1.3x the time, 1.3x the instructions |
+| AMFName (18) | 50 ns, 229 cycles, 784 instructions, 2 allocations (26 octets) | 174 ns, 790 cycles, 3,333 instructions, 2 allocations (26 octets) | 3.5x the time, 4.2x the instructions |
+| GUAMI (7) | 30 ns, 125 cycles, 461 instructions, 1 allocation (8 octets) | 137 ns, 641 cycles, 2,362 instructions, 1 allocation (8 octets) | 4.7x the time, 5.1x the instructions |
+| UserLocationInformationNR (19) | 71 ns, 314 cycles, 1,243 instructions, 3 allocations (56 octets) | 258 ns, 1,190 cycles, 4,023 instructions, 3 allocations (56 octets) | 3.6x the time, 3.2x the instructions |
 
 
 The time is the fastest of three runs of a call repeated for about 0.2 s, the
 cycles and the instructions those of `perf stat` (the difference between a
 run of twice the calls and one of the calls, so that starting the program
 counts for nothing), and the allocations those of a counting allocator. The
-figures were taken on an AMD Ryzen 7 5700G, the program on one core, while
-other work kept the load average of the machine between 5.3 and 5.9 (of 16
-threads). `benches/` is a package of its own, which fetches rasn: from the
-root of the repository,
+figures were taken on an AMD Ryzen 7 5700G (16 threads, Linux 7.0, Rust
+1.98.1), the program on one core, measured on a quiet machine on 2026-10-18:
+each is the median of three runs of the script. `benches/` is a package of
+its own, which fetches rasn: from the root of the repository,
 
 ```sh
 python3 benches/compare.py --core 3 --perf "sudo -n perf"
