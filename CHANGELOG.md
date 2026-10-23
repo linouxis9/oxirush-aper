@@ -70,6 +70,10 @@ and S1AP (TS 36.413) uses.
   its octets. The message of a procedure that the protocol does not have is
   a container of IEs to the paths too, each IE of the type of its
   identifier, so that what `paths` lists there is what `select` takes.
+- The views of `inspect` read the value of an IE and a transfer as the trees do: in
+  another form than the one of X.691, as with padding bits that are not zero, they
+  are their octets with the `_decode_error` of `decode_strict`, which a path list
+  lists, as it lists `_lossy`.
 - `protocol::Transfer`: a transfer of protocol IEs, as
   `PDUSessionResourceSetupRequestTransfer` of NGAP, with its object set,
   which the generator writes into the registry of a protocol. The macros give

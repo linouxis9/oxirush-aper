@@ -940,13 +940,19 @@ where
     let read: Result<T, Error> = $crate::decode(raw);
     let shown = read.map(|value| {
         let exact = $crate::encode(&value).is_ok_and(|octets| octets == raw);
-        (value.to_tree(), exact)
+        // Octets that do not come back are read again by the reader of the one encoding,
+        // which says what of them is in another form.
+        let refused = match exact {
+            true => None,
+            false => $crate::decode_strict::<T>(raw).err(),
+        };
+        (value.to_tree(), exact, refused)
     });
     // The oracle writes the form of the JSON Encoding Rules, which a tree has but for the
     // well-known types.
     #[cfg($hooks)]
     if let Some(observer) = OBSERVER.get() {
-        let jer = |(value, _): &(Value, bool)| TABLES.jer(value.clone(), name);
+        let jer = |(value, ..): &$crate::inspect::Decoded| TABLES.jer(value.clone(), name);
         observer(name, raw, &shown.as_ref().map(jer).map_err(Clone::clone));
     }
     let _ = name;

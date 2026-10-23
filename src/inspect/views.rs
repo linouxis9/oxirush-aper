@@ -52,7 +52,12 @@ fn unhex(value: &Value) -> Result<Vec<u8>, Error> {
 
 /// The value that the octets `raw` contain, beside them, or why they did not decode.
 fn contained(raw: Value, typed: Result<Typed, Error>) -> Value {
+    // Octets in another form than the one of X.691 are refused, as by the tree.
     let decoded = typed.and_then(|typed| (typed.decode)(&unhex(&raw)?));
+    let decoded = decoded.and_then(|(decoded, exact, refused)| match refused {
+        Some(refused) => Err(refused),
+        None => Ok((decoded, exact)),
+    });
     let mut transfer = Map::new();
     transfer.insert("_raw_transfer".into(), raw);
     match decoded {
@@ -157,6 +162,12 @@ impl Protocol {
                         unhex(&raw).and_then(|bytes| (self.ie_type(id, shape)?.decode)(&bytes))
                     }
                 };
+                // A value in another form than the one of X.691 is refused, as the tree
+                // refuses it: the IE is its octets, with why.
+                let decoded = decoded.and_then(|(decoded, exact, refused)| match refused {
+                    Some(refused) => Err(refused),
+                    None => Ok((decoded, exact)),
+                });
                 match decoded {
                     Ok((decoded, exact)) => {
                         if !exact {
@@ -319,7 +330,7 @@ impl Protocol {
                 None => (self.transfer_typed)(key)?,
             },
         };
-        let (original, _) = (transfer.decode)(&bytes)?;
+        let (original, ..) = (transfer.decode)(&bytes)?;
         if &original == edited {
             *child = raw;
         } else {
@@ -391,7 +402,7 @@ impl Protocol {
                 };
                 let bytes = unhex(&raw)?;
                 let received = self.ie_type(original_id, shape)?;
-                let (original, _) = (received.decode)(&bytes)?;
+                let (original, ..) = (received.decode)(&bytes)?;
                 if &original == edited && id == original_id {
                     raw
                 } else if (received.encode)(&original)? != bytes {
@@ -446,7 +457,8 @@ pub fn view(
     criticality: Value,
     raw: &[u8],
 ) -> Result<Value, Error> {
-    let (mut message, exact) = (protocol.message_typed(direction, code).decode)(raw)?;
+    // The container of the message is read whatever its form: its IEs say theirs.
+    let (mut message, exact, _) = (protocol.message_typed(direction, code).decode)(raw)?;
     protocol.expand(&mut message, 0, protocol.message_shape(direction, code));
     let mut view = Map::new();
     view.insert("procedure_code".into(), code.into());
@@ -551,7 +563,7 @@ fn message_octets(
         return (typed.encode)(&message);
     };
     let original = unhex(original)?;
-    let (decoded, _) = (typed.decode)(&original)?;
+    let (decoded, ..) = (typed.decode)(&original)?;
     if decoded == message {
         return Ok(original);
     }

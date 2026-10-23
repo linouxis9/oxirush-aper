@@ -48,11 +48,12 @@ pub use paths::{
 };
 pub use views::{Parts, of_the_pdu, tree, tree_parts, view, view_of_jer, view_parts};
 
-/// What a type of a protocol makes of octets: the JSON form of their value, and whether
-/// that value encodes back to them. It does not when they hold what a later version of
-/// the type adds, which the value has no place for, or are in another form than the
-/// canonical one.
-pub type Decoded = (Value, bool);
+/// What a type of a protocol makes of octets: the JSON form of their value, whether that
+/// value encodes back to them, and why a reader that takes the one encoding of X.691
+/// alone refuses them. The value does not encode back to octets that hold what a later
+/// version of the type adds, which the value has no place for, nor to octets in another
+/// form than the canonical one, which that reader refuses.
+pub type Decoded = (Value, bool, Option<Error>);
 
 /// The functions of a type of a protocol: the JSON form of the value that octets are,
 /// and the octets of the value that a JSON form writes.

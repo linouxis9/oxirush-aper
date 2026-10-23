@@ -49,7 +49,7 @@ const TYPES: &[(&str, Kind)] = &[
     ("Release", Kind::Sequence(RELEASE)),
 ];
 
-fn no_codec(_: &[u8]) -> Result<(Value, bool), Error> {
+fn no_codec(_: &[u8]) -> Result<oxirush_aper::inspect::Decoded, Error> {
     Err(Error::new(ErrorKind::Decode, "no codec in this test"))
 }
 
@@ -447,15 +447,25 @@ fn what_a_typed_value_has_no_place_for_keeps_its_octets_in_a_tree() {
         shown.unwrap(),
         tree!([{"Cause": {"octets": "00"}}, {"Holder": {"transfer": {"octets": "10"}}}])
     );
-    // A view keeps the typed value beside it, which a path selects.
+    // A view keeps the typed value beside it, which a path selects, and its path list
+    // says why the tree has the octets in its place.
     assert_eq!(
         inspect::select(&TEST, &view, "/test/Cause/radioNetwork"),
         Ok(vec![&tree!("unspecified")])
     );
-    assert!(
-        inspect::paths(&TEST, &view)
-            .iter()
-            .all(|(path, _)| !path.contains("lossy"))
+    let lossy: Vec<_> = inspect::paths(&TEST, &view)
+        .into_iter()
+        .filter(|(path, _)| path.contains("lossy"))
+        .collect();
+    assert_eq!(
+        lossy,
+        [
+            ("/test/Cause/_lossy".to_string(), tree!(true)),
+            (
+                "/test/Holder/value/transfer/_lossy".to_string(),
+                tree!(true)
+            ),
+        ]
     );
 }
 

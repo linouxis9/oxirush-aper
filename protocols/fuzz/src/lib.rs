@@ -188,9 +188,50 @@ pub fn view(octets: &[u8]) {
 
     // Each path that the view has selects its value: every one, as an alternative of the
     // type NULL deep in a message is among the last that are listed.
-    for (path, value) in inspect::paths(&view) {
-        assert_eq!(inspect::select(&view, &path), Ok(vec![&value]), "{path}");
+    let paths = inspect::paths(&view);
+    for (path, value) in &paths {
+        assert_eq!(inspect::select(&view, path), Ok(vec![value]), "{path}");
     }
+
+    // Where the tree has an IE as its octets the view says why, and so does its path
+    // list: octets that do not decode, or that are in another form than the one of X.691,
+    // have a `_decode_error`, and those that a typed value has no place for `_lossy`.
+    let (Some(Value::Array(shown)), Some(Value::Array(viewed))) =
+        (tree.get("ies"), view.pointer("/message/protocolIEs"))
+    else {
+        return;
+    };
+    assert_eq!(shown.len(), viewed.len(), "{tree}");
+    let mut why = 0;
+    for (shown, viewed) in shown.iter().zip(viewed) {
+        let said = says_why(viewed) || viewed.get("value").is_some_and(says_why);
+        assert_eq!(
+            as_octets(shown),
+            said,
+            "{shown} is shown so, and viewed as {viewed}"
+        );
+        why += usize::from(said);
+    }
+    let listed = paths.iter().filter(|(path, _)| {
+        path.starts_with('/') && (path.ends_with("/_decode_error") || path.ends_with("/_lossy"))
+    });
+    assert!(listed.count() >= why, "{view}");
+}
+
+/// Whether the entry of a view says why it is its octets, or has no place for all of them.
+fn says_why(entry: &Value) -> bool {
+    entry.get("_decode_error").is_some() || entry.get("_lossy").is_some()
+}
+
+/// Whether the entry of a tree has its IE as the octets that it was received as.
+fn as_octets(entry: &Value) -> bool {
+    let mut members = entry.as_object().into_iter().flatten();
+    let value = members
+        .find(|(name, _)| *name != "criticality")
+        .map(|(_, value)| value);
+    value
+        .and_then(Value::as_object)
+        .is_some_and(|value| value.len() == 1 && value.contains_key("octets"))
 }
 
 /// The functions that take a path, on the view of a PDU: `select`, `set`, `insert`,

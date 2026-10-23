@@ -610,7 +610,7 @@ fn value_member(shape: Shape) -> Option<&'static str> {
 /// the `octets` of an IE or of a transfer.
 fn names(shape: Shape, members: &[Member]) -> Vec<&'static str> {
     let mut names: Vec<_> = (members.iter().map(|(name, ..)| *name))
-        .filter(|name| shown(name) && *name != "_decode_error")
+        .filter(|name| shown(name) && *name != "_decode_error" && *name != LOSSY)
         .collect();
     if has_octets(shape) {
         names.push("octets");
@@ -691,9 +691,11 @@ fn element_of(shape: Shape, id: u16) -> Option<Shape> {
     }
 }
 
-/// Whether a member is one of a value, and not what a view keeps of what was received.
+/// Whether a member is one of a value, and not what a view keeps of what was received:
+/// but why a value is its octets, or has no place for all of them, which is why a tree
+/// has those octets in its place.
 fn shown(name: &str) -> bool {
-    !name.starts_with('_') || name == "_decode_error"
+    !name.starts_with('_') || name == "_decode_error" || name == LOSSY
 }
 
 /// The octets that an IE or a transfer was received as.
