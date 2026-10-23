@@ -18,7 +18,7 @@
 //! The time and the memory of each operation as the IEs of a message grow in
 //! number.
 //!
-//! ```bash
+//! ```sh
 //! cargo bench --bench scale                  # 1,000, 10,000 and 65,535 IEs
 //! cargo bench --bench scale -- 65535 paths   # one size, and the operations whose name has "paths"
 //! ```

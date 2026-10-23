@@ -10,7 +10,7 @@ publish = false
 license = "Apache-2.0"
 
 [dev-dependencies]
-oxirush-ngap = { git = "https://github.com/linouxis9/oxirush-ngap", rev = "efadb90db5d4765ff546d64596c4c79a27c95a3d" }
+oxirush-ngap = { git = "https://github.com/linouxis9/oxirush-ngap", rev = "eeddd94e6a8671945b9df23f46ad90adb421ba22" }
 hex = "0.4"
 
 # Not a member of a workspace that the crate may be in.

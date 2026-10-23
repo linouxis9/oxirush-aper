@@ -17,7 +17,7 @@
 
 //! Where an operation allocates.
 //!
-//! ```bash
+//! ```sh
 //! cargo bench --bench heap -- to-view/fixtures
 //! cargo bench --bench heap -- decode/paging 12   # the 12 first sites
 //! ```

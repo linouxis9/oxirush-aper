@@ -21,7 +21,7 @@
 //! ```rust
 //! use oxirush_aper::{Reader, Writer};
 //!
-//! fn main() -> Result<(), oxirush_aper::Error> {
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let mut octets = Vec::new();
 //!     let mut writer = Writer::new(&mut octets);
 //!     // INTEGER (0..7): three bits

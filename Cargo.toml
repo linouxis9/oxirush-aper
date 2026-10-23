@@ -2,7 +2,7 @@
 name = "oxirush-aper"
 version = "0.1.0"
 edition = "2024"
-description = "Aligned PER (ITU-T X.691) for Rust bindings generated from 3GPP ASN.1: a reader and a writer of the fields, and the types of the values"
+description = "Aligned PER (ITU-T X.691) in Rust: the runtime of the bindings that oxirush-ngap and oxirush-s1ap generate from the 3GPP ASN.1, and the macros they share. no_std, no unsafe code."
 license = "Apache-2.0"
 repository = "https://github.com/linouxis9/oxirush-aper"
 authors = ["Valentin D'Emmanuele"]

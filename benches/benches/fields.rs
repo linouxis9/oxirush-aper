@@ -17,7 +17,7 @@
 
 //! The time of the fields that a message of NGAP or S1AP is made of.
 //!
-//! ```bash
+//! ```sh
 //! cargo bench --bench fields              # every benchmark
 //! cargo bench --bench fields -- read/     # those whose name has "read/"
 //! ```
