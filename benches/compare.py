@@ -10,7 +10,7 @@
 # License for the specific language governing permissions and limitations under the
 # License.
 
-"""The comparison of the README: the crate and the derive of rasn 0.29, each decoding
+"""The comparison with rasn: the crate and the derive of rasn 0.29, each decoding
 and encoding five values of NGAP with the same types (`src/bin/compare.rs`).
 
     python3 benches/compare.py [--core N] [--perf COMMAND]
@@ -19,7 +19,7 @@ Run it from the root of the repository. It builds `compare` in benches/target, r
 operation on one core (--core, 2 by default), with --perf for the cycles and the
 instructions: `perf` by default, or `sudo -n perf` where perf_event_paranoid keeps them
 from a user, in which case the program runs as the user again under perf. It prints the
-table of the README.
+tables of benches/README.md.
 """
 
 import argparse

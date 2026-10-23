@@ -51,7 +51,7 @@ pub const BLOCKS: &[fn()] = &[
 fn block_1() {
     use oxirush_aper::{Reader, Writer};
 
-    fn main() -> Result<(), oxirush_aper::Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut octets = Vec::new();
         let mut writer = Writer::new(&mut octets);
         // INTEGER (0..7): three bits
@@ -153,7 +153,7 @@ fn block_2() {
         }
     }
 
-    fn main() -> Result<(), Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cell = Cell {
             id: 0x123,
             kind: Kind::Small,
@@ -182,7 +182,7 @@ fn block_2() {
 fn block_3() {
     use oxirush_aper::Octets;
 
-    fn main() {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         let received = vec![0x7e, 0x00, 0x41];
         let borrowed = Octets::from(&received[..]);
         println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
@@ -190,16 +190,17 @@ fn block_3() {
         let kept: Octets<'static> = borrowed.into_owned();
         drop(received);
         println!("{kept:?} borrowed: {}", kept.is_borrowed());
+        Ok(())
     }
 
-    main();
+    main().unwrap();
 }
 
 /// The Rust block 4 of README.md.
 fn block_4() {
     use oxirush_aper::{BitString, Bits};
 
-    fn main() -> Result<(), oxirush_aper::Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         // AMF Set ID ::= BIT STRING (SIZE (10)): its octets start with its first bit
         let set = Bits::new(0x155, 10)?;
         println!("{:#x} of {} bits: {:02x?}", set.value(), set.len(), set.to_vec());
@@ -221,7 +222,7 @@ fn block_4() {
 fn block_5() {
     use oxirush_aper::{Reader, Writer};
 
-    fn main() -> Result<(), oxirush_aper::Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut octets = Vec::new();
         let mut writer = Writer::new(&mut octets);
         let start = writer.begin_open_type();
@@ -242,7 +243,7 @@ fn block_5() {
 fn block_6() {
     use oxirush_aper::{Reader, Writer};
 
-    fn main() -> Result<(), oxirush_aper::Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         // SEQUENCE { a BOOLEAN, ..., b INTEGER (0..255) OPTIONAL, c BOOLEAN OPTIONAL }
         let mut octets = Vec::new();
         let mut writer = Writer::new(&mut octets);
@@ -274,7 +275,7 @@ fn block_6() {
 fn block_7() {
     use oxirush_aper::{Octets, decode, decode_strict, decode_with_faults};
 
-    fn main() -> Result<(), oxirush_aper::Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         // An OCTET STRING of one octet, whose length is in two octets
         let octets = [0x80, 0x01, 0xaa];
         println!("{:?}", decode::<Octets>(&octets)?);
@@ -296,7 +297,7 @@ fn block_8() {
     // The toy protocol: a SETUP REQUEST of an Identity, a Name and a list of Items
     use toy::*;
 
-    fn main() -> Result<(), oxirush_aper::Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         // A PDU by the names of its IEs, each with the criticality that the object
         // set of the message assigns it
         let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
@@ -327,7 +328,7 @@ fn block_8() {
 fn block_9() {
     use toy::*;
 
-    fn main() -> Result<(), oxirush_aper::Error> {
+    fn main() -> Result<(), Box<dyn std::error::Error>> {
         // A list of single containers: each item is an IE of its own
         let items = vec![build_toy_ie!(REJECT Item(1u8))?, build_toy_ie!(REJECT Item(2u8))?];
         let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
