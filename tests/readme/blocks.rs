@@ -182,13 +182,17 @@ fn block_2() {
 fn block_3() {
     use oxirush_aper::Octets;
 
-    let received = vec![0x7e, 0x00, 0x41];
-    let borrowed = Octets::from(&received[..]);
-    println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
+    fn main() {
+        let received = vec![0x7e, 0x00, 0x41];
+        let borrowed = Octets::from(&received[..]);
+        println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
 
-    let kept: Octets<'static> = borrowed.into_owned();
-    drop(received);
-    println!("{kept:?} borrowed: {}", kept.is_borrowed());
+        let kept: Octets<'static> = borrowed.into_owned();
+        drop(received);
+        println!("{kept:?} borrowed: {}", kept.is_borrowed());
+    }
+
+    main();
 }
 
 /// The Rust block 4 of README.md.

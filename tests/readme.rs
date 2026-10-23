@@ -12,13 +12,12 @@
 //! of a block is the `json` and `text` blocks that follow it with nothing but
 //! blank lines between them. A block that shows no output prints none. A
 //! block that has a `main` is run as the documentation test runs it: its
-//! function calls `main`, which returns a `Result`, and an error fails the
-//! test.
+//! function calls `main`, and an error that `main` returns fails the test.
 //!
 //! After a change of the code of a Rust block of a page, write the file
 //! again and run the tests once more:
 //!
-//! ```bash
+//! ```sh
 //! README_BLOCKS=write cargo test --all-features --test readme
 //! cargo test --all-features --test readme
 //! ```
@@ -136,13 +135,12 @@ fn generated(examples: &[Example]) -> String {
                 false => writeln!(file, "    {code}").unwrap(),
             }
         }
-        // The `main` of a block is what the block does.
-        if example
-            .code
-            .lines()
-            .any(|code| code.starts_with("fn main("))
-        {
-            writeln!(file, "\n    main().unwrap();").unwrap();
+        // The `main` of a block is what the block does, and its error fails the test.
+        let mut lines = example.code.lines();
+        match lines.find(|code| code.starts_with("fn main(")) {
+            Some(main) if main.contains("->") => writeln!(file, "\n    main().unwrap();").unwrap(),
+            Some(_) => writeln!(file, "\n    main();").unwrap(),
+            None => {}
         }
         writeln!(file, "}}").unwrap();
     }

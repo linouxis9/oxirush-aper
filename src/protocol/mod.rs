@@ -25,7 +25,8 @@
 //! list of the procedures and of the IEs that the generator writes from the ASN.1: a marker
 //! type for the protocol ([`Protocol`]), its PDU ([`Pdu`]), the IE of a container
 //! ([`Field`]), each message ([`Message`]) and each transfer of protocol IEs
-//! ([`Container`]), and one marker type for each IE ([`Ie`]). The readers and the macros of
+//! ([`Transfer`]), both of them containers ([`Container`]), and one marker type for each
+//! IE ([`Ie`]). The readers and the macros of
 //! the protocol crates are written once, here, for every protocol.
 //!
 //! # Reading the IEs that a program needs
@@ -44,7 +45,8 @@
 //! checks what clause 10 of the specification has a receiver look at in the container of
 //! its message, its object set, without decoding the values; `check()` decodes each value
 //! too. A program that reads the IEs that it needs and checks the structure of the message
-//! pays for those IEs alone.
+//! pays for those IEs alone. A transfer of protocol IEs has its own object set, which
+//! `check` and `check_structure` of its type compare its octets with.
 //!
 //! [`Deviation::RepeatedIe`]: crate::check::Deviation::RepeatedIe
 
@@ -58,8 +60,8 @@ mod read;
 pub use build::{__Message, __assigned_ie, __ie, __message_of, __message_of_protocol_ies};
 pub use errors::{__missing_ie, __undecodable_ie, __wrong_message, ie_name};
 pub use pdu::{
-    check, check_structure, holds_key, message_octets, message_octets_as_its_type, of_message,
-    protocol_ies, set_protocol_ies,
+    check, check_structure, check_transfer, check_transfer_structure, holds_key, message_octets,
+    message_octets_as_its_type, of_message, protocol_ies, set_protocol_ies,
 };
 pub use read::{
     __Decoded, __Each, __Entry, __Fields, __Holds, __Item, __Source, __Walk, __first, __pdu_holds,
@@ -187,7 +189,17 @@ pub trait InProtocol {
 /// assigns to the IE `id`: `None` for an IE that the set does not have.
 #[doc(hidden)]
 pub fn __assigned<P: Protocol>(direction: &str, code: u8, id: u16) -> Option<Criticality> {
-    let ies = object_set::<P>(direction, code)?.ies?;
+    __assigned_in(object_set::<P>(direction, code)?.ies?, id)
+}
+
+/// The criticality that the IEs of an object set assign to the IE `id`: `None` for an IE
+/// that the set does not have.
+#[doc(hidden)]
+#[inline]
+pub fn __assigned_in<C: Copy + Into<Criticality>>(
+    ies: &[(u16, C, bool)],
+    id: u16,
+) -> Option<Criticality> {
     let found = ies.iter().find(|(known, ..)| *known == id);
     found.map(|(_, assigned, _)| (*assigned).into())
 }
@@ -244,7 +256,7 @@ pub trait Field<'a>: Decode<'a> + Encode + InProtocol + Clone {
 /// A type whose value is a container of protocol IEs, whose IEs the readers and the
 /// macros read, change and build: the type of a message, or of a transfer whose octets
 /// hold such a container, as `PDUSessionResourceSetupRequestTransfer` of NGAP. The
-/// registry implements it for each message, and the generator for each transfer.
+/// registry implements it for each message and each transfer.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is no container of protocol IEs",
     label = "the type of a message, or of a transfer of protocol IEs, is expected here",
@@ -258,8 +270,7 @@ pub trait Container<'a>: Decode<'a> + Encode + AsnType + InProtocol {
     #[doc(hidden)]
     const __OF_PROTOCOL_IES: bool;
     /// The criticality that the object set of the type assigns to the IE `id`: `None`
-    /// for an IE that the set does not have, and for a transfer, whose object set the
-    /// tables of the crate do not have.
+    /// for an IE that the set does not have.
     #[doc(hidden)]
     fn __assigned(id: u16) -> Option<Criticality>;
     /// The IEs of the container, in their order: none for a private message.
@@ -297,6 +308,25 @@ pub trait Message<'a>: Container<'a> {
     /// octets is copied.
     #[doc(hidden)]
     fn __decode_owned(octets: &[u8]) -> Result<Self, Error>;
+}
+
+/// A transfer of protocol IEs: the type of octets that an IE or a member of a value holds,
+/// which contain a container of protocol IEs, as `PDUSessionResourceSetupRequestTransfer`
+/// of NGAP. The ASN.1 gives it an object set as it gives a message one, and the registry
+/// of a protocol implements it for each such type, with that set: the macros give its IEs
+/// the criticality that the set assigns, and [`check_transfer`] compares its octets with
+/// the set.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is no transfer of protocol IEs",
+    label = "the type of a transfer of protocol IEs is expected here",
+    note = "a transfer of protocol IEs is the type of octets that hold a container of protocol \
+            IEs, as `PDUSessionResourceSetupRequestTransfer` of NGAP"
+)]
+pub trait Transfer<'a>: Container<'a> {
+    /// The IEs of its object set, in the order of the set, each as its identifier, the
+    /// criticality that the set assigns it and whether its presence is mandatory.
+    #[doc(hidden)]
+    const __OBJECT_SET: &'static [(u16, CriticalityOf<Self::Protocol>, bool)];
 }
 
 /// An IE of a protocol, as a marker type: `oxirush_ngap::ie::AMF_UE_NGAP_ID`. The

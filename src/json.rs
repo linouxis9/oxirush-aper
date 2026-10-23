@@ -279,15 +279,16 @@ impl Form {
                     .then(|| u64::from_str_radix(text, 16).ok())
                     .flatten()
                     .map(|read| read >> (octets * 8 - bits));
+                // The number as JSON writes it: without the zeros before its first digit.
+                let number = text.trim_start_matches('0');
+                let number = if number.is_empty() { "0" } else { number };
                 Err(match as_octets {
-                    Some(other) => format!(
-                        "\"{text}\" is read in two ways, as the number {text} and as the octets \
-                         0x{text}, which are the number {other}: write the number without quotes, \
-                         {text} or {other}"
+                    Some(other) if other.to_string() != number => format!(
+                        "\"{text}\" is read in two ways, as the number {number} and as the \
+                         octets 0x{text}, which are the number {other}: write the number \
+                         without quotes, {number} or {other}"
                     ),
-                    None => {
-                        format!("\"{text}\" is a number in quotes: write {text} without quotes")
-                    }
+                    _ => format!("\"{text}\" is a number in quotes: write {number} without quotes"),
                 })
             }
             Self::Address if text.contains(['.', ':']) => {

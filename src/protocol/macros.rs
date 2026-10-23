@@ -384,30 +384,94 @@ macro_rules! __readers {
     };
 }
 
-/// A transfer of a protocol whose octets hold a container of protocol IEs, which the macros
-/// read and build IEs for as they do for a message, and which has the readers of a message.
+/// The transfers of a protocol whose octets hold a container of protocol IEs, which its
+/// `src/registry.rs` lists from the ASN.1: the name that ASN.1 gives each, its type in the
+/// bindings, and the IEs of its object set, each with its identifier, its criticality and
+/// its presence.
+///
+/// The macros read and build the IEs of a transfer as they do those of a message, with
+/// the criticality that its object set assigns; each transfer has the readers of a
+/// message, and `check` and `check_structure`, which compare the octets of a transfer
+/// with its object set. With the `inspect` feature, the trees of a transfer take the
+/// criticality of each of its IEs from these lines.
 #[doc(hidden)]
 #[macro_export]
 // The registry of a protocol calls it in its crate, whose items `crate::` names.
 #[allow(clippy::crate_in_macro_def)]
-macro_rules! __transfer {
-    ($protocol:path, $bindings:ident, $($type:ident)*) => {
+macro_rules! __transfer_sets {
+    (protocol $protocol:ident, bindings $bindings:ident;
+    $($name:literal $type:ident [$($ie:literal $criticality:ident $presence:ident),*];)*) => {
         $(
             impl $crate::protocol::InProtocol for crate::$bindings::$type<'_> {
-                type Protocol = $protocol;
+                type Protocol = crate::$protocol;
             }
             impl<'a> $crate::protocol::Container<'a> for crate::$bindings::$type<'a> {
                 const __OF_PROTOCOL_IES: bool = true;
-                fn __assigned(_: u16) -> Option<$crate::Criticality> {
-                    None
+                fn __assigned(id: u16) -> Option<$crate::Criticality> {
+                    $crate::protocol::__assigned_in(
+                        <Self as $crate::protocol::Transfer<'a>>::__OBJECT_SET,
+                        id,
+                    )
                 }
                 #[inline]
                 fn __fields<'s>(&'s self) -> &'s [crate::$bindings::ProtocolIEField<'s>] {
                     &self.protocol_ies.0
                 }
             }
-            $crate::__readers!($protocol, "transfer", crate::$bindings::$type<'a>);
+            impl<'a> $crate::protocol::Transfer<'a> for crate::$bindings::$type<'a> {
+                const __OBJECT_SET: &'static [(u16, crate::$bindings::Criticality, bool)] = &[$((
+                    $ie,
+                    crate::$bindings::Criticality::$criticality,
+                    $crate::__presence!($presence),
+                )),*];
+            }
+            $crate::__readers!(crate::$protocol, "transfer", crate::$bindings::$type<'a>);
+            impl crate::$bindings::$type<'_> {
+                #[doc = concat!(
+                    "How the ", $name, " that `octets` hold deviates from its object set, \
+                     the value of each IE included: as `check()` of a PDU compares a message \
+                     with its own, without the criticality of a procedure, which a transfer \
+                     has none of. The list is empty for a transfer that is constructed as \
+                     the specification has a sender construct it.\n\n\
+                     # Errors\n\n\
+                     An error of the kind `Decode` when the octets are not a container of \
+                     protocol IEs."
+                )]
+                pub fn check(
+                    octets: &[u8],
+                ) -> Result<Vec<$crate::check::Deviation<crate::$protocol>>, $crate::Error> {
+                    $crate::protocol::check_transfer::<Self>(octets)
+                }
+
+                #[doc = concat!(
+                    "How the ", $name, " that `octets` hold deviates from its object set, \
+                     in its container alone: the presence, the order, the repetition and the \
+                     criticality of its IEs, whose values are not decoded, as \
+                     `check_structure()` of a PDU has them.\n\n\
+                     # Errors\n\n\
+                     An error of the kind `Decode` when the octets are not a container of \
+                     protocol IEs."
+                )]
+                pub fn check_structure(
+                    octets: &[u8],
+                ) -> Result<Vec<$crate::check::Deviation<crate::$protocol>>, $crate::Error> {
+                    $crate::protocol::check_transfer_structure::<Self>(octets)
+                }
+            }
         )*
+
+        /// The transfers of protocol IEs: the name that ASN.1 gives each, the name of its
+        /// type in the bindings, the IEs of its object set, each with its identifier and
+        /// whether its presence is mandatory, and the criticality that the set assigns
+        /// each, in the order of the set.
+        #[cfg(feature = "inspect")]
+        #[allow(clippy::type_complexity)]
+        pub(crate) const TRANSFERS: &[(&str, &str, &[(u16, bool)], &[(u16, &str)])] = &[$((
+            $name,
+            stringify!($type),
+            &[$(($ie, $crate::__presence!($presence))),*],
+            &[$(($ie, stringify!($criticality))),*],
+        ),)*];
     };
 }
 

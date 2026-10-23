@@ -74,6 +74,9 @@ pub struct Registry {
     /// The lists of single containers: the identifier of an IE whose value is one, that
     /// of the IE of its items, and the size of the list.
     lists: Vec<(u16, u16, usize, usize)>,
+    /// The transfers of protocol IEs: each SEQUENCE of a container of protocol IEs that
+    /// is no message, with its object set, in the order of the names.
+    pub(crate) transfers: Vec<Message>,
 }
 
 /// The one type of what has one.
@@ -130,11 +133,46 @@ impl Registry {
             ies: BTreeMap::new(),
             triggering: triggering(generated)?,
             lists: Vec::new(),
+            transfers: Vec::new(),
         };
         registry.procedures = registry.read_procedures(protocol, asn)?;
         registry.ies = registry.read_ies(protocol, asn)?;
         registry.lists = registry.read_lists(protocol, asn)?;
+        registry.transfers = registry.read_transfers(protocol, asn)?;
         Ok(registry)
+    }
+
+    /// The transfers of protocol IEs: each type that ASN.1 writes as a SEQUENCE of a
+    /// container of protocol IEs and that is no message of a procedure, with the object
+    /// set of the container, as a message has one.
+    fn read_transfers(&self, protocol: &str, asn: &str) -> Result<Vec<Message>> {
+        let container = Regex::new(
+            r"(?m)^[\t ]*([A-Za-z][A-Za-z0-9-]*)\s*::=\s*SEQUENCE\s*\{\s*protocolIEs\s+ProtocolIE-Container\b",
+        )?;
+        let messages: BTreeSet<&str> = (self.procedures.values())
+            .flat_map(|procedure| procedure.messages.iter().flatten())
+            .map(|message| message.name.as_str())
+            .collect();
+        let names: BTreeSet<&str> = (container.captures_iter(asn))
+            .map(|c| c.get(1).expect("a name").as_str())
+            .filter(|name| !messages.contains(name))
+            .collect();
+        let mut transfers = Vec::new();
+        for name in names {
+            let ty = self.resolve(name);
+            let ty = ty.ok_or_else(|| anyhow!("missing transfer {name}"))?;
+            let ies = message_ies(protocol, asn, name)?;
+            ensure!(
+                ies.is_some(),
+                "{name}: the object set of a transfer was not read"
+            );
+            transfers.push(Message {
+                name: name.to_string(),
+                ty,
+                ies,
+            });
+        }
+        Ok(transfers)
     }
 
     /// The lists of single containers that are the value of an IE, each with the IE of its
@@ -232,9 +270,10 @@ impl Registry {
         }
     }
 
-    /// The list: one line for each procedure and for each IE, which the macros
-    /// `__procedures!` and `__ies!` of oxirush-aper expand in the crate, with the names of
-    /// the protocol that `__protocol!` takes.
+    /// The list: one line for each procedure, for each IE and for each transfer of
+    /// protocol IEs, which the macros `__procedures!`, `__ies!` and `__transfer_sets!` of
+    /// oxirush-aper expand in the crate, with the names of the protocol that
+    /// `__protocol!` takes.
     pub fn list(&self) -> Result<String> {
         // rustfmt leaves the lines of a macro called with braces as they are.
         let mut out = String::from(
@@ -361,6 +400,24 @@ impl Registry {
                 bail!("a list of single containers, or its item, has no name");
             };
             writeln!(out, "    {list} {item} {lower} {upper};")?;
+        }
+        writeln!(out, "}}")?;
+        // The transfers of protocol IEs: the name that ASN.1 gives each, its type in the
+        // bindings, and the IEs of its object set, each with its identifier, its
+        // criticality and its presence.
+        writeln!(
+            out,
+            "oxirush_aper::__transfer_sets! {{\n    protocol {marker}, bindings {module};"
+        )?;
+        for Message { name, ty, ies } in &self.transfers {
+            let ty = ty.rsplit(':').next().unwrap_or(ty);
+            ensure!(
+                self.borrowing.contains(ty),
+                "{name} is a transfer that borrows nothing"
+            );
+            let ies = ies.iter().flatten();
+            let ies: Vec<_> = ies.map(|(id, c, p)| format!("{id} {c} {p}")).collect();
+            writeln!(out, "    {name:?} {ty} [{}];", ies.join(", "))?;
         }
         writeln!(out, "}}")?;
         ensure!(

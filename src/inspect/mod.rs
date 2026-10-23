@@ -78,6 +78,17 @@ pub type Message = (
     &'static str,
 );
 
+/// A transfer of protocol IEs of a protocol, as its tables have it: the name that ASN.1
+/// gives it, the name of its type in the bindings, the IEs of its object set with their
+/// identifiers and whether each is mandatory, and the criticality that the set assigns
+/// each, in the order of the set.
+pub type Transfer = (
+    &'static str,
+    &'static str,
+    &'static [(u16, bool)],
+    &'static [(u16, &'static str)],
+);
+
 /// The tables of an application protocol that the paths read, which its generator
 /// writes from the ASN.1 of the specification. Each list is in the order that its
 /// documentation says, which the lookups take.
@@ -114,6 +125,8 @@ pub struct Protocol {
     /// The criticality that ASN.1 assigns to the IEs of each message, by the name that
     /// it gives the message.
     pub message_ie_criticalities: &'static [(&'static str, &'static [(u16, &'static str)])],
+    /// The transfers of protocol IEs, each with its object set.
+    pub transfers: &'static [Transfer],
     /// The identifier of the IE of a name, however the name is written: the protocol
     /// keeps the index that it reads, made once.
     pub ie_id: fn(&str) -> Option<u16>,

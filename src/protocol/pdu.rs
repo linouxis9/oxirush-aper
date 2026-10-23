@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 use super::errors::__undecodable_ie;
 use super::read;
-use super::{CriticalityOf, Field, Message, Pdu, Protocol, object_set};
+use super::{CriticalityOf, Field, Message, Pdu, Protocol, Transfer, object_set};
 use crate::check::{Deviation, Wrong, deviations, structure_deviations};
 use crate::{Decode, Error, ErrorKind, Faults, Octets, Reader, Writer};
 
@@ -249,7 +249,7 @@ pub fn holds_key<P: Protocol>(direction: &str, code: u8) -> bool {
 ///   its condition is in the prose of the specification;
 /// - the IEs that a value holds, in a list, in a transfer or in an extension container:
 ///   the value of an IE of the message is decoded as its type, and what it holds as octets
-///   is not;
+///   is not. [`check_transfer`] compares a transfer of protocol IEs with its object set;
 /// - the IEs of a private message, which has no object set: the criticality of its PDU
 ///   alone is compared;
 /// - the message of a procedure that the specification does not have in that direction,
@@ -308,20 +308,75 @@ fn checked<'p, X: Pdu<'p>>(pdu: &X, values: bool) -> Result<Vec<Deviation<X::Pro
     let Some(set) = message.ies else {
         return Ok(found);
     };
-    if !values {
-        let octets = pdu.value().as_slice();
-        if octets.is_empty() {
-            let none = Error::new(ErrorKind::Decode, "there are no octets");
-            return Err(none.of_message(Some(message.name)));
-        }
-        let listed = listed_ies::<X::Protocol>(octets);
-        let listed = listed.map_err(|error| error.of_message(Some(message.name)))?;
-        structure_deviations(set, &listed, &mut found);
-        return Ok(found);
+    let octets = pdu.value().as_slice();
+    let checked = container_deviations(message.name, set, octets, values, &mut found);
+    checked.map_err(|error| error.of_message(Some(message.name)))?;
+    Ok(found)
+}
+
+/// How the transfer `T` that `octets` hold deviates from its object set, the value of each
+/// IE included: what [`check`] reports of the IEs of a message, without the criticality of
+/// a procedure, which a transfer has none of. The list is empty for a transfer that is
+/// constructed as the specification has a sender construct it.
+///
+/// It looks at the container of the transfer as [`check`] looks at that of a message, and
+/// not at what the values of its IEs hold.
+///
+/// # Errors
+///
+/// An error of the kind `Decode` when the octets are not a container of protocol IEs.
+pub fn check_transfer<'a, T: Transfer<'a>>(
+    octets: &[u8],
+) -> Result<Vec<Deviation<T::Protocol>>, Error> {
+    transfer_checked::<T>(octets, true)
+}
+
+/// How the transfer `T` that `octets` hold deviates from its object set, in its container
+/// alone: the presence, the order, the repetition and the criticality of its IEs, as
+/// [`check_structure`] has those of a message. The values of the IEs are not decoded.
+///
+/// # Errors
+///
+/// An error of the kind `Decode` when the octets are not a container of protocol IEs.
+pub fn check_transfer_structure<'a, T: Transfer<'a>>(
+    octets: &[u8],
+) -> Result<Vec<Deviation<T::Protocol>>, Error> {
+    transfer_checked::<T>(octets, false)
+}
+
+/// `check_transfer` with the values of the IEs, and `check_transfer_structure` without
+/// them.
+fn transfer_checked<'a, T: Transfer<'a>>(
+    octets: &[u8],
+    values: bool,
+) -> Result<Vec<Deviation<T::Protocol>>, Error> {
+    let mut found = Vec::new();
+    let checked = container_deviations(T::NAME, T::__OBJECT_SET, octets, values, &mut found);
+    checked.map_err(|error| error.decoding(T::NAME))?;
+    Ok(found)
+}
+
+/// What the IEs of the container that `octets` hold deviate in from its object set `set`,
+/// added to `found`: the container of the message or of the transfer that ASN.1 names
+/// `name`, with the value of each IE when `values` says so.
+fn container_deviations<P: Protocol>(
+    name: &'static str,
+    set: &'static [(u16, CriticalityOf<P>, bool)],
+    octets: &[u8],
+    values: bool,
+    found: &mut Vec<Deviation<P>>,
+) -> Result<(), Error> {
+    if octets.is_empty() {
+        return Err(Error::new(ErrorKind::Decode, "there are no octets"));
     }
-    let ies = protocol_ies(pdu)?;
-    // What of the message itself is in another form than the one of X.691.
-    let faults = message_faults::<X::Protocol>(pdu.value());
+    if !values {
+        let listed = listed_ies::<P>(octets)?;
+        structure_deviations(set, &listed, found);
+        return Ok(());
+    }
+    let ies = message_ies::<P>(octets)?;
+    // What of the container itself is in another form than the one of X.691.
+    let faults = message_faults::<P>(octets);
     found.extend(faults.iter().map(|noted| Deviation::NotCanonical {
         ie: None,
         fault: noted.fault,
@@ -335,16 +390,15 @@ fn checked<'p, X: Pdu<'p>>(pdu: &X, values: bool) -> Result<Vec<Deviation<X::Pro
     let value = |position: usize| {
         let ie = &ies[position];
         let (id, criticality) = (ie.id(), ie.criticality());
-        match X::Protocol::__decodes(id, ie.value()) {
+        match P::__decodes(id, ie.value()) {
             None => (None, Faults::default()),
             Some(Ok((outside, faults))) => (outside.map(Wrong::OutsideRoot), faults),
             Some(Err(error)) => {
-                let error =
-                    __undecodable_ie::<X::Protocol>(error, message.name, id, criticality, position);
+                let error = __undecodable_ie::<P>(error, name, id, criticality, position);
                 (Some(Wrong::Undecodable(error)), Faults::default())
             }
         }
     };
-    deviations(set, &listed, &value, &mut found);
-    Ok(found)
+    deviations(set, &listed, &value, found);
+    Ok(())
 }

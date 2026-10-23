@@ -765,7 +765,7 @@ impl<'a> Reader<'a> {
     /// }
     ///
     /// let string = held(&[0x03, 0x02, 0xab, 0xcd])?;
-    /// assert_eq!(format!("{string:?}"), "ABCD");
+    /// assert_eq!(format!("{string:?}"), "abcd");
     /// assert!(string.is_borrowed());
     /// # Ok::<(), Error>(())
     /// ```

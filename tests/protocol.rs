@@ -101,6 +101,63 @@ fn a_pdu_is_built_with_the_criticalities_that_the_object_set_assigns() -> Result
 }
 
 #[test]
+fn a_transfer_has_the_criticalities_of_its_object_set_and_is_checked_against_it()
+-> Result<(), Error> {
+    // The object set of the transfer assigns ignore to Identity and reject to Name, where
+    // that of SETUP REQUEST assigns the reverse.
+    let identity = build_toy_ie!(SetupTransfer, Identity(7u32))?;
+    let name = build_toy_ie!(SetupTransfer, Name("toy"))?;
+    assert_eq!(identity.criticality, Criticality::ignore);
+    assert_eq!(name.criticality, Criticality::reject);
+    let error = build_toy_ie!(SetupTransfer, Items(vec![build_toy_ie!(REJECT Item(1u8))?]));
+    assert_eq!(
+        error.unwrap_err().to_string(),
+        "Items is no IE of the object set of SetupTransfer, which assigns it no criticality: \
+         write its criticality"
+    );
+    let transfer = SetupTransfer::new(ProtocolIEContainer(vec![identity, name.clone()]));
+    let octets = oxirush_aper::encode(&transfer)?;
+    assert_eq!(SetupTransfer::check(&octets)?, []);
+    assert_eq!(SetupTransfer::check_structure(&octets)?, []);
+    // A transfer is read as a message is, and an IE that it misses tells its criticality.
+    let read: SetupTransfer = oxirush_aper::decode(&octets)?;
+    assert_eq!(read.ie::<ie::Identity>().unwrap()?, Identity(7));
+    let missing = SetupTransfer::new(ProtocolIEContainer(vec![name]));
+    let without = || -> Result<u32, Error> {
+        extract_toy_ies!(missing, SetupTransfer, req identity: u32 = Identity(id));
+        Ok(identity)
+    };
+    let error = without().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::MissingIe);
+    let about = error.ie().map(|ie| (ie.id, ie.criticality));
+    assert_eq!(about, Some((1, oxirush_aper::Criticality::Ignore)));
+    // Each deviation of its container is reported, as for a message.
+    let octets = oxirush_aper::encode(&missing)?;
+    let found: Vec<_> = SetupTransfer::check_structure(&octets)?
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        found,
+        ["Identity (IE 1) is mandatory, and the message does not have it"]
+    );
+    assert_eq!(
+        SetupTransfer::check(&octets)?,
+        SetupTransfer::check_structure(&octets)?
+    );
+    // Octets that are no container of protocol IEs.
+    let error = SetupTransfer::check(&[0x80]).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Decode);
+    assert!(
+        error
+            .to_string()
+            .starts_with("these octets do not decode as SetupTransfer"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
 fn the_macro_reads_a_pdu_and_a_message_alike() -> Result<(), Error> {
     let octets = setup(7, "toy").encode()?;
     let pdu = TOYPDU::decode(&octets)?;

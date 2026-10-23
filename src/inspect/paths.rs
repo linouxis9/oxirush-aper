@@ -285,9 +285,13 @@ impl Protocol {
             Shape::AnyMessage => vec![(IES, Shape::Ies(None), false)],
             Shape::Named(name) => match (self.kind_of)(name) {
                 Some(Kind::Sequence(members) | Kind::Choice(members)) => {
-                    // An extension container extends the type that has it.
+                    // An extension container extends the type that has it, and the IEs
+                    // of a transfer are those of its object set.
                     let held = |(member, shape, optional): &Member| match shape {
                         Shape::Extensions(_) => (*member, Shape::Extensions(name), *optional),
+                        Shape::Ies(None) if *member == IES => {
+                            (*member, Shape::Ies(self.transfer(name)), *optional)
+                        }
                         shape => (*member, *shape, *optional),
                     };
                     members.iter().map(held).collect()
@@ -461,16 +465,30 @@ impl Protocol {
         )
     }
 
+    /// The transfer of protocol IEs whose type the bindings name `name`, as a message
+    /// of its object set: `None` for a type that is no such transfer.
+    fn transfer(&self, name: &str) -> Option<Sent> {
+        let mut transfers = self.transfers.iter();
+        let (asn, ty, ies, _) = transfers.find(|(_, ty, ..)| *ty == name)?;
+        Some(Sent { name: asn, ty, ies })
+    }
+
     /// The criticality that ASN.1 assigns to the IE `id` in a container of `shape`,
-    /// where the tables have it: that of the object set of a message for its IEs, and
-    /// that of the single containers for an IE that a value holds alone or as an entry
-    /// of a list. They have none for the IEs of a message that a transfer contains, nor
-    /// for those of an extension container.
+    /// where the tables have it: that of the object set of a message, or of a transfer,
+    /// for its IEs, and that of the single containers for an IE that a value holds alone
+    /// or as an entry of a list. They have none for the IEs of an extension container.
     fn assigned(&self, container: Shape, id: u16) -> Option<&'static str> {
         match container {
             Shape::Ies(Some(message)) => {
                 let mut messages = self.message_ie_criticalities.iter();
-                let (_, ies) = messages.find(|(name, _)| same_name(name, message.name))?;
+                let ies = match messages.find(|(name, _)| same_name(name, message.name)) {
+                    Some((_, ies)) => *ies,
+                    None => {
+                        let mut transfers = self.transfers.iter();
+                        let (.., ies) = transfers.find(|(name, ..)| *name == message.name)?;
+                        *ies
+                    }
+                };
                 let ie = ies.iter().find(|(known, _)| *known == id);
                 ie.map(|(_, criticality)| *criticality)
             }
@@ -1731,8 +1749,10 @@ impl Protocol {
             }
             shape => shape,
         };
+        // The IEs of a transfer are those of its object set, which `members` gives.
         if let Shape::Named(name) = shape
             && let Some(Kind::Sequence(members) | Kind::Choice(members)) = (self.kind_of)(name)
+            && !(matches!(members, [(IES, Shape::Ies(None), _)]) && self.transfer(name).is_some())
         {
             return Members::Listed(members, name);
         }

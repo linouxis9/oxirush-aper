@@ -702,11 +702,15 @@ fn a_string_of_digits_is_never_read_as_octets() {
     assert_eq!(
         write(Form::Number(36), tree!("0000000010")),
         Err(
-            "\"0000000010\" is read in two ways, as the number 0000000010 and as the octets \
-             0x0000000010, which are the number 1: write the number without quotes, 0000000010 \
-             or 1"
+            "\"0000000010\" is read in two ways, as the number 10 and as the octets \
+             0x0000000010, which are the number 1: write the number without quotes, 10 or 1"
                 .to_string()
         )
+    );
+    // One that both read as the same number
+    assert_eq!(
+        write(Form::Number(24), tree!("000001")),
+        Err("\"000001\" is a number in quotes: write 1 without quotes".to_string())
     );
     assert_eq!(
         write(Form::Number(24), tree!("1")),

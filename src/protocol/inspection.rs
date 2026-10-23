@@ -182,6 +182,8 @@ use crate::inspect_registry::{
 // The type that an IE of an extension container has where its identifier alone does not
 // say it: the one that the type which the container extends gives it.
 use crate::registry::EXTENSION_TYPES;
+// The transfers of protocol IEs, with their object sets.
+use crate::registry::TRANSFERS;
 /// A tree and a view: the JSON values of `oxirush-utils`.
 pub use $crate::json::Value;
 
@@ -198,6 +200,7 @@ pub(crate) static TABLES: Protocol = Protocol {
     enumerations: ENUMERATIONS,
     item_criticalities: ITEM_CRITICALITIES,
     message_ie_criticalities: MESSAGE_IE_CRITICALITIES,
+    transfers: TRANSFERS,
     ie_id,
     kind_of,
     procedure_criticalities: PROCEDURE_CRITICALITIES,

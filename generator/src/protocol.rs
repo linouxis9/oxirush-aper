@@ -14,6 +14,7 @@ use rasn_compiler::prelude::{Compiler, RasnBackend, RasnConfig};
 use regex::Regex;
 
 use crate::bindings::Keys;
+use crate::registry::Registry;
 
 /// A protocol, as its generator names it.
 pub struct Protocol {
@@ -36,10 +37,15 @@ pub struct Protocol {
     /// The octets of a UE CONTEXT RELEASE REQUEST, for the examples of the documentation
     /// of a PDU.
     pub release_request: &'static str,
+    /// What `Display` of the PDU of that UE CONTEXT RELEASE REQUEST shows.
+    pub release_display: &'static str,
     /// The name of another message than that UE CONTEXT RELEASE REQUEST.
     pub other_message: &'static str,
     /// The name of a type that is no message.
     pub no_message: &'static str,
+    /// Examples for the documentation of the types that a program meets first, each with
+    /// the name of its type in the bindings.
+    pub examples: &'static [(&'static str, &'static str)],
     /// What the protocol corrects in the bindings that rasn-compiler resolved, before the
     /// others are written from them.
     pub correct: fn(String) -> Result<String>,
@@ -147,6 +153,7 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
         keys,
         &[protocol.plmn],
         Some("oxirush_aper::protocol::__Field"),
+        protocol.examples,
     )?;
 
     // The oracle of the tests: the same types, with the codec of rasn and the
@@ -208,7 +215,7 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     );
     let mut text = bindings.text.replacen(&serde, "", 1);
     text.push_str(&support(protocol, &bindings.borrowing)?);
-    text.push_str(&transfers(protocol, &text, &list)?);
+    transfers(protocol, &text, &list, &registry)?;
     let file = format!("src/{module}.rs");
     fs::write(file, text).with_context(|| format!("write the {name} bindings"))
 }
@@ -367,10 +374,11 @@ fn oracle_support(protocol: &Protocol, generated: &str) -> Result<String> {
     Ok(out)
 }
 
-/// The transfers whose octets hold a container of protocol IEs, which the macros read and
-/// build IEs for as they do for a message: each SEQUENCE whose one member is `protocolIEs`
-/// and that is no message of the registry `list`. A protocol may have none.
-fn transfers(protocol: &Protocol, bindings: &str, list: &str) -> Result<String> {
+/// Whether the transfers of protocol IEs of the registry, which it reads from the ASN.1,
+/// are the types of the bindings that are a container of protocol IEs and no message of
+/// the registry `list`: each SEQUENCE whose one member is `protocolIEs`. A protocol may
+/// have none.
+fn transfers(protocol: &Protocol, bindings: &str, list: &str, registry: &Registry) -> Result<()> {
     let containers = Regex::new(
         r"pub struct (\w+)<'a>\s*\{\s*pub protocol_ies:\s*ProtocolIEContainer<'a>,?\s*\}",
     )?;
@@ -382,27 +390,20 @@ fn transfers(protocol: &Protocol, bindings: &str, list: &str) -> Result<String> 
         .captures_iter(list)
         .map(|c| c.get(1).expect("a name").as_str())
         .collect();
-    let mut names = Vec::new();
-    for name in containers
-        .captures_iter(bindings)
+    let found: BTreeSet<&str> = (containers.captures_iter(bindings))
         .map(|c| c.get(1).expect("a name").as_str())
-    {
-        if !messages.contains(name) {
-            names.push(name);
-        }
-    }
-    if names.is_empty() {
-        return Ok(String::new());
-    }
-    let mut out =
-        String::from("\n// The transfers of protocol IEs, whose IEs the macros read and build.\n");
-    let marker = protocol.marker();
-    writeln!(
-        out,
-        "oxirush_aper::__transfer!(crate::{marker}, {module}, {});",
-        names.join(" ")
-    )?;
-    Ok(out)
+        .filter(|name| !messages.contains(name))
+        .collect();
+    let listed = registry.transfers.iter();
+    let listed: BTreeSet<&str> = listed
+        .map(|transfer| transfer.ty.rsplit(':').next().unwrap_or(&transfer.ty))
+        .collect();
+    ensure!(
+        found == listed,
+        "the transfers of protocol IEs of the bindings, {found:?}, are not those of the \
+         ASN.1, {listed:?}"
+    );
+    Ok(())
 }
 
 /// What follows the modules in the bindings of the crate: their names at the root, the
@@ -426,7 +427,19 @@ fn support(protocol: &Protocol, borrowing: &BTreeSet<String>) -> Result<String> 
         writeln!(out, "#[allow(non_camel_case_types)]")?;
         writeln!(out, "pub type {alias} = {ty};")?;
     }
+    // The identifiers of the UE that `Display` of a PDU shows, by the names of their IEs.
+    let mut ue_ids = String::new();
+    for (alias, _) in protocol.aliases {
+        writeln!(
+            ue_ids,
+            "        if let Some(Ok(id)) = self.ie::<crate::ie::{alias}>() {{\n            \
+             let name = <crate::ie::{alias} as oxirush_aper::protocol::Ie>::NAME;\n            \
+             write!(formatter, \", {{name}} {{}}\", id.0)?;\n        }}"
+        )?;
+    }
     let text = SUPPORT
+        .replace("{UE_IDS}", &ue_ids)
+        .replace("{RELEASE_DISPLAY}", protocol.release_display)
         .replace("{RELEASE_REQUEST}", protocol.release_request)
         .replace("{OTHER_MESSAGE}", protocol.other_message)
         .replace("{NO_MESSAGE}", protocol.no_message)
@@ -443,6 +456,18 @@ fn support(protocol: &Protocol, borrowing: &BTreeSet<String>) -> Result<String> 
 /// What a PDU does, with the names of the protocol in braces.
 const SUPPORT: &str = r####"/// A PDU that owns its octets: what `decode` gives, what the macros build, and what
 /// is kept and sent. It borrows nothing, and so has no lifetime to write.
+///
+/// ```
+/// use {CRATE}::{MODULE}::{PDU_ALIAS};
+///
+/// // A UE CONTEXT RELEASE REQUEST, kept after the octets that it was read from
+/// let received = hex::decode("{RELEASE_REQUEST}").unwrap();
+/// let pdu: {PDU_ALIAS} = {PDU_ALIAS}::decode(&received)?;
+/// drop(received);
+/// assert_eq!(pdu.procedure_name(), "UEContextReleaseRequest");
+/// assert_eq!(hex::encode(pdu.encode()?), "{RELEASE_REQUEST}");
+/// # Ok::<(), {CRATE}::Error>(())
+/// ```
 #[allow(non_camel_case_types)]
 pub type {PDU_ALIAS} = {PDU}<'static>;
 pub use crate::registry::{KIND};
@@ -455,6 +480,19 @@ impl {PDU}<'static> {
     /// `check`. The crate has no limit on the octets of a PDU, and a call on a PDU takes
     /// time and memory in proportion to them: the caller bounds what it reads from a
     /// peer.
+    ///
+    /// ```
+    /// use {CRATE}::{ErrorKind, {MODULE}::{PDU_ALIAS}};
+    ///
+    /// let octets = hex::decode("{RELEASE_REQUEST}").unwrap();
+    /// let pdu = {PDU_ALIAS}::decode(&octets)?;
+    /// assert_eq!((pdu.direction(), pdu.procedure_name()), ("InitiatingMessage", "UEContextReleaseRequest"));
+    ///
+    /// // The octets of a PDU that end early
+    /// let error = {PDU_ALIAS}::decode(&octets[..octets.len() - 1]).unwrap_err();
+    /// assert_eq!(error.kind(), ErrorKind::Decode);
+    /// # Ok::<(), {CRATE}::Error>(())
+    /// ```
     pub fn decode(bytes: &[u8]) -> Result<Self, crate::Error> {
         match {PDU}::usual(bytes) {
             Some((alternative, code, criticality, message)) => Ok(Self::of_alternative(
@@ -692,25 +730,67 @@ impl<'a> {PDU}<'a> {
         matches!(self, {PDU}::unsuccessfulOutcome(_))
     }
 }
+/// The name of the message, its procedure code and its direction, then the identifiers of
+/// the UE that the message has, by the names of its IEs:
+///
+/// ```
+/// use {CRATE}::{MODULE}::{PDU_ALIAS};
+///
+/// let octets = hex::decode("{RELEASE_REQUEST}").unwrap();
+/// let pdu = {PDU_ALIAS}::decode(&octets)?;
+/// assert_eq!(pdu.to_string(), "{RELEASE_DISPLAY}");
+/// # Ok::<(), {CRATE}::Error>(())
+/// ```
+///
+/// A procedure that the specification does not have in that direction is an unknown
+/// message, with its procedure code.
 impl core::fmt::Display for {PDU}<'_> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            formatter,
-            "{} {} (code={})",
-            self.direction(),
-            self.procedure_name(),
-            self.procedure_code()
-        )
+        let direction = match self {
+            {PDU}::initiatingMessage(_) => "initiating message",
+            {PDU}::successfulOutcome(_) => "successful outcome",
+            {PDU}::unsuccessfulOutcome(_) => "unsuccessful outcome",
+        };
+        let code = self.procedure_code();
+        match crate::registry::message_name(self.direction(), code) {
+            Some(name) => write!(formatter, "{name} (procedure {code}, {direction})")?,
+            None => write!(formatter, "an unknown message (procedure {code}, {direction})")?,
+        }
+{UE_IDS}        Ok(())
     }
 }
 /// The open type of a value: its complete encoding in aligned PER, in which an empty
-/// encoding becomes one zero octet (X.691 (02/2021) §11.1.4, §11.2.1).
+/// encoding becomes one zero octet (X.691 (02/2021) §11.1.4, §11.2.1). It is what a
+/// transfer, a container or the value of an IE holds as octets.
+///
+/// ```
+/// use {CRATE}::{MODULE}::{Cause, CauseRadioNetwork, decode_open_type, encode_open_type};
+///
+/// let cause = Cause::radioNetwork(CauseRadioNetwork::unspecified);
+/// let octets = encode_open_type(&cause)?;
+/// assert_eq!(hex::encode(&octets), "0000");
+/// assert_eq!(decode_open_type::<Cause>(&octets)?, cause);
+/// # Ok::<(), {CRATE}::Error>(())
+/// ```
 pub fn encode_open_type<T: Encode>(value: &T) -> Result<Octets<'static>, crate::Error> {
     oxirush_aper::encode(value).map(Octets::owned)
 }
 /// The value of the type `T` that the octets of an open type hold, in aligned PER: one
 /// value, whole, and no octet after it. What the value holds of octets is borrowed
 /// from `value`.
+///
+/// ```
+/// use {CRATE}::{ErrorKind, {MODULE}::{Cause, CauseRadioNetwork, decode_open_type}};
+///
+/// // The octets of a Cause, as the value of its IE holds them
+/// let cause: Cause = decode_open_type(&[0x00, 0x00])?;
+/// assert_eq!(cause, Cause::radioNetwork(CauseRadioNetwork::unspecified));
+///
+/// // An octet after the value is an error
+/// let error = decode_open_type::<Cause>(&[0x00, 0x00, 0x00]).unwrap_err();
+/// assert_eq!(error.kind(), ErrorKind::Decode);
+/// # Ok::<(), {CRATE}::Error>(())
+/// ```
 pub fn decode_open_type<'a, T: Decode<'a>>(value: &'a [u8]) -> Result<T, crate::Error> {
     oxirush_aper::decode(value)
 }

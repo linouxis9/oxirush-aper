@@ -25,6 +25,16 @@ revision. A change to either reaches them when they move to its revision:
 `pin.py` writes it wherever they name it, and their CONTRIBUTING.md says
 what else a move takes.
 
+## The macros of the protocol crates
+
+The macros of oxirush-ngap and oxirush-s1ap that build a message and read and
+change its IEs by name, and their readers of one IE by its marker type, are
+written once, in the module `protocol` of the crate. The generator in
+`generator/` writes the registry of each protocol from its ASN.1: the list of
+its procedures, its IEs and its transfers that the macros expand.
+`tests/toy/mod.rs` is a protocol of two procedures written as the generator
+writes one, which the tests and the README build and read.
+
 ## The README
 
 The Rust blocks of the README are documentation tests, and
@@ -32,7 +42,7 @@ The Rust blocks of the README are documentation tests, and
 After a change of a block, write `tests/readme/blocks.rs` again and run the
 test once more:
 
-```bash
+```sh
 README_BLOCKS=write cargo test --all-features --test readme
 cargo test --all-features --test readme
 ```

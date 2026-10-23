@@ -29,7 +29,7 @@ use core::ops::Deref;
 ///
 /// // Kept after `received` is gone
 /// let kept: Octets<'static> = borrowed.into_owned();
-/// assert_eq!(format!("{kept:?}"), "7E0041");
+/// assert_eq!(format!("{kept:?}"), "7e0041");
 /// ```
 #[derive(Clone, Default)]
 pub struct Octets<'a>(Cow<'a, [u8]>);
@@ -236,17 +236,17 @@ impl crate::json::Tree for Octets<'_> {
     }
 }
 
-/// The octets in hexadecimal, in upper case.
+/// The octets in hexadecimal, in lower case.
 impl fmt::Debug for Octets<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write_hex(self.as_slice(), formatter)
     }
 }
 
-/// Octets in hexadecimal, in upper case.
+/// Octets in hexadecimal, in lower case.
 pub(crate) fn write_hex(octets: &[u8], formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
     for octet in octets {
-        write!(formatter, "{octet:02X}")?;
+        write!(formatter, "{octet:02x}")?;
     }
     Ok(())
 }

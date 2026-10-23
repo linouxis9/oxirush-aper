@@ -105,6 +105,7 @@ static TEST: Protocol = Protocol {
     ],
     item_criticalities: &[(15, "ignore")],
     message_ie_criticalities: &[("Release", &[(15, "ignore"), (16, "reject")])],
+    transfers: &[],
     ie_id,
     kind_of,
     procedure_criticalities: &[(1, "reject")],

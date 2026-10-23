@@ -173,11 +173,15 @@ pub struct Keys<'a> {
 /// `field` is the path, in the crate of the bindings, of a trait `Trait<T>` with one
 /// method `__field(self) -> T`: each type that is a name for one value implements it
 /// for the type of that value, so that a macro of the crate takes either.
+///
+/// `examples` are the examples of the documentation of some types, each with the name
+/// of its type in the bindings: a paragraph that follows what the type is in ASN.1.
 pub fn bindings(
     description: &str,
     keys: Keys<'_>,
     plmns: &[&str],
     field: Option<&str>,
+    examples: &[(&str, &str)],
 ) -> Result<Written> {
     let file = syn::parse_file(description).context("parse the resolved bindings")?;
     let mut modules = Vec::new();
@@ -196,6 +200,20 @@ pub fn bindings(
     }
     let mut bindings = Bindings::new(&modules, keys, plmns)?;
     bindings.field = field.map(str::to_string);
+    for (ty, example) in examples {
+        let known = modules.iter().flat_map(|module| &module.entries);
+        let mut known = known.filter_map(|entry| match entry {
+            Entry::Definition(definition) => Some(definition.name.as_str()),
+            _ => None,
+        });
+        ensure!(
+            known.any(|name| name == *ty),
+            "an example of {ty}, which is no type"
+        );
+        bindings
+            .examples
+            .insert(ty.to_string(), example.to_string());
+    }
     let text = bindings.write(&modules)?;
     let mut fields = String::from("type\tASN.1 identifier\tfield\tfield before the rule\n");
     for entry in modules.iter().flat_map(|module| &module.entries) {
@@ -725,6 +743,8 @@ struct Bindings {
     /// The path of the trait that a type which is a name for one value implements for
     /// the type of that value.
     field: Option<String>,
+    /// The examples of the documentation of some types, by the names of the types.
+    examples: BTreeMap<String, String>,
 }
 
 impl Bindings {
@@ -766,6 +786,7 @@ impl Bindings {
                 .collect(),
             plmns: BTreeMap::new(),
             field: None,
+            examples: BTreeMap::new(),
         };
         // A PLMN identity is three octets, or a name for a type that is.
         for plmn in plmns {
@@ -1082,6 +1103,14 @@ impl Bindings {
         }
         writeln!(out, "/// {}", summary(definition))?;
         write_docs(out, &definition.docs)?;
+        if let Some(example) = self.examples.get(name) {
+            for line in std::iter::once("").chain(example.lines()) {
+                match line.is_empty() {
+                    true => writeln!(out, "///")?,
+                    false => writeln!(out, "/// {line}")?,
+                }
+            }
+        }
         let copy = if self.copied.contains(name) {
             ", Copy"
         } else {

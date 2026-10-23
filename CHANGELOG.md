@@ -70,6 +70,13 @@ and S1AP (TS 36.413) uses.
   its octets. The message of a procedure that the protocol does not have is
   a container of IEs to the paths too, each IE of the type of its
   identifier, so that what `paths` lists there is what `select` takes.
+- `protocol::Transfer`: a transfer of protocol IEs, as
+  `PDUSessionResourceSetupRequestTransfer` of NGAP, with its object set,
+  which the generator writes into the registry of a protocol. The macros give
+  its IEs the criticality that the set assigns, the trees take it from the
+  set, and `protocol::check_transfer` and `check_transfer_structure` compare
+  its octets with the set as `check` does a message. `Debug` of `Octets` and
+  of `BitString` prints hexadecimal in lower case.
 - `check`: how a PDU of an application protocol deviates from the object set
   of its message, as a `Deviation` that a protocol tells in its own types
   through `Diagnostics`, and what its receiver answers for it: the protocol

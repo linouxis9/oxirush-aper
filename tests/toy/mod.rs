@@ -28,12 +28,15 @@
 // Notification  ignore  InitiatingMessage Notification    [Identity ignore mandatory]
 // Private       ignore  InitiatingMessage PrivateMessage  (no container of protocol IEs)
 //
+// SetupTransfer ::= SEQUENCE { protocolIEs ProtocolIE-Container {{SetupTransferIEs}}, ... }
+//                       a transfer of protocol IEs     [Identity ignore mandatory,
+//                                                       Name reject optional]
+//
 // Identity ::= INTEGER (0..4294967295)       id 1
 // Name     ::= OCTET STRING                  id 2
 // Items    ::= SEQUENCE (SIZE (1..16)) OF ProtocolIE-SingleContainer {{ItemIEs}}  id 3
 // Item     ::= INTEGER (0..255)              id 10, reject, in the single containers of Items
 // ```
-
 
 pub use registry::{Deviation, Toy, ToyPduKind, ie};
 
@@ -96,8 +99,11 @@ pub mod toy {
     }
     impl<'a> Decode<'a> for Criticality {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            const VALUES: [Criticality; 3] =
-                [Criticality::reject, Criticality::ignore, Criticality::notify];
+            const VALUES: [Criticality; 3] = [
+                Criticality::reject,
+                Criticality::ignore,
+                Criticality::notify,
+            ];
             Ok(VALUES[reader.enumerated(3, 0, false)? as usize])
         }
     }
@@ -159,7 +165,9 @@ pub mod toy {
             let id = ProtocolIEID::decode(reader).map_err(|error| error.in_field("id"))?;
             let criticality =
                 Criticality::decode(reader).map_err(|error| error.in_field("criticality"))?;
-            let value = reader.open_type().map_err(|error| error.in_field("value"))?;
+            let value = reader
+                .open_type()
+                .map_err(|error| error.in_field("value"))?;
             Ok(Self {
                 id,
                 criticality,
@@ -181,7 +189,12 @@ pub mod toy {
     pub struct ProtocolIEContainer<'a>(pub Vec<ProtocolIEField<'a>>);
     impl ProtocolIEContainer<'_> {
         pub fn into_owned(self) -> ProtocolIEContainer<'static> {
-            ProtocolIEContainer(self.0.into_iter().map(ProtocolIEField::into_owned).collect())
+            ProtocolIEContainer(
+                self.0
+                    .into_iter()
+                    .map(ProtocolIEField::into_owned)
+                    .collect(),
+            )
         }
     }
     impl AsnType for ProtocolIEContainer<'_> {
@@ -207,6 +220,7 @@ pub mod toy {
     message!(SetupRequest "SetupRequest");
     message!(SetupResponse "SetupResponse");
     message!(Notification "Notification");
+    message!(SetupTransfer "SetupTransfer");
 
     /// `PrivateMessage ::= SEQUENCE { privateIEs OCTET STRING, ... }`: no container of
     /// protocol IEs.
@@ -305,7 +319,12 @@ pub mod toy {
     pub struct Items<'a>(pub Vec<ProtocolIEField<'a>>);
     impl Items<'_> {
         pub fn into_owned(self) -> Items<'static> {
-            Items(self.0.into_iter().map(ProtocolIEField::into_owned).collect())
+            Items(
+                self.0
+                    .into_iter()
+                    .map(ProtocolIEField::into_owned)
+                    .collect(),
+            )
         }
     }
     impl AsnType for Items<'_> {
@@ -601,6 +620,10 @@ oxirush_aper::__ies! {
 }
 oxirush_aper::__lists! {
     Items Item 1 16;
+}
+oxirush_aper::__transfer_sets! {
+    protocol Toy, bindings toy;
+    "SetupTransfer" SetupTransfer [1 ignore mandatory, 2 reject optional];
 }
 }
 

@@ -25,6 +25,7 @@ inspect = ["dep:oxirush-utils"]
 
 [package.metadata.docs.rs]
 all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 oxirush-utils = { version = "0.1.0", optional = true, features = ["tree"] }

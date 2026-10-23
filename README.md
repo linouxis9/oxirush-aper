@@ -46,11 +46,12 @@ fn main() -> Result<(), oxirush_aper::Error> {
 the value does not encode: 8 is outside its constraint (0..7)
 ```
 
-A `Reader` and a `Writer` have one method for each field of X.691 that NGAP
-and S1AP use, and the bounds of a constraint are their arguments. The text
-under a block is what the block prints.
+The text under a block is what the block prints.
 
-This page describes 0.1.0, which is not on crates.io yet.
+This page describes oxirush-aper 0.1.0, which is not on crates.io yet.
+
+A `Reader` and a `Writer` have one method for each field of X.691 that NGAP
+and S1AP use, and the bounds of a constraint are their arguments.
 
 ## Installation
 
@@ -66,32 +67,31 @@ oxirush-aper = "0.1"
 | `inspect` | `json`: the trees of `oxirush_utils::tree` of the values, in the form of the JSON Encoding Rules (X.697) with a readable form for a few well-known types of 3GPP, as `"208-93"` for a PLMN identity |
 
 `check`, how a PDU deviates from the object set of its message, needs no
-feature. Until 0.1.0 is on crates.io, nor `oxirush-utils` 0.1.0, which the
-feature `inspect` takes, every build takes `oxirush-utils` from its
-repository, at the revision that this revision of the crate is tested with:
-cargo resolves an optional dependency without its feature too.
+feature.
+
+Until 0.1.0 is on crates.io, a program takes the crate from its repository,
+and oxirush-utils at the revision that it is tested with:
 
 ```toml
 [dependencies]
 oxirush-aper = { git = "https://github.com/linouxis9/oxirush-aper" }
 
 [patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "2f99edcc40baa5cf7397f94ecfc131dc1143bac5" }
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "1fb4d2720fa0b1c036e54d3e9907b278adac0f80" }
 ```
 
-In a clone of the repository, a cargo command takes it with `--config`, as CI
-does:
+In a clone, cargo takes them with `--config`, as CI does:
 
 ```sh
 cargo test --all-features \
   --config 'patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"' \
-  --config 'patch.crates-io.oxirush-utils.rev="2f99edcc40baa5cf7397f94ecfc131dc1143bac5"'
+  --config 'patch.crates-io.oxirush-utils.rev="1fb4d2720fa0b1c036e54d3e9907b278adac0f80"'
 ```
 
-The minimum supported Rust version is 1.88. The crate is `#![no_std]`, needs
-`alloc`, and has no `unsafe`. oxirush-ngap and oxirush-s1ap of a release
-depend on this crate at one version exactly, and are released with it: a
-program takes it through them, as `oxirush_ngap::aper`.
+The minimum supported Rust version is 1.88. The crate needs `alloc`, and has
+no `unsafe`. oxirush-ngap and oxirush-s1ap depend on one version of it
+exactly, and are released with it. A program that uses them takes it through
+them, as `oxirush_ngap::aper`.
 
 ## A protocol of its own
 
@@ -224,18 +224,20 @@ that outlives its input is made with `into_owned()`.
 ```rust
 use oxirush_aper::Octets;
 
-let received = vec![0x7e, 0x00, 0x41];
-let borrowed = Octets::from(&received[..]);
-println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
+fn main() {
+    let received = vec![0x7e, 0x00, 0x41];
+    let borrowed = Octets::from(&received[..]);
+    println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
 
-let kept: Octets<'static> = borrowed.into_owned();
-drop(received);
-println!("{kept:?} borrowed: {}", kept.is_borrowed());
+    let kept: Octets<'static> = borrowed.into_owned();
+    drop(received);
+    println!("{kept:?} borrowed: {}", kept.is_borrowed());
+}
 ```
 
 ```text
-7E0041 borrowed: true
-7E0041 borrowed: false
+7e0041 borrowed: true
+7e0041 borrowed: false
 ```
 
 ## Bit strings
@@ -337,9 +339,10 @@ true true Some(7)
 
 ## What the reader accepts
 
-A writer gives a value its one encoding. A reader also takes a value that is
-whole in another form, as the encoder of a peer may write it. One that is
-asked to notes it: a `Fault`, with its clause and the bit at which it is.
+A writer gives a value its one encoding. A reader also reads a value that is
+complete but in another form, as the encoder of a peer may write it. A reader
+made with `Reader::noting` records each such form as a `Fault`, with its
+clause and the bit where it is.
 
 | `Fault` | What is read | X.691 |
 |---------|--------------|-------|
@@ -369,7 +372,7 @@ fn main() -> Result<(), oxirush_aper::Error> {
 ```
 
 ```text
-AA
+aa
 at bit 0, a length of 127 or less is in two octets (X.691 §11.9.3.6)
 these octets do not decode as OCTET STRING: at bit 0, a length of 127 or less is in two octets (X.691 §11.9.3.6): the value is read, and a sender by the clause writes it otherwise
 ```
@@ -386,10 +389,7 @@ or an index outside its constraint, and octets after a complete encoding.
 oxirush-ngap and oxirush-s1ap give macros that build a message and read and
 change its IEs by name (`build_ngap!`, `extract_ngap_ies!`,
 `with_ngap_ie_mut!`, and the same with `s1ap`), and readers of one IE by its
-marker type. Their code is here, in the module `protocol`, and the generator
-of the repository writes the registry of each protocol from its ASN.1. Here
-they are on the protocol of `tests/toy/mod.rs`, written as the generator
-writes one:
+marker type. Here they are on the toy protocol of `tests/toy/mod.rs`:
 
 ```rust
 // The toy protocol: a SETUP REQUEST of an Identity, a Name and a list of Items
@@ -498,7 +498,7 @@ Decoding, per call:
 | AMF-UE-NGAP-ID (2) | 11 ns, 48 cycles, 193 instructions, 0 allocations | 31 ns, 142 cycles, 494 instructions, 0 allocations | 2.9x the time, 2.6x the instructions |
 | NAS-PDU (61) | 11 ns, 51 cycles, 148 instructions, 0 allocations | 50 ns, 249 cycles, 517 instructions, 1 allocation (60 octets) | 4.6x the time, 3.5x the instructions |
 | AMFName (18) | 34 ns, 156 cycles, 649 instructions, 0 allocations | 147 ns, 672 cycles, 2,995 instructions, 2 allocations (32 octets) | 4.3x the time, 4.6x the instructions |
-| GUAMI (7) | 30 ns, 131 cycles, 306 instructions, 0 allocations | 262 ns, 1,197 cycles, 3,977 instructions, 3 allocations (24 octets) | 8.8x the time, 13.0x the instructions |
+| GUAMI (7) | 30 ns, 131 cycles, 306 instructions, 0 allocations | 262 ns, 1,197 cycles, 3,977 instructions, 3 allocations (24 octets) | 8.8x the time, 13x the instructions |
 | UserLocationInformationNR (19) | 35 ns, 163 cycles, 383 instructions, 0 allocations | 286 ns, 1,322 cycles, 3,675 instructions, 1 allocation (8 octets) | 8.1x the time, 9.6x the instructions |
 
 Encoding, per call:
@@ -511,15 +511,14 @@ Encoding, per call:
 | GUAMI (7) | 30 ns, 125 cycles, 461 instructions, 1 allocation (8 octets) | 137 ns, 641 cycles, 2,362 instructions, 1 allocation (8 octets) | 4.7x the time, 5.1x the instructions |
 | UserLocationInformationNR (19) | 71 ns, 314 cycles, 1,243 instructions, 3 allocations (56 octets) | 258 ns, 1,190 cycles, 4,023 instructions, 3 allocations (56 octets) | 3.6x the time, 3.2x the instructions |
 
-
-The time is the fastest of three runs of a call repeated for about 0.2 s, the
-cycles and the instructions those of `perf stat` (the difference between a
-run of twice the calls and one of the calls, so that starting the program
-counts for nothing), and the allocations those of a counting allocator. The
-figures were taken on an AMD Ryzen 7 5700G (16 threads, Linux 7.0, Rust
-1.98.1), the program on one core, measured on a quiet machine on 2026-10-18:
-each is the median of three runs of the script. `benches/` is a package of
-its own, which fetches rasn: from the root of the repository,
+A time is the fastest of three runs of a call repeated for about 0.2 s. The
+cycles and the instructions are those that `perf stat` counts for the calls
+alone: the difference between a run of twice the calls and one of the calls.
+A counting allocator counts the allocations. The figures were taken at
+65d0e09 on an AMD Ryzen 7 5700G (16 threads, Linux 7.0, Rust 1.98.1), the
+program on one core of a quiet machine, on 2026-10-18: each is the median of
+three runs of the script. `benches/` is a package of its own, which fetches
+rasn. From the root of the repository:
 
 ```sh
 python3 benches/compare.py --core 3 --perf "sudo -n perf"
@@ -547,12 +546,15 @@ cargo +nightly fuzz run fields -- -max_total_time=60 -max_len=512
 cargo +nightly fuzz run value -- -max_total_time=60 -max_len=512
 ```
 
-A pull request comes with a test for what it changes; the Rust blocks of
-this page are checked with what they print ([`tests/readme.rs`](tests/readme.rs)
-says how). Sign off your commits (`git commit -s`): by contributing you agree
-to the [Developer Certificate of Origin](https://developercertificate.org/).
+The Rust blocks of this page are checked with what they print
+([`tests/readme.rs`](tests/readme.rs) says how).
 [CONTRIBUTING.md](CONTRIBUTING.md) has what the repository holds beside the
-crate, and [SECURITY.md](SECURITY.md) how to report a vulnerability.
+crate.
+
+A pull request comes with a test for what it changes. Sign off your commits
+(`git commit -s`): by contributing you agree to the [Developer Certificate
+of Origin](https://developercertificate.org/). [SECURITY.md](SECURITY.md)
+says how to report a vulnerability.
 
 ## The OxiRush family
 

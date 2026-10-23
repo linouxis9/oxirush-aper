@@ -418,7 +418,7 @@ impl From<Bits> for BitString<'_> {
     }
 }
 
-/// The octets in hexadecimal, and the length: `ABCDE0/20`.
+/// The octets in hexadecimal, and the length: `abcde0/20`.
 impl fmt::Debug for BitString<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write_hex(self.as_octets(), formatter)?;
@@ -487,7 +487,7 @@ mod tests {
         assert_eq!(bits.get(1), Some(false));
         assert_eq!(bits.get(19), Some(false));
         assert_eq!(bits.get(20), None);
-        assert_eq!(format!("{bits:?}"), "ABCDE0/20");
+        assert_eq!(format!("{bits:?}"), "abcde0/20");
         assert_eq!(bits.to_bits(), Some(Bits::new(0xabcde, 20).unwrap()));
         assert_eq!(BitString::from(Bits::new(0xabcde, 20).unwrap()), bits);
 
