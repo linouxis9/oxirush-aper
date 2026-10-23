@@ -15,6 +15,7 @@ README is for those who use the crate.
 | `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the oracle and its tests, the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`) | no |
 | `benches/` | The comparison of the crate with rasn, and the benchmarks of the fields | no |
 | `fuzz/` | The fuzz targets of the crate | no |
+| `family/` | A package of its own that runs the block of the README that uses oxirush-ngap, at the revision that its manifest names, and compares what it prints with the README | no |
 | `tests/` | The tests of the crate, among them `tests/readme.rs`, which checks each Rust block of the README with what it prints, and `tests/toy/`, a protocol written as the generator writes one | yes |
 
 oxirush-ngap and oxirush-s1ap take `generator/` and `protocols/` from a

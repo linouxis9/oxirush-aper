@@ -15,6 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 PLACES = [
     ".github/workflows/ci.yml",
     "README.md",
+    "family/Cargo.toml",
 ]
 
 recorded = {}

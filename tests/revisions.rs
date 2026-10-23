@@ -27,7 +27,7 @@ use std::path::Path;
 /// The files that take a crate from its repository, on a line that has the address of
 /// the repository between quotes. The scripts of `tests/` and the Reproduce workflow
 /// read `build/revisions` themselves.
-const PLACES: &[&str] = &[".github/workflows/ci.yml", "README.md"];
+const PLACES: &[&str] = &[".github/workflows/ci.yml", "README.md", "family/Cargo.toml"];
 
 #[test]
 fn each_place_takes_the_unpublished_crates_at_the_revision_that_is_recorded() {

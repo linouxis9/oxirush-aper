@@ -472,6 +472,48 @@ Some(Ok(Identity(9)))
 Identity (IE 1), at position 1, is in the message already, at position 0
 ```
 
+## With oxirush-ngap
+
+The bindings of [oxirush-ngap](https://github.com/linouxis9/oxirush-ngap) are
+written on this crate, which it re-exports as `oxirush_ngap::aper`: a program
+reads the value of an IE with a `Reader` of the same crate, by the bounds of
+its type in TS 38.413, as the generated codec of the IE does.
+
+```rust,ignore
+use oxirush_ngap::aper::{Reader, Writer};
+use oxirush_ngap::ngap::NGAP_PDU;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // A UE CONTEXT RELEASE REQUEST, and the octets of the value of each of its IEs
+    let octets = hex::decode("002a4015000003000a0002002a005500020007000f40020500")?;
+    let pdu = NGAP_PDU::decode(&octets)?;
+    let ies = pdu.protocol_ies()?;
+    for ie in &ies.0 {
+        let mut reader = Reader::new(&ie.value);
+        match ie.id.0 {
+            // AMF-UE-NGAP-ID ::= INTEGER (0..1099511627775)
+            10 => println!("AMF-UE-NGAP-ID {}", reader.unsigned(0, 1_099_511_627_775)?),
+            // RAN-UE-NGAP-ID ::= INTEGER (0..4294967295)
+            85 => println!("RAN-UE-NGAP-ID {}", reader.unsigned(0, 4_294_967_295)?),
+            id => println!("IE {id}: {:02x?}", &ie.value[..]),
+        }
+    }
+
+    // A Writer writes the value that the codec of the IE writes
+    let mut written = Vec::new();
+    Writer::new(&mut written).unsigned(42, 0, 1_099_511_627_775)?;
+    println!("{}", written == *ies.0[0].value);
+    Ok(())
+}
+```
+
+```text
+AMF-UE-NGAP-ID 42
+RAN-UE-NGAP-ID 7
+IE 15: [05, 00]
+true
+```
+
 ## Limits
 
 - The unaligned variant.
@@ -547,9 +589,10 @@ cargo +nightly fuzz run value -- -max_total_time=60 -max_len=512
 ```
 
 The Rust blocks of this page are checked with what they print
-([`tests/readme.rs`](tests/readme.rs) says how).
-[CONTRIBUTING.md](CONTRIBUTING.md) has what the repository holds beside the
-crate.
+([`tests/readme.rs`](tests/readme.rs) says how). The block that uses
+oxirush-ngap runs in the package of [`family/`](family/), which takes it at
+the revision that its manifest names. [CONTRIBUTING.md](CONTRIBUTING.md) has
+what the repository holds beside the crate.
 
 A pull request comes with a test for what it changes. Sign off your commits
 (`git commit -s`): by contributing you agree to the [Developer Certificate

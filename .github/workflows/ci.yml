@@ -119,6 +119,24 @@ jobs:
       - run: cargo fuzz run fields -- -max_total_time=60 -max_len=512
       - run: cargo fuzz run value -- -max_total_time=60 -max_len=512
 
+  # The block of the README that uses oxirush-ngap: `family/` is a package of its own,
+  # which takes it at the revision of its manifest, so that the crate depends on none of
+  # the family. It compares what the block prints with the README.
+  family:
+    name: The README block with oxirush-ngap
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: family
+      - run: cargo test --manifest-path family/Cargo.toml
+      - run: cargo clippy --manifest-path family/Cargo.toml --all-targets -- -D warnings
+      - run: cargo fmt --check --manifest-path family/Cargo.toml
+
   fmt:
     name: Format
     runs-on: ubuntu-24.04
