@@ -1,36 +1,31 @@
 #!/usr/bin/env python3
-"""Write the revisions of build/revisions of a protocol crate wherever its repository
-names the revision of oxirush-aper or of oxirush-utils, or say where one names another.
+"""Write the revision of oxirush-aper of build/revisions of a protocol crate wherever
+its repository names it, or say where one names another.
 
     python3 ../oxirush-aper/protocols/build/pin.py           # write them
     python3 ../oxirush-aper/protocols/build/pin.py --check   # compare them
 
-Run it from the directory of the crate. Neither crate is on crates.io yet. To move to
-another revision of one, write the name of its commit in build/revisions, run this,
+Run it from the directory of the crate. To move to another revision of oxirush-aper,
+write the name of its commit in build/revisions, run this,
 regenerate the bindings as CONTRIBUTING.md says, and commit the three together: with
 `--check`, which CI runs, the script fails while a place names another revision, and the
 Reproduce workflow while the generator at the revision of oxirush-aper writes other
 bindings.
 
-A place names a revision on the line that has the address of its repository between
-quotes: in a manifest on that line, and for cargo's `--config` on the next. The workflows
-call those of oxirush-aper (`uses: linouxis9/oxirush-aper/...@COMMIT`), and the packages
-of `benches/`, `fuzz/` and `oracle/` take oxirush-aper from the checkout beside the
-repository, whose tools they build: they name the revision of oxirush-utils alone.
+The workflows call those of oxirush-aper (`uses: linouxis9/oxirush-aper/...@COMMIT`):
+they are the places that name its revision. The packages of `benches/`, `fuzz/` and
+`oracle/` take oxirush-aper from the checkout beside the repository, whose tools they
+build, and the crates come from crates.io.
 """
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path.cwd()
-NAMES = ["oxirush-aper", "oxirush-utils"]
+NAMES = ["oxirush-aper"]
 PLACES = [
     ".github/workflows/ci.yml",
     ".github/workflows/reproduce.yml",
-    "README.md",
-    "benches/Cargo.toml",
-    "fuzz/Cargo.toml",
-    "oracle/Cargo.toml",
 ]
 COMMIT = re.compile(r"[0-9a-f]{40}")
 
@@ -87,7 +82,7 @@ def main():
         text = path.read_text()
         lines, taken = written(text.split("\n"), revisions, place)
         if taken == 0:
-            raise SystemExit(f"{place} names neither crate")
+            raise SystemExit(f"{place} names no revision of oxirush-aper")
         if not check:
             path.write_text("\n".join(lines))
             continue

@@ -10,16 +10,14 @@
 # DIRECTORY, which the script makes, has the package as cargo writes it, unpacked, and
 # what cargo builds of it. The files of the package are those of the working directory,
 # committed or not. oxirush-aper and oxirush-utils come from the directories that APER
-# and UTILS name, and without from their repositories, at the revisions of
-# build/revisions, as neither is on crates.io yet.
+# and UTILS name, and without from crates.io.
 set -eu
 directory=$1
 here=$(pwd)
 [ -f "$here/build/revisions" ] || { echo "run it from the directory of a protocol crate" >&2; exit 2; }
 mkdir "$directory"
 directory=$(cd "$directory" && pwd)
-# The options of cargo that say where a crate is: a directory, or its repository at
-# the revision that is recorded.
+# The options of cargo that say where a crate is, when a directory is given for it.
 set --
 for crate in oxirush-aper oxirush-utils; do
     case "$crate" in
@@ -28,10 +26,6 @@ for crate in oxirush-aper oxirush-utils; do
     esac
     if [ -n "$directory_of" ]; then
         set -- "$@" --config "patch.crates-io.$crate.path=\"$(cd "$directory_of" && pwd)\""
-    else
-        revision=$(awk -v name="$crate" '$1 == name { print $2 }' "$here/build/revisions")
-        set -- "$@" --config "patch.crates-io.$crate.git=\"https://github.com/linouxis9/$crate\""
-        set -- "$@" --config "patch.crates-io.$crate.rev=\"$revision\""
     fi
 done
 cd "$here"

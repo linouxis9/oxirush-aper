@@ -10,12 +10,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # oxirush-utils, which the feature `inspect` takes, is not on crates.io yet, and cargo
-  # resolves an optional dependency without its feature too: every build takes the commit
-  # that build/revisions records, which build/pin.py writes here.
-  UNPUBLISHED: >-
-    --config patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"
-    --config patch.crates-io.oxirush-utils.rev="1fb4d2720fa0b1c036e54d3e9907b278adac0f80"
 
 jobs:
   test:
@@ -26,8 +20,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # With rasn as the oracle of tests/rasn.rs.
-      - run: cargo test $UNPUBLISHED --all-features
-      - run: cargo test $UNPUBLISHED
+      - run: cargo test --all-features
+      - run: cargo test
 
   msrv:
     name: MSRV (1.88)
@@ -36,7 +30,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test $UNPUBLISHED --all-features
+      - run: cargo test --all-features
 
   # 32 bits, where a `usize` holds less than a `u64`.
   i686:
@@ -48,7 +42,7 @@ jobs:
         with:
           targets: i686-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test $UNPUBLISHED --all-features --target i686-unknown-linux-musl
+      - run: cargo test --all-features --target i686-unknown-linux-musl
 
   no-std:
     name: no_std (thumbv7em-none-eabihf)
@@ -59,8 +53,8 @@ jobs:
         with:
           targets: thumbv7em-none-eabihf
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build $UNPUBLISHED --lib --target thumbv7em-none-eabihf
-      - run: cargo build $UNPUBLISHED --lib --target thumbv7em-none-eabihf --all-features
+      - run: cargo build --lib --target thumbv7em-none-eabihf
+      - run: cargo build --lib --target thumbv7em-none-eabihf --all-features
 
   clippy:
     name: Clippy
@@ -71,8 +65,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy $UNPUBLISHED --all-targets --all-features -- -D warnings
-      - run: cargo clippy $UNPUBLISHED --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets -- -D warnings
 
   doc:
     name: Doc
@@ -81,7 +75,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo doc $UNPUBLISHED --no-deps --all-features
+      - run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
 

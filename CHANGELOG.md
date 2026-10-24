@@ -2,7 +2,7 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
-## Unreleased (0.1.0)
+## 0.1.0 - 2026-10-24
 
 The first version: the aligned variant of the Packed Encoding Rules, ITU-T
 X.691 (02/2021), for the constructs that the ASN.1 of NGAP (3GPP TS 38.413)

@@ -48,7 +48,4 @@ README_BLOCKS=write cargo test --all-features --test readme
 cargo test --all-features --test readme
 ```
 
-Until oxirush-utils 0.1.0 is on crates.io, these commands take the
-`--config` options that the README gives.
-
 [SECURITY.md](SECURITY.md) says how to report a vulnerability.

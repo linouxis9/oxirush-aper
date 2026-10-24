@@ -38,18 +38,12 @@ jobs:
           path: crate
       # The generator, the tools and the crate that every build takes, beside the
       # repository: the revision that wrote the bindings, which build/revisions records.
-      # oxirush-utils, which is not on crates.io yet either, comes from its repository.
       - id: revisions
         name: The revisions of build/revisions
         run: |
           revision() { awk -v name="$1" '$1 == name { print $2 }' build/revisions; }
           echo "aper=$(revision oxirush-aper)" >> "$GITHUB_OUTPUT"
-          {
-            printf 'UNPUBLISHED='
-            printf -- '--config patch.crates-io.oxirush-aper.path="%s" ' "$GITHUB_WORKSPACE/oxirush-aper"
-            printf -- '--config patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils" '
-            printf -- '--config patch.crates-io.oxirush-utils.rev="%s"\n' "$(revision oxirush-utils)"
-          } >> "$GITHUB_ENV"
+          printf 'APER=--config patch.crates-io.oxirush-aper.path="%s"\n' "$GITHUB_WORKSPACE/oxirush-aper" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
         with:
           repository: linouxis9/oxirush-aper
@@ -86,6 +80,6 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" "$generate" --values "$RUNNER_TEMP/values.jsonl"
           git diff --exit-code -- tests/fixtures
       - name: The values of pycrate, which the crate writes to the octets of pycrate
-        run: cargo test $UNPUBLISHED --features inspect --test vectors -- --ignored
+        run: cargo test $APER --features inspect --test vectors -- --ignored
         env:
           REFERENCE_VALUES: ${{ runner.temp }}/values.jsonl

@@ -48,8 +48,6 @@ the value does not encode: 8 is outside its constraint (0..7)
 
 Each example is followed by its output.
 
-This page describes oxirush-aper 0.1.0, which is not on crates.io yet.
-
 A `Reader` and a `Writer` have a method for each kind of field of X.691 that
 NGAP and S1AP use, and take the bounds of its constraint as arguments.
 
@@ -68,25 +66,6 @@ oxirush-aper = "0.1"
 
 `check`, which says how a PDU deviates from the object set of its message,
 needs no feature.
-
-Until 0.1.0 is on crates.io, a program takes the crate from its repository,
-and oxirush-utils at the revision that it is tested with:
-
-```toml
-[dependencies]
-oxirush-aper = { git = "https://github.com/linouxis9/oxirush-aper" }
-
-[patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "1fb4d2720fa0b1c036e54d3e9907b278adac0f80" }
-```
-
-In a clone, cargo takes them with `--config`, as CI does:
-
-```sh
-cargo test --all-features \
-  --config 'patch.crates-io.oxirush-utils.git="https://github.com/linouxis9/oxirush-utils"' \
-  --config 'patch.crates-io.oxirush-utils.rev="1fb4d2720fa0b1c036e54d3e9907b278adac0f80"'
-```
 
 The minimum supported Rust version is 1.88. The crate needs `alloc`, and has
 no `unsafe` code. oxirush-ngap and oxirush-s1ap depend on one exact version
