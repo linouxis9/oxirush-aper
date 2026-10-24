@@ -114,7 +114,7 @@ jobs:
       - run: cargo fuzz run value -- -max_total_time=60 -max_len=512
 
   # The block of the README that uses oxirush-ngap: `family/` is a package of its own,
-  # which takes it at the revision of its manifest, so that the crate depends on none of
+  # which takes it at the version of its manifest, so that the crate depends on none of
   # the family. It compares what the block prints with the README.
   family:
     name: The README block with oxirush-ngap

@@ -552,7 +552,7 @@ cargo +nightly fuzz run value -- -max_total_time=60 -max_len=512
 Each Rust block of this page is checked with what it prints
 ([`tests/readme.rs`](tests/readme.rs) says how). The block that uses
 oxirush-ngap runs in the package of [`family/`](family/), which takes it at
-the revision that its manifest names. [CONTRIBUTING.md](CONTRIBUTING.md)
+the version that its manifest names. [CONTRIBUTING.md](CONTRIBUTING.md)
 says what else the repository holds.
 
 A pull request comes with a test for what it changes. Sign off your commits
