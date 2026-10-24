@@ -8,7 +8,7 @@ use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use rasn_compiler::OutputMode;
 use rasn_compiler::prelude::{Compiler, RasnBackend, RasnConfig};
 use regex::Regex;
@@ -34,6 +34,9 @@ pub struct Protocol {
     pub plmn: &'static str,
     /// The aliases of the bindings, each with its type: the identifiers of a UE.
     pub aliases: &'static [(&'static str, &'static str)],
+    /// The IE whose value has the identifiers of a UE together, as UE-NGAP-IDs:
+    /// `Display` of a PDU shows them as it shows the IEs of `aliases`.
+    pub ue_ids: UeIds,
     /// The octets of a UE CONTEXT RELEASE REQUEST, for the examples of the documentation
     /// of a PDU.
     pub release_request: &'static str,
@@ -49,6 +52,21 @@ pub struct Protocol {
     /// What the protocol corrects in the bindings that rasn-compiler resolved, before the
     /// others are written from them.
     pub correct: fn(String) -> Result<String>,
+}
+
+/// An IE whose value is a CHOICE of the pair of the identifiers of a UE and of the
+/// first alone, as UE-NGAP-IDs and UE-S1AP-IDs, which messages such as the UE CONTEXT
+/// RELEASE COMMAND have in the place of the two IEs.
+pub struct UeIds {
+    /// The IE, by its name in `ie`, as `UE_NGAP_IDs`.
+    pub ie: &'static str,
+    /// The type of its value, as `UENGAPIDs`.
+    pub choice: &'static str,
+    /// The alternative of the pair, and its members of the two identifiers, in the
+    /// order of `aliases`.
+    pub pair: (&'static str, &'static str, &'static str),
+    /// The alternative of the first identifier alone.
+    pub first: &'static str,
 }
 
 impl Protocol {
@@ -427,7 +445,8 @@ fn support(protocol: &Protocol, borrowing: &BTreeSet<String>) -> Result<String> 
         writeln!(out, "#[allow(non_camel_case_types)]")?;
         writeln!(out, "pub type {alias} = {ty};")?;
     }
-    // The identifiers of the UE that `Display` of a PDU shows, by the names of their IEs.
+    // The identifiers of the UE that `Display` of a PDU shows, by the names of their IEs:
+    // each in an IE of its own, or both in one, as the pair or the first alone.
     let mut ue_ids = String::new();
     for (alias, _) in protocol.aliases {
         writeln!(
@@ -437,6 +456,24 @@ fn support(protocol: &Protocol, borrowing: &BTreeSet<String>) -> Result<String> 
              write!(formatter, \", {{name}} {{}}\", id.0)?;\n        }}"
         )?;
     }
+    let [(first, _), (second, _)] = protocol.aliases else {
+        bail!("a protocol has two identifiers of a UE");
+    };
+    let (module, ids) = (protocol.module(), &protocol.ue_ids);
+    let (choice, (pair, first_member, second_member)) = (ids.choice, ids.pair);
+    writeln!(
+        ue_ids,
+        "        if let Some(Ok(ids)) = self.ie::<crate::ie::{ie}>() {{\n            \
+         let first = <crate::ie::{first} as oxirush_aper::protocol::Ie>::NAME;\n            \
+         if let crate::{module}::{choice}::{pair}(pair) = &ids {{\n                \
+         let second = <crate::ie::{second} as oxirush_aper::protocol::Ie>::NAME;\n                \
+         let (one, other) = (pair.{first_member}.0, pair.{second_member}.0);\n                \
+         write!(formatter, \", {{first}} {{one}}, {{second}} {{other}}\")?;\n            \
+         }} else if let crate::{module}::{choice}::{alone}(id) = &ids {{\n                \
+         write!(formatter, \", {{first}} {{}}\", id.0)?;\n            }}\n        }}",
+        ie = ids.ie,
+        alone = ids.first,
+    )?;
     let text = SUPPORT
         .replace("{UE_IDS}", &ue_ids)
         .replace("{RELEASE_DISPLAY}", protocol.release_display)
@@ -731,7 +768,8 @@ impl<'a> {PDU}<'a> {
     }
 }
 /// The name of the message, its procedure code and its direction, then the identifiers of
-/// the UE that the message has, by the names of its IEs:
+/// the UE that the message has, by the names of their IEs, also where one IE holds both
+/// or the first alone:
 ///
 /// ```
 /// use {CRATE}::{MODULE}::{PDU_ALIAS};
