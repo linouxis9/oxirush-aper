@@ -5,3 +5,5 @@
 /fuzz/corpus/
 /fuzz/artifacts/
 Cargo.lock
+/mutants.out*/
+/generator-missed.txt
