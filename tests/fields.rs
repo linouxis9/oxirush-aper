@@ -1090,3 +1090,77 @@ fn encode_strict_refuses_a_value_that_is_none_of_this_version_of_its_type() {
         encode(&Name("amf-1")).unwrap()
     );
 }
+
+/// A size read or written after an unconstrained length is within its constraint, and a
+/// refusal says the constraint as the type has it: one size, a range, or no bound.
+#[test]
+fn a_size_after_an_unconstrained_length_is_within_its_constraint() {
+    for (lower, upper) in [(2, 2), (1, 4), (0, UNBOUNDED)] {
+        assert!(Reader::check_size(lower, lower, upper).is_ok());
+        assert!(Writer::check_size(lower, lower, upper).is_ok());
+    }
+    assert!(Reader::check_size(4, 1, 4).is_ok());
+    for (size, lower, upper, shown) in [
+        (3, 2, 2, "(2)"),
+        (0, 1, 4, "(1..4)"),
+        (5, 1, 4, "(1..4)"),
+        (1, 2, UNBOUNDED, "(2..MAX)"),
+    ] {
+        let read = Reader::check_size(size, lower, upper).unwrap_err();
+        assert_eq!(read.kind(), ErrorKind::Decode);
+        let written = Writer::check_size(size, lower, upper).unwrap_err();
+        assert_eq!(written.kind(), ErrorKind::Encode);
+        for error in [read, written] {
+            let reason = format!("a size of {size} is outside its constraint {shown}");
+            assert!(error.to_string().contains(&reason), "{error}");
+        }
+    }
+}
+
+/// A constrained whole number with a negative bound reads the offset from its lower
+/// bound, and an offset beyond the range is refused with the number that it is.
+#[test]
+fn a_number_of_a_range_with_a_negative_bound_is_its_offset_from_the_bound() {
+    // -2..=3 has six values, in three bits: 0b111 is the offset 7, the number 5
+    let octets = written(|w| w.signed(-1, -2, 3).unwrap());
+    assert_eq!(octets, [0b0010_0000]);
+    assert_eq!(Reader::new(&octets).signed(-2, 3).unwrap(), -1);
+    let error = Reader::new(&[0b1110_0000]).signed(-2, 3).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("5 is outside its constraint (-2..3)"),
+        "{error}"
+    );
+}
+
+/// An IA5String whose size constraint has an extension marker: a bit, then the string
+/// within the root, or a string of any size after its length.
+#[test]
+fn an_extensible_ia5_string_has_its_bit_and_its_string() {
+    for text in ["ab", "abcdef"] {
+        let octets = written(|w| w.ia5_string_extensible(text, 1, 4).unwrap());
+        assert_eq!(
+            Reader::new(&octets).ia5_string_extensible(1, 4).unwrap(),
+            text
+        );
+        // The bit says whether the size is outside the root
+        assert_eq!(octets[0] & 0x80 != 0, text.len() > 4, "{text}");
+    }
+}
+
+/// A writer counts the octets that it has written, with the one that is not full.
+#[test]
+fn a_writer_counts_its_octets() {
+    let mut octets = Vec::new();
+    let mut writer = Writer::new(&mut octets);
+    assert!(writer.is_empty());
+    assert_eq!(writer.len(), 0);
+    writer.bit(true);
+    assert!(!writer.is_empty());
+    assert_eq!(writer.len(), 1);
+    for _ in 0..8 {
+        writer.bit(false);
+    }
+    assert_eq!(writer.len(), 2);
+}
