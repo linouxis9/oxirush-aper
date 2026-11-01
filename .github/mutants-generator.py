@@ -1,7 +1,8 @@
 """The mutants of generator/ against the bindings that it writes: a mutant is caught
-when the bindings of oxirush-ngap or of oxirush-s1ap that it writes, formatted, differ
-from those that the generator writes unchanged, or when it fails to write them; missed
-when they are the same, and unviable when it does not build. The protocol crates are
+when the bindings of oxirush-ngap or of oxirush-s1ap that it writes, formatted, or the
+names of their fields in build/fields.tsv, differ from those that the generator writes
+unchanged, or when it fails to write them; missed when they are the same, and unviable
+when it does not build. The protocol crates are
 beside this repository, each with the ASN.1 of build/asn1.sha256 taken out of its
 specification. The missed ones are written to `generator-missed.txt`, and the program
 exits with 1 when there is one.
@@ -24,13 +25,15 @@ PROTOCOLS = ["ngap", "s1ap"]
 
 
 def written(protocol):
-    """What the generator writes for a protocol crate."""
+    """What the generator writes for a protocol crate: the bindings, and the names that
+    it gives the fields of the ASN.1."""
     return [
         f"src/{protocol}.rs",
         "src/registry.rs",
         "src/inspect_registry.rs",
         "oracle/src/bindings.rs",
         "oracle/src/types.rs",
+        "build/fields.tsv",
     ]
 
 
@@ -47,7 +50,8 @@ def generate(protocol):
         if subprocess.run(["cargo", "run", "--locked", *manifest], **quiet).returncode != 0:
             return None
         files = written(protocol)
-        subprocess.run(["rustfmt", "--edition", "2024", *files], cwd=crate, check=True)
+        rust = [file for file in files if file.endswith(".rs")]
+        subprocess.run(["rustfmt", "--edition", "2024", *rust], cwd=crate, check=True)
         digest = hashlib.sha256()
         for file in files:
             digest.update((crate / file).read_bytes())
