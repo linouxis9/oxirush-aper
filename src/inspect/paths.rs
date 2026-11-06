@@ -939,6 +939,17 @@ impl Views<'_> {
         next: &mut Next<'v, At>,
     ) -> Result<(), tree::Error> {
         let protocol = self.protocol;
+        // A transfer that is written as its decoded value itself is that value, but for
+        // its octets.
+        if let Shape::Transfer(contained) = shape
+            && !contained.is_empty()
+            && !same_name(part, "octets")
+            && !entry.keys().any(|name| of_a_transfer(name))
+        {
+            let of = Shape::Named(contained);
+            let at = at.inside(of);
+            return self.object(place, whole, entry, at, protocol.resolved(of), part, next);
+        }
         let (edit, last, named) = (next.edit(), next.is_last(), at.named);
         let members = protocol.members(shape, Some(entry));
         // The IEs of a message that the view contains are selected in its place.

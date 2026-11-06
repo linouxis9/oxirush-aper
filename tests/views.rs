@@ -1576,6 +1576,41 @@ fn octets_in_the_place_of_a_transfer_written_as_its_value_replace_its_members() 
     assert_eq!(parts(&view).unwrap().3, parts(&sent).unwrap().3);
 }
 
+/// A transfer written as its decoded value itself is read and edited as that value.
+#[test]
+fn a_transfer_written_as_its_value_is_read_as_that_value() {
+    let mut view = tree!({"procedure_code": 1, "direction": "InitiatingMessage",
+        "criticality": "reject", "message": {"protocolIEs": [{"id": 16, "criticality": "reject",
+        "value": {"transfer": {"nas": "deregister"}, "inner": {"cause": {"nas": "deregister"}}}}]}});
+    let deregister = tree!("deregister");
+    assert_eq!(
+        select(&view, "/toy/Holder/transfer/nas"),
+        Ok(vec![&deregister])
+    );
+    assert_eq!(
+        select(&view, "/toy/Holder/transfer/radioNetwork"),
+        Ok(vec![])
+    );
+    let error = select(&view, "/toy/Holder/transfer/misspelled").unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(
+        select(&view, "/toy/Holder/inner/cause/nas"),
+        Ok(vec![&deregister])
+    );
+    let path = "/toy/Holder/inner/cause/nas";
+    inspect::set(&TOY, &mut view, path, tree!("normal-release")).unwrap();
+    assert_eq!(
+        view["message"]["protocolIEs"][0]["value"]["inner"],
+        tree!({"cause": {"nas": "normal-release"}})
+    );
+    let path = "/toy/Holder/transfer/radioNetwork";
+    inspect::set(&TOY, &mut view, path, tree!("unspecified")).unwrap();
+    assert_eq!(
+        view["message"]["protocolIEs"][0]["value"]["transfer"],
+        tree!({"radioNetwork": "unspecified"})
+    );
+}
+
 /// An IE that did not decode takes a member that an IE has, and is read as its octets:
 /// a member of its value is refused, and an edit there changes nothing.
 #[test]
