@@ -2,7 +2,9 @@
 when the bindings of oxirush-ngap or of oxirush-s1ap that it writes, formatted, or the
 names of their fields in build/fields.tsv, differ from those that the generator writes
 unchanged, or when it fails to write them; missed when they are the same, and unviable
-when it does not build. The protocol crates are
+when it does not build. A mutant that makes the generator run past 10 minutes, or take
+more than 8 GiB of address space, fails to write them, and is caught: without the
+limits it took the runner down. The protocol crates are
 beside this repository, each with the ASN.1 of build/asn1.sha256 taken out of its
 specification. The missed ones are written to `generator-missed.txt`, and the program
 exits with 1 when there is one.
@@ -17,11 +19,28 @@ import hashlib
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 
 APER = pathlib.Path(__file__).resolve().parent.parent
 PROTOCOLS = ["ngap", "s1ap"]
+# What a run of the generator takes at most: thirty times what the unchanged one takes on
+# a runner, and twice the memory that it needs.
+SECONDS = 600
+LIMIT = ["prlimit", "--as=8589934592"]
+
+
+def ran(command, **options):
+    """Whether `command` ends with success within SECONDS: one that runs longer is
+    stopped, with the processes that it started."""
+    process = subprocess.Popen(command, start_new_session=True, **options)
+    try:
+        return process.wait(timeout=SECONDS) == 0
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        return False
 
 
 def written(protocol):
@@ -47,7 +66,7 @@ def generate(protocol):
     if subprocess.run(["cargo", "build", "--locked", *manifest], **quiet).returncode != 0:
         return "unviable"
     try:
-        if subprocess.run(["cargo", "run", "--locked", *manifest], **quiet).returncode != 0:
+        if not ran([*LIMIT, "cargo", "run", "--locked", *manifest], **quiet):
             return None
         files = written(protocol)
         rust = [file for file in files if file.endswith(".rs")]

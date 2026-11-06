@@ -1,0 +1,11 @@
+# What cargo-mutants 27.1.0 (https://mutants.rs) changes in the generator, which the job
+# `generator` of .github/workflows/mutants.yml lists here and holds to the bindings that
+# it writes (.github/mutants-generator.py), and what it leaves alone.
+
+# Mutants that no output can tell from the code, each with why.
+exclude_re = [
+    # SHA-256 (FIPS 180-4 §4.1.2): Ch(e, f, g) joins bits of e and of not e, which are
+    # distinct, and Maj(a, b, c) of the three ANDs is the same with `|` in the place of either
+    # `^`: a bit is set where two of a, b and c are.
+    'src/asn1\.rs:(77:34|84:36|84:46): replace \^ with \| in sha256$',
+]
