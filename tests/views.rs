@@ -1556,6 +1556,26 @@ fn the_octets_of_what_was_not_received_are_set_in_the_place_of_its_value() {
     );
 }
 
+/// The octets that an edit sets in the place of a transfer written as its decoded value
+/// itself take the place of that value's members too.
+#[test]
+fn octets_in_the_place_of_a_transfer_written_as_its_value_replace_its_members() {
+    let written = |transfer: Value| {
+        tree!({"procedure_code": 1, "direction": "InitiatingMessage", "criticality": "reject",
+            "message": {"protocolIEs": [{"id": 16, "criticality": "reject",
+                                         "value": {"transfer": transfer}}]}})
+    };
+    let mut view = written(tree!({"radioNetwork": "user-inactivity"}));
+    let path = "/toy/Holder/transfer/octets";
+    inspect::set(&TOY, &mut view, path, tree!("0101")).unwrap();
+    assert_eq!(
+        view["message"]["protocolIEs"][0]["value"]["transfer"],
+        tree!({"_raw_transfer": "0101"})
+    );
+    let sent = written(tree!({"_raw_transfer": "0101"}));
+    assert_eq!(parts(&view).unwrap().3, parts(&sent).unwrap().3);
+}
+
 /// An IE that did not decode takes a member that an IE has, and is read as its octets:
 /// a member of its value is refused, and an edit there changes nothing.
 #[test]

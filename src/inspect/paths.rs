@@ -866,8 +866,13 @@ impl Family for Views<'_> {
             return;
         }
         mark(entry, name);
-        // The octets of an IE or of a transfer are sent in the place of its value.
+        // The octets of an IE or of a transfer are sent in the place of its value, and
+        // those of a transfer written as its decoded value itself in the place of its
+        // members.
         if at.octets {
+            if name == "_raw_transfer" {
+                entry.retain(|member, _| of_a_transfer(member));
+            }
             for value in VALUES.into_iter().chain(["_decode_error", EDITED]) {
                 entry.shift_remove(value);
             }
