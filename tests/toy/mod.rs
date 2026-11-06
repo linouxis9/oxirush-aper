@@ -25,6 +25,7 @@
 //                                                          Name ignore optional,
 //                                                          Items reject optional]
 //                       SuccessfulOutcome SetupResponse   [Identity reject mandatory]
+//                       UnsuccessfulOutcome SetupFailure  [Identity reject mandatory]
 // Notification  ignore  InitiatingMessage Notification    [Identity ignore mandatory]
 // Private       ignore  InitiatingMessage PrivateMessage  (no container of protocol IEs)
 //
@@ -33,7 +34,7 @@
 //                                                       Name reject optional]
 //
 // Identity ::= INTEGER (0..4294967295)       id 1
-// Name     ::= OCTET STRING                  id 2
+// Name     ::= OCTET STRING                  id 2, which holds a key
 // Items    ::= SEQUENCE (SIZE (1..16)) OF ProtocolIE-SingleContainer {{ItemIEs}}  id 3
 // Item     ::= INTEGER (0..255)              id 10, reject, in the single containers of Items
 // ```
@@ -219,6 +220,7 @@ pub mod toy {
 
     message!(SetupRequest "SetupRequest");
     message!(SetupResponse "SetupResponse");
+    message!(SetupFailure "SetupFailure");
     message!(Notification "Notification");
     message!(SetupTransfer "SetupTransfer");
 
@@ -607,14 +609,14 @@ pub mod registry {
 oxirush_aper::__protocol! { protocol Toy "TOY", bindings toy, pdu TOYPDU, triggering initiating_message successful_outcome unsuccessful_outcome }
 oxirush_aper::__procedures! {
     protocol Toy "TOY", bindings toy, pdu TOYPDU, kind ToyPduKind, hooks any();
-    1 Setup reject { InitiatingMessage Initiating_Setup "SetupRequest" crate::toy::SetupRequest<'a> [1 reject mandatory, 2 ignore optional, 3 reject optional]; SuccessfulOutcome Successful_Setup "SetupResponse" crate::toy::SetupResponse<'a> [1 reject mandatory]; }
+    1 Setup reject { InitiatingMessage Initiating_Setup "SetupRequest" crate::toy::SetupRequest<'a> [1 reject mandatory, 2 ignore optional, 3 reject optional]; SuccessfulOutcome Successful_Setup "SetupResponse" crate::toy::SetupResponse<'a> [1 reject mandatory]; UnsuccessfulOutcome Unsuccessful_Setup "SetupFailure" crate::toy::SetupFailure<'a> [1 reject mandatory]; }
     2 Notification ignore { InitiatingMessage Initiating_Notification "Notification" crate::toy::Notification<'a> [1 ignore mandatory]; }
     3 Private ignore { InitiatingMessage Initiating_Private "PrivateMessage" crate::toy::PrivateMessage<'a>; }
 }
 oxirush_aper::__ies! {
     protocol Toy "TOY";
     1 "Identity" crate::toy::Identity => Identity;
-    2 "Name" crate::toy::Name<'a> => Name;
+    2 "Name" @ key crate::toy::Name<'a> => Name;
     3 "Items" crate::toy::Items<'a> => Items;
     10 reject "Item" crate::toy::Item => Item;
 }

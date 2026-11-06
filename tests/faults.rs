@@ -272,3 +272,14 @@ fn the_faults_are_counted_and_the_first_are_kept() {
     assert!(reader.faults().is_empty());
     assert_eq!(reader.faults().count(), 0);
 }
+
+/// The faults print as the list of what was noted.
+#[test]
+fn the_faults_print_as_what_was_noted() {
+    let (_, faults) = read(&[0x80, 0x05], |reader| reader.length().unwrap());
+    assert_eq!(format!("{faults:?}"), format!("{:?}", faults.as_slice()));
+    assert!(
+        format!("{faults:?}").contains("LengthInTwoOctets"),
+        "{faults:?}"
+    );
+}

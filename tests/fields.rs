@@ -1164,3 +1164,172 @@ fn a_writer_counts_its_octets() {
     }
     assert_eq!(writer.len(), 2);
 }
+
+/// A constrained whole number with an extension marker within its root is its distance
+/// from the lower bound, in the bits of its range (§13.2.6 b)); a semi-constrained one is
+/// its distance from the lower bound in octets (§11.7).
+#[test]
+fn a_whole_number_is_written_as_its_distance_from_its_lower_bound() {
+    // The bit of the root, then 5 - 3 in the 3 bits of a range of 8
+    assert_eq!(
+        written(|w| w.unsigned_extensible(5, 3, 10).unwrap()),
+        [0x20]
+    );
+    assert_eq!(
+        written(|w| w.semi_constrained_unsigned(10, 3).unwrap()),
+        [0x01, 0x07]
+    );
+}
+
+/// A bit string of a size above 16 bits is octet-aligned, and the field after it starts in
+/// its last octet; one of 16 bits at most is a bit-field (§16.9, §16.10).
+#[test]
+fn the_field_after_an_aligned_bit_string_starts_in_its_last_octet() {
+    let mut octets = vec![0xff; 8];
+    octets.push(0xfc);
+    let bits = BitString::new(octets, 70).unwrap();
+    let written = written(|w| {
+        w.bit_string(&bits, 70, 70).unwrap();
+        w.bit(true);
+    });
+    let mut expected = vec![0xff; 8];
+    expected.push(0xfe);
+    assert_eq!(written, expected);
+    let short = BitString::new(vec![0xa0], 4).unwrap();
+    let octets = self::written(|w| {
+        w.bit(true);
+        w.bit_string(&short, 4, 4).unwrap();
+    });
+    assert_eq!(octets, [0b1101_0000]);
+}
+
+/// A string of a known multiplier and of one size above two characters is octet-aligned
+/// (§30.5.7), read and written so.
+#[test]
+fn a_string_of_one_size_above_two_characters_is_aligned() {
+    let octets = written(|w| {
+        w.bit(true);
+        w.ia5_string("abc", 3, 3).unwrap();
+    });
+    assert_eq!(octets, [0x80, b'a', b'b', b'c']);
+    let mut reader = Reader::new(&octets);
+    assert!(reader.bit().unwrap());
+    assert_eq!(reader.ia5_string(3, 3).unwrap(), "abc");
+}
+
+/// A bit string whose padding bits are zero is read where it is, without a copy; one whose
+/// padding is not zero is a copy, without those bits.
+#[test]
+fn a_bit_string_is_read_in_place_when_its_padding_is_zero() {
+    // 70 bits, the last one set, then two bits of padding
+    let mut octets = vec![0xff; 8];
+    octets.push(0b0000_0100);
+    let bits = Reader::new(&octets).bit_string(70, 70).unwrap();
+    assert_eq!(bits.as_octets().as_ptr(), octets.as_ptr());
+    octets[8] = 0b0000_0111;
+    let bits = Reader::new(&octets).bit_string(70, 70).unwrap();
+    assert_ne!(bits.as_octets().as_ptr(), octets.as_ptr());
+    assert_eq!(bits.as_octets()[8], 0b0000_0100);
+}
+
+/// A number of a range above 64K is in the fewest octets that hold it (§11.5.7.4): one
+/// that has an octet of zeros before it is noted, and a number of one octet, zero
+/// included, is not.
+#[test]
+fn a_number_with_a_length_has_no_octet_of_zeros_before_it() {
+    for value in [0, 5, 0x105] {
+        let octets = written(|w| w.unsigned(value, 0, 1 << 20).unwrap());
+        let mut reader = Reader::noting(&octets);
+        assert_eq!(reader.unsigned(0, 1 << 20).unwrap(), value);
+        assert!(reader.faults().is_empty(), "{value}: {:?}", reader.faults());
+    }
+    let mut reader = Reader::noting(&[0x40, 0x00, 0x05]);
+    assert_eq!(reader.unsigned(0, 1 << 20).unwrap(), 5);
+    assert_eq!(reader.faults()[0].fault, oxirush_aper::Fault::LongNumber);
+}
+
+/// A fragment of 32K that more fragments follow is noted: a sender writes fragments of 64K
+/// before the last (§11.9.3.8).
+#[test]
+fn a_fragment_of_32k_before_the_last_is_noted() {
+    let mut reader = Reader::noting(&[0xc2]);
+    assert_eq!(reader.length_after(32768).unwrap(), (32768, true));
+    assert_eq!(reader.faults()[0].fault, oxirush_aper::Fault::SmallFragment);
+}
+
+/// An extension bit with a bitmap of no addition is refused as such, and an alternative of
+/// an extension that the CHOICE does not have is refused.
+#[test]
+fn an_extension_of_nothing_is_refused() {
+    let error = Reader::new(&[0x80, 0x00]).additions().err().unwrap();
+    assert_eq!(
+        error.to_string(),
+        "the octets do not decode: the extension bit of a SEQUENCE is set, and it has no \
+         extension addition"
+    );
+    // The extension bit, then the index 1 of the additions, of which the CHOICE has one
+    let error = Reader::new(&[0x81]).choice(2, 1, true).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Decode);
+    assert_eq!(Reader::new(&[0x80]).choice(2, 1, true).unwrap(), 2);
+}
+
+/// An OCTET STRING of no octet takes no bit, and no padding.
+#[test]
+fn an_octet_string_of_no_octet_takes_no_padding() {
+    let mut reader = Reader::new(&[0b1100_0000]);
+    assert!(reader.bit().unwrap());
+    assert!(reader.octet_string(0, 0).unwrap().is_empty());
+    assert!(reader.bit().unwrap());
+}
+
+/// The room that a list reserves for a count that a peer claims is 4 KiB at most.
+#[test]
+fn a_list_reserves_4_kib_at_most() {
+    let octets = vec![0; 1 << 20];
+    let reader = Reader::new(&octets);
+    assert_eq!(reader.list::<u64>(1 << 30).capacity(), 4096 / 8);
+}
+
+/// Octets and bit strings compare, hash and convert by their contents.
+#[test]
+fn octets_and_bit_strings_compare_hash_and_convert_by_their_contents() {
+    use oxirush_aper::Octets;
+    use std::borrow::Cow;
+    use std::hash::{BuildHasher, RandomState};
+    let state = RandomState::new();
+    let one = Octets::from(&[1, 2]);
+    let two = Octets::from(Cow::Borrowed(&[3, 4][..]));
+    assert_eq!(one.as_ref(), [1, 2]);
+    assert_eq!(two.as_slice(), [3, 4]);
+    assert_ne!(one, two);
+    assert_eq!(one, Octets::from(vec![1, 2]));
+    assert_eq!(
+        state.hash_one(&one),
+        state.hash_one(Octets::from(vec![1, 2]))
+    );
+    assert_ne!(state.hash_one(&one), state.hash_one(&two));
+    let (same, other) = (&[1u8, 2][..], &[1u8, 3][..]);
+    assert!(one == *same && one != *other);
+    assert!(one == same && one != other);
+    assert!(one == vec![1, 2] && one != vec![1, 3]);
+    assert!(one == [1, 2] && one != [1, 3]);
+    assert!(*same == one && *other != one);
+    assert!(vec![1, 2] == one && vec![1, 3] != one);
+
+    let bits = BitString::from(&[0xf0][..]);
+    assert_eq!((bits.len(), bits.is_empty()), (8, false));
+    assert!(BitString::default().is_empty());
+    assert_eq!(BitString::from(&[0xf0]), bits);
+    assert_eq!(BitString::from(vec![0xf0]), bits);
+    assert_ne!(BitString::from(vec![0xf1]), bits);
+    assert_ne!(BitString::new(vec![0xf0], 4).unwrap(), bits);
+    assert_eq!(
+        state.hash_one(&bits),
+        state.hash_one(BitString::from(vec![0xf0]))
+    );
+    assert_ne!(
+        state.hash_one(&bits),
+        state.hash_one(BitString::from(vec![0x0f]))
+    );
+    assert!(!Bits::new(1, 1).unwrap().is_empty());
+}

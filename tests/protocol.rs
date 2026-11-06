@@ -641,3 +641,268 @@ mod deviations {
         ));
     }
 }
+
+/// The PDU whose message is `octets`, as a SETUP REQUEST.
+fn of_octets(octets: &[u8]) -> TOY_PDU {
+    let mut pdu = setup(0, "");
+    oxirush_aper::protocol::Pdu::__set_value(&mut pdu, Octets::from(octets.to_vec()));
+    pdu
+}
+
+/// The octets of an Identity of 7 as an IE of the criticality `reject`.
+const IDENTITY_7: [u8; 6] = [0x00, 0x01, 0x00, 0x02, 0x00, 0x07];
+
+/// What a deviation says for a receiver: its IE, the type of error and the item of the
+/// Criticality Diagnostics, and its cause; and the deviation that an error of the macros
+/// tells of.
+#[test]
+fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
+    use oxirush_aper::check::{Deviation, criticality_diagnostics_for_response};
+    let unexpected = Deviation::<Toy>::UnexpectedIe {
+        id: 9,
+        name: None,
+        position: 1,
+        criticality: Criticality::reject,
+    };
+    assert_eq!(unexpected.ie(), Some((9, Criticality::reject)));
+    assert_eq!(
+        unexpected.type_of_error(),
+        Some(TypeOfError::not_understood)
+    );
+    assert_eq!(
+        unexpected.diagnostics_item(),
+        Some(CriticalityDiagnosticsIEItem {
+            ie_criticality: Criticality::reject,
+            ie_id: ProtocolIEID(9),
+            type_of_error: TypeOfError::not_understood,
+        })
+    );
+    assert_eq!(
+        unexpected.cause(),
+        Some(CauseProtocol::abstract_syntax_error_reject)
+    );
+    // The deviations that errors of the macros tell of
+    let error = read(&request(vec![build_toy_ie!(SetupRequest, Name("toy"))?])).unwrap_err();
+    let missing = Deviation::<Toy>::of(&error).unwrap();
+    assert!(
+        matches!(missing, Deviation::MissingIe { id: 1, .. }),
+        "{missing:?}"
+    );
+    assert_eq!(missing.type_of_error(), Some(TypeOfError::missing));
+    let spoiled = field(1, Criticality::reject, &[0xc0]);
+    let error = read(&request(vec![spoiled])).unwrap_err();
+    let undecodable = Deviation::<Toy>::of(&error).unwrap();
+    assert!(
+        matches!(
+            undecodable,
+            Deviation::UndecodableIe {
+                id: 1,
+                position: 0,
+                ..
+            }
+        ),
+        "{undecodable:?}"
+    );
+    assert_eq!(
+        undecodable.cause(),
+        Some(CauseProtocol::transfer_syntax_error)
+    );
+    assert_eq!(
+        undecodable.type_of_error(),
+        Some(TypeOfError::not_understood)
+    );
+    // The items of the Criticality Diagnostics, for the deviations that have one
+    let deviations = [unexpected, missing];
+    let diagnostics = criticality_diagnostics_for_response::<Toy>(Criticality::reject, &deviations);
+    let items = diagnostics.ies_criticality_diagnostics.unwrap().0;
+    assert_eq!(items.len(), 2);
+    let none = criticality_diagnostics_for_response::<Toy>(Criticality::reject, &[]);
+    assert_eq!(none.ies_criticality_diagnostics, None);
+    Ok(())
+}
+
+/// The errors of the readers name the IE, the message and the position of the IE.
+#[test]
+fn an_error_of_the_readers_names_the_ie_its_message_and_its_position() -> Result<(), Error> {
+    let error = read(&request(vec![build_toy_ie!(SetupRequest, Name("toy"))?])).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "this SetupRequest has no Identity, which the field `identity` requires"
+    );
+    let spoiled = field(1, Criticality::reject, &[0xc0]);
+    let pdu = request(vec![build_toy_ie!(SetupRequest, Name("toy"))?, spoiled]);
+    let error = read(&pdu).unwrap_err();
+    assert_eq!(
+        error.ie().map(|ie| (ie.id, ie.position)),
+        Some((1, Some(1)))
+    );
+    assert!(error.to_string().contains("Identity"), "{error}");
+    let error = pdu.ie::<ie::Identity>().unwrap().unwrap_err();
+    assert_eq!(
+        error.ie().map(|ie| (ie.id, ie.position)),
+        Some((1, Some(1)))
+    );
+    // After a name in fragments, which the walk reads whole, the identity is the second
+    let long = field(
+        2,
+        Criticality::ignore,
+        &oxirush_aper::encode(&Name(Octets::from(vec![0x61; 20_000])))?,
+    );
+    let pdu = request(vec![long, field(1, Criticality::reject, &[0xc0])]);
+    let error = pdu.ie::<ie::Identity>().unwrap().unwrap_err();
+    assert_eq!(
+        error.ie().map(|ie| (ie.id, ie.position)),
+        Some((1, Some(1)))
+    );
+    let pdu = setup(7, "toy");
+    let source = oxirush_aper::protocol::Source::__of_pdu(&pdu);
+    assert_eq!(source.ie::<ie::Identity>().unwrap()?, Identity(7));
+    assert_eq!(
+        oxirush_aper::protocol::__type_name("crate::toy::SetupRequest<'a>"),
+        "SetupRequest"
+    );
+    Ok(())
+}
+
+/// The walk reads what is not in the usual layout as the codec reads it: an IE that ends
+/// past the octets, a criticality of no value and a value past the end are errors, and an
+/// extension bit says that additions follow the container.
+#[test]
+fn the_walk_reads_what_is_otherwise_as_the_codec_does() {
+    // An IE whose value of one octet is not there
+    let pdu = of_octets(&[0x00, 0x00, 0x01, 0x00, 0x02, 0x40, 0x01]);
+    assert_eq!(
+        pdu.ie::<ie::Name>().unwrap().unwrap_err().kind(),
+        ErrorKind::Decode
+    );
+    // A name of the criticality of no value, before the identity
+    let mut octets = vec![0x00, 0x00, 0x02, 0x00, 0x02, 0xc0, 0x01, 0x00];
+    octets.extend(IDENTITY_7);
+    let pdu = of_octets(&octets);
+    assert!(pdu.ie::<ie::Identity>().unwrap().is_err());
+    // A name that claims sixteen octets of the one that there is, before the identity
+    let mut octets = vec![0x00, 0x00, 0x02, 0x00, 0x02, 0x40, 0x10, 0x61];
+    octets.extend(IDENTITY_7);
+    let pdu = of_octets(&octets);
+    let read = pdu.ie::<ie::Identity>().unwrap();
+    assert_eq!(read.unwrap_err().kind(), ErrorKind::Decode);
+    // An identity, then an addition of three octets
+    let mut octets = vec![0x80, 0x00, 0x01];
+    octets.extend(IDENTITY_7);
+    octets.extend([0x01, 0x03, 0x00, 0x00, 0x00]);
+    let pdu = of_octets(&octets);
+    assert!(pdu.ie::<ie::Name>().is_none());
+    assert_eq!(read_pair(&pdu), Some((7, None)));
+    // The extension bit, and no addition
+    let mut octets = vec![0x80, 0x00, 0x01];
+    octets.extend(IDENTITY_7);
+    let pdu = of_octets(&octets);
+    let read = pdu.ie::<ie::Name>().unwrap();
+    assert_eq!(read.unwrap_err().kind(), ErrorKind::Decode);
+    // No octets
+    let pdu = of_octets(&[]);
+    let error = pdu.ie::<ie::Name>().unwrap().unwrap_err();
+    assert!(error.to_string().contains("there are no octets"), "{error}");
+}
+
+fn read_pair(pdu: &TOYPDU<'_>) -> Option<(u32, Option<Vec<u8>>)> {
+    read(pdu).ok()
+}
+
+/// The items of a list after a value in fragments, and those of a list in fragments, which
+/// holds a long IE of another identifier, are walked and decoded.
+#[test]
+fn the_items_of_a_list_are_read_around_values_in_fragments() -> Result<(), Error> {
+    let long = vec![0x5a; 20_000];
+    let items = |ies| {
+        field(
+            3,
+            Criticality::reject,
+            &oxirush_aper::encode(&Items(ies)).unwrap(),
+        )
+    };
+    let item = |value: u8| field(10, Criticality::reject, &[value]);
+    let identity = build_toy_ie!(SetupRequest, Identity(7u32))?;
+    let name = field(
+        2,
+        Criticality::ignore,
+        &oxirush_aper::encode(&Name(Octets::from(long.clone())))?,
+    );
+    let pdu = request(vec![identity.clone(), name, items(vec![item(1), item(2)])]);
+    let read: Vec<_> = pdu.items::<ie::Items>().collect::<Result<_, _>>()?;
+    assert_eq!(read, [Item(1), Item(2)]);
+    let other = field(99, Criticality::ignore, &long);
+    let pdu = request(vec![identity, items(vec![item(1), other, item(2)])]);
+    let read: Vec<_> = pdu.items::<ie::Items>().collect::<Result<_, _>>()?;
+    assert_eq!(read, [Item(1), Item(2)]);
+    Ok(())
+}
+
+/// The protocol IEs of a PDU, read and set as they are, and refused for a private message;
+/// more than a container has are refused by the codec.
+#[test]
+fn the_protocol_ies_of_a_pdu_are_read_and_set_as_they_are() -> Result<(), Error> {
+    use oxirush_aper::protocol::{holds_key, protocol_ies, set_protocol_ies};
+    let pdu = setup(7, "toy");
+    let ies = protocol_ies(&pdu)?;
+    let ids: Vec<u16> = ies.iter().map(|ie| ie.id.0).collect();
+    assert_eq!(ids, [1, 2, 3]);
+    let mut changed = pdu.clone();
+    let long = field(2, Criticality::ignore, &[0x61; 200]);
+    let mine = vec![field(1, Criticality::reject, &[0x00, 0x09]), long];
+    set_protocol_ies(&mut changed, &mine)?;
+    let expected = oxirush_aper::encode(&SetupRequest::new(ProtocolIEContainer(mine.clone())))?;
+    assert_eq!(
+        oxirush_aper::protocol::Pdu::value(&changed).as_slice(),
+        &expected[..]
+    );
+    let many = vec![field(1, Criticality::reject, &[0x00]); 65536];
+    let error = set_protocol_ies(&mut changed, &many).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Encode);
+    let message = PrivateMessage {
+        private_ies: Octets::from(vec![1, 2]),
+    };
+    let private = TOYPDU::initiatingMessage(InitiatingMessage {
+        procedure_code: ProcedureCode(3),
+        criticality: Criticality::ignore,
+        value: Octets::owned(oxirush_aper::encode(&message)?),
+    });
+    assert_eq!(
+        protocol_ies(&private).unwrap_err().kind(),
+        ErrorKind::WrongMessage
+    );
+    let error = protocol_ies(&of_octets(&[])).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the SetupRequest of this PDU does not decode: there are no octets"
+    );
+    // The message of a SETUP REQUEST holds a key, its name; that of a NOTIFICATION none
+    assert!(holds_key::<Toy>("InitiatingMessage", 1));
+    assert!(!holds_key::<Toy>("InitiatingMessage", 2));
+    Ok(())
+}
+
+/// A SETUP FAILURE is a message of the procedure in its direction, and a container in
+/// another form than the canonical one is told.
+#[test]
+fn a_failure_is_checked_and_a_container_in_another_form_is_told() -> Result<(), Error> {
+    let failure = build_toy!(UnsuccessfulOutcome, Setup, SetupFailure, Identity(7u32))?;
+    assert_eq!(failure.check()?, []);
+    // The identity of four octets, its length in two octets
+    let octets = [
+        0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x80, 0x05, 0xc0, 0x01, 0x02, 0x03, 0x04,
+    ];
+    let found = of_octets(&octets).check()?;
+    assert!(
+        found.iter().any(|deviation| matches!(
+            deviation,
+            oxirush_aper::check::Deviation::NotCanonical {
+                ie: None,
+                fault: oxirush_aper::Fault::LengthInTwoOctets,
+                ..
+            }
+        )),
+        "{found:?}"
+    );
+    Ok(())
+}

@@ -736,3 +736,82 @@ fn a_string_of_digits_is_never_read_as_octets() {
         assert_eq!(form.write(&shown), Ok(jer), "{shown}");
     }
 }
+
+/// The readable forms: the digits of TBCD with a filler, a number of 64 bits and one that
+/// does not fit, octets of a number after 0x, a PLMN identity written as its octets or as
+/// neither, and transport layer addresses.
+#[test]
+fn the_readable_forms_read_and_write_their_values() {
+    use oxirush_aper::json::{Form, readable};
+    assert_eq!(
+        Form::Digits.read(&tree!("21436587")),
+        Some(tree!("12345678"))
+    );
+    assert_eq!(
+        Form::Digits.read(&tree!("214365f7")),
+        Some(tree!("1234567"))
+    );
+    assert_eq!(Form::Digits.write(&tree!("12a")), Ok(tree!("12a")));
+    assert_eq!(
+        Form::Number(64).write(&tree!(5)),
+        Ok(tree!("0000000000000005"))
+    );
+    assert!(Form::Number(24).write(&tree!(1 << 24)).is_err());
+    assert_eq!(Form::Number(12).write(&tree!("0xab")), Ok(tree!("0ab0")));
+    // A value that does not come back as it was keeps the form of its type
+    assert_eq!(readable(Form::Number(12), tree!("0ab1")), tree!("0ab1"));
+    assert_eq!(readable(Form::Number(12), tree!("0ab0")), tree!(171));
+    assert_eq!(Form::Plmn.write(&tree!("02f839")), Ok(tree!("02f839")));
+    for neither in ["zz", "zzzzzz"] {
+        assert!(Form::Plmn.write(&tree!(neither)).is_err(), "{neither}");
+    }
+    assert_eq!(
+        Form::Plmn.write(&tree!("20893")),
+        Err("20893: a PLMN identity is MCC-MNC: write \"208-93\"".to_string())
+    );
+    assert_eq!(
+        Form::Plmn.write(&tree!("abcde")),
+        Err(
+            "abcde: a PLMN identity is MCC-MNC, as 208-93, or its three octets in hexadecimal"
+                .to_string()
+        )
+    );
+    let address = |text: &str| Form::Address.write(&tree!(text));
+    assert_eq!(
+        address("1.2.3.4"),
+        Ok(tree!({"value": "01020304", "length": 32}))
+    );
+    assert_eq!(
+        address("::1"),
+        Ok(tree!({"value": "00000000000000000000000000000001", "length": 128}))
+    );
+    assert_eq!(address("abc"), Ok(tree!("abc")));
+}
+
+/// A value of a type that a readable form reads is read in that form, or in the form of the
+/// JSON Encoding Rules; octets are read from hexadecimal and written in it.
+#[test]
+fn a_value_is_read_in_its_readable_form() {
+    use oxirush_aper::json::{Form, Reading, Refused, Tree, from_value, read_readable, to_value};
+    #[derive(Debug, PartialEq)]
+    struct Tac(Value);
+    impl Tree for Tac {
+        const NAME: &'static str = "TAC";
+        fn to_tree(&self) -> Value {
+            self.0.clone()
+        }
+        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+            read_readable(reading, Form::Number(24), value).map(Tac)
+        }
+    }
+    assert_eq!(
+        from_value::<Tac>(&tree!(258)).unwrap(),
+        Tac(tree!("000102"))
+    );
+    assert!(from_value::<Tac>(&tree!(1 << 24)).is_err());
+    assert_eq!(to_value(&Octets::from(&[0xab, 0xcd])), tree!("abcd"));
+    assert_eq!(
+        from_value::<Octets>(&tree!("ABCD")).unwrap(),
+        Octets::from(vec![0xab, 0xcd])
+    );
+}
