@@ -900,7 +900,6 @@ macro_rules! __protocol {
 
         impl<'s, 'p: 's> $crate::protocol::__Source<'s> for crate::$bindings::$pdu<'p> {
             type Protocol = $protocol;
-            type Walk = $crate::protocol::Source<'s, $protocol>;
 
             #[inline]
             fn __source<N>(
@@ -980,7 +979,7 @@ macro_rules! __extract_ies {
         let mut _failed: ::core::option::Option<$crate::Error> = ::core::option::Option::None;
         {
             #[allow(unused_imports)]
-            use $crate::protocol::{__Each as _, __Source as _};
+            use $crate::protocol::__Source as _;
             match (&$msg_var).__source::<$k::$bindings::$msg<'_>>() {
                 ::core::result::Result::Err(_error) => _failed = ::core::option::Option::Some(_error),
                 ::core::result::Result::Ok(_source) => {
@@ -1003,8 +1002,6 @@ macro_rules! __extract_ies {
         }
         // The IEs that could not be read are the error of the first `req` or `opt` field.
         $( $crate::__extract_ie!(@failed $kind _failed); )+
-        #[allow(unused_imports)]
-        use $crate::protocol::__Item as _;
         // Each field, of the IE that was found, decoded, in the order of the fields: the
         // first `req` or `opt` field that has no value returns why.
         $(
@@ -1022,7 +1019,7 @@ macro_rules! __extract_ie {
     // The value of the IE, or the one value that its type is a name for: what the type of
     // the field says.
     (@val $bind:ident) => {
-        $crate::protocol::__Field::__field($bind)
+        ::core::convert::Into::into($bind)
     };
     (@val $_bind:ident, $expr:expr) => {
         $expr

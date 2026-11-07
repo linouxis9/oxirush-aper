@@ -170,13 +170,7 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
         types: protocol.keys,
         holders: &holders,
     };
-    let bindings = crate::bindings::bindings(
-        &resolved,
-        keys,
-        &[protocol.plmn],
-        Some("oxirush_aper::protocol::__Field"),
-        protocol.examples,
-    )?;
+    let bindings = crate::bindings::bindings(&resolved, keys, &[protocol.plmn], protocol.examples)?;
 
     // The oracle of the tests: the same types, with the codec of rasn and the
     // corrections that it needs.

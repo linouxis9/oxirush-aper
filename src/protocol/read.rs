@@ -630,95 +630,13 @@ impl<'a, M: Container<'a>> __Holds<M> for M {
     }
 }
 
-/// For the macro that extracts IEs: an IE of what the IEs are read from, which the macro
-/// keeps until it decodes it.
-#[doc(hidden)]
-pub trait __Item<'s>: Clone {
-    /// The protocol.
-    type Protocol: Protocol;
-    /// The identifier of the IE.
-    fn id(&self) -> u16;
-    /// Its value, decoded as the type of `T`, in a message that ASN.1 names `message`: an
-    /// error of the kind `UndecodableIe` when it does not decode.
-    fn decode<T: Ie<Protocol = Self::Protocol>>(
-        &self,
-        message: &str,
-    ) -> Result<T::Value<'s>, Error>;
-}
-
-impl<'s, P: Protocol> __Item<'s> for __Entry<'s, P> {
-    type Protocol = P;
-
+impl<'s, P: Protocol> Source<'s, P> {
+    /// For the macro that extracts IEs: each IE, given to `each`, then what follows them,
+    /// which is no container of protocol IEs; an error when the IEs cannot be read, as the
+    /// codec of the message would say.
+    #[doc(hidden)]
     #[inline]
-    fn id(&self) -> u16 {
-        self.id
-    }
-
-    #[inline]
-    fn decode<T: Ie<Protocol = P>>(&self, message: &str) -> Result<T::Value<'s>, Error> {
-        __Entry::decode::<T>(self, message)
-    }
-}
-
-/// For the macro that extracts IEs: an IE of a value that is decoded, with its position.
-#[doc(hidden)]
-pub struct __Decoded<'s, P: Protocol> {
-    position: usize,
-    field: &'s P::Field<'s>,
-}
-
-impl<P: Protocol> Clone for __Decoded<'_, P> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            position: self.position,
-            field: self.field,
-        }
-    }
-}
-
-impl<'s, P: Protocol> __Item<'s> for __Decoded<'s, P> {
-    type Protocol = P;
-
-    #[inline]
-    fn id(&self) -> u16 {
-        self.field.id()
-    }
-
-    #[inline]
-    fn decode<T: Ie<Protocol = P>>(&self, message: &str) -> Result<T::Value<'s>, Error> {
-        let octets: &'s [u8] = self.field.value().as_slice();
-        match crate::decode::<T::Value<'s>>(octets) {
-            Ok(value) => Ok(value),
-            Err(error) => Err(self.undecodable(error, message)),
-        }
-    }
-}
-
-impl<P: Protocol> __Decoded<'_, P> {
-    /// `error` is why the value of this IE does not decode.
-    #[cold]
-    fn undecodable(&self, error: Error, message: &str) -> Error {
-        let (id, criticality) = (self.field.id(), self.field.criticality());
-        __undecodable_ie::<P>(error, message, id, criticality, self.position)
-    }
-}
-
-/// For the macro that extracts IEs: what it walks the IEs of, in their order.
-#[doc(hidden)]
-pub trait __Each<'s> {
-    /// An IE.
-    type Item: __Item<'s>;
-    /// Each IE, given to `each`, then what follows them, which is no container of protocol
-    /// IEs; an error when the IEs cannot be read, as the codec of the message would say.
-    fn __each(self, each: impl FnMut(Self::Item)) -> Result<(), Error>;
-}
-
-impl<'s, P: Protocol> __Each<'s> for Source<'s, P> {
-    type Item = __Entry<'s, P>;
-
-    #[inline]
-    fn __each(self, mut each: impl FnMut(__Entry<'s, P>)) -> Result<(), Error> {
+    pub fn __each(self, mut each: impl FnMut(__Entry<'s, P>)) -> Result<(), Error> {
         let message = self.message;
         let octets = match self.fields {
             Fields::Octets(octets) => octets,
@@ -796,51 +714,28 @@ pub(super) fn tail(octets: &[u8], at: usize, extended: bool) -> Result<(), Error
     reader.finish()
 }
 
-/// For the macro that extracts IEs: the IEs of a value that is decoded, which need no walk.
-#[doc(hidden)]
-pub struct __Fields<'s, P: Protocol> {
-    fields: &'s [P::Field<'s>],
-}
-
-impl<'s, P: Protocol> __Each<'s> for __Fields<'s, P> {
-    type Item = __Decoded<'s, P>;
-
-    #[inline]
-    fn __each(self, mut each: impl FnMut(__Decoded<'s, P>)) -> Result<(), Error> {
-        for (position, field) in self.fields.iter().enumerate() {
-            each(__Decoded { position, field });
-        }
-        Ok(())
-    }
-}
-
 /// For the macro that extracts IEs: what the IEs are read from, a message or a transfer,
 /// or a PDU, which the registry of a protocol implements this for.
 #[doc(hidden)]
 pub trait __Source<'s> {
     /// The protocol.
     type Protocol: Protocol;
-    /// What the macro walks.
-    type Walk: __Each<'s>;
     /// The IEs of `self` as a `N`.
-    fn __source<N>(&'s self) -> Result<Self::Walk, Error>
+    fn __source<N>(&'s self) -> Result<Source<'s, Self::Protocol>, Error>
     where
         Self: __Holds<N>;
 }
 
 impl<'s, 'a: 's, M: Container<'a>> __Source<'s> for M {
     type Protocol = <M as InProtocol>::Protocol;
-    type Walk = __Fields<'s, <M as InProtocol>::Protocol>;
 
     #[inline]
-    fn __source<N>(&'s self) -> Result<Self::Walk, Error>
+    fn __source<N>(&'s self) -> Result<Source<'s, Self::Protocol>, Error>
     where
         Self: __Holds<N>,
     {
-        <Self as __Holds<N>>::__message(self)?;
-        Ok(__Fields {
-            fields: self.__fields(),
-        })
+        let name = <Self as __Holds<N>>::__message(self)?;
+        Ok(Source::__of_fields(name, self.__fields()))
     }
 }
 

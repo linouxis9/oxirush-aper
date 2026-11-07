@@ -254,9 +254,9 @@ pub mod toy {
             Self(value)
         }
     }
-    impl oxirush_aper::protocol::__Field<u32> for Identity {
-        fn __field(self) -> u32 {
-            self.0
+    impl From<Identity> for u32 {
+        fn from(identity: Identity) -> Self {
+            identity.0
         }
     }
 

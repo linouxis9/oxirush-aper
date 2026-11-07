@@ -171,7 +171,6 @@ pub fn bindings(
     description: &str,
     keys: Keys<'_>,
     plmns: &[&str],
-    field: Option<&str>,
     examples: &[(&str, &str)],
 ) -> Result<Written> {
     let file = syn::parse_file(description).context("parse the resolved bindings")?;
@@ -190,7 +189,6 @@ pub fn bindings(
         });
     }
     let mut bindings = Bindings::new(&modules, keys, plmns)?;
-    bindings.field = field.map(str::to_string);
     for (ty, example) in examples {
         let known = modules.iter().flat_map(|module| &module.entries);
         let mut known = known.filter_map(|entry| match entry {
@@ -718,9 +716,6 @@ struct Bindings {
     /// The types that are a PLMN identity, each with the types that it is a name for,
     /// down to the one that is three octets: none when it is three octets itself.
     plmns: BTreeMap<String, Vec<String>>,
-    /// The path of the trait that a type which is a name for one value implements for
-    /// the type of that value.
-    field: Option<String>,
     /// The examples of the documentation of some types, by the names of the types.
     examples: BTreeMap<String, String>,
 }
@@ -763,7 +758,6 @@ impl Bindings {
                 .map(|(name, holds)| (name.to_string(), holds.to_string()))
                 .collect(),
             plmns: BTreeMap::new(),
-            field: None,
             examples: BTreeMap::new(),
         };
         // A PLMN identity is three octets, or a name for a type that is.
@@ -1271,13 +1265,13 @@ impl Bindings {
             Shape::Alias(kind) => {
                 let ty = self.ty(kind, "'a");
                 writeln!(out, "pub struct {declared}(pub {ty});")?;
-                if let Some(field) = &self.field {
-                    writeln!(
-                        out,
-                        "impl{life} {field}<{ty}> for {declared} {{ #[inline] fn __field(self) -> {ty} \
-                         {{ self.0 }} }}"
-                    )?;
-                }
+                // The one value that the type is a name for, as a field of the macro that
+                // extracts IEs takes it.
+                writeln!(
+                    out,
+                    "impl{life} From<{declared}> for {ty} {{ #[inline] fn from(value: {declared}) \
+                     -> Self {{ value.0 }} }}"
+                )?;
                 if borrows {
                     writeln!(out, "impl{life} {declared} {{")?;
                     self.owned_doc(out, name)?;
@@ -2352,7 +2346,7 @@ mod tests {
             .add_asn_literal(module)
             .compile_to_string()
             .map_err(|error| anyhow::anyhow!("{error}"))?;
-        bindings(&resolved.generated, keys, &[], None, &[])
+        bindings(&resolved.generated, keys, &[], &[])
     }
 
     fn text(asn: &str) -> String {
@@ -2374,7 +2368,7 @@ mod tests {
     /// The bindings of a description written by hand, in a module `toy`.
     fn described(items: &str, keys: Keys<'_>) -> Result<Written> {
         let description = format!("pub mod toy {{ use rasn::prelude::*; {items} }}");
-        bindings(&description, keys, &[], None, &[])
+        bindings(&description, keys, &[], &[])
     }
 
     /// An INTEGER has the smallest native type that holds its range, and none past 64

@@ -97,9 +97,6 @@ exclude_re = [
     # The name that a message gives as the holder of itself, which its reader discards: the
     # errors of a message name it by its type.
     'src/protocol/read\.rs:.*: replace <impl __Holds<M> for M>::__message ',
-    # The identifier of an entry of a walk through the trait, which the entry's own `id`
-    # shadows where the macros call it, and no generic code calls.
-    'src/protocol/read\.rs:.*: replace <impl __Item<.s> for __Entry<.s, P>>::id ',
     # A check at compile time: the function does nothing when it runs.
     'src/protocol/build\.rs:.*: replace __message_of_protocol_ies with \(\)$',
     # The index of an IE of the set after the last one seen is never that one: that IE was
