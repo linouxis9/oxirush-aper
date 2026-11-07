@@ -27,6 +27,10 @@ pub struct Protocol {
     /// The IEs whose octets ASN.1 leaves open, each with the type of the protocol that
     /// the specification gives them for a handover between its nodes.
     pub carried: &'static [(&'static str, &'static str)],
+    /// The IEs whose octets ASN.1 leaves open, each with another protocol and the type
+    /// of that protocol that the specification gives them for a handover to its system:
+    /// the tables of that protocol read it, once a program registers them.
+    pub foreign: &'static [(&'static str, &'static str, &'static str)],
     /// The types of the keys of the protocol, of which `Debug` prints no octet, as K_gNB
     /// or K_eNB and NH.
     pub keys: &'static [&'static str],
@@ -198,7 +202,14 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
         bindings.keys.clone(),
     )?;
     let list = registry.list()?;
-    let inspection = crate::inspection::generate(name, &oracle, &asn, &registry, protocol.carried)?;
+    let inspection = crate::inspection::generate(
+        name,
+        &oracle,
+        &asn,
+        &registry,
+        protocol.carried,
+        protocol.foreign,
+    )?;
     // The types that the crate decodes by a name or an identifier: the oracle decodes
     // the same.
     let module = protocol.module();
@@ -842,6 +853,7 @@ mod tests {
         name: "Toy",
         modules: "toy",
         carried: &[],
+        foreign: &[],
         keys: &[],
         plmn: "",
         aliases: &[],

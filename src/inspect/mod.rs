@@ -117,6 +117,11 @@ pub struct Protocol {
     /// The IEs whose octets may carry a type that the specification names and the
     /// ASN.1 does not: the identifier, the name that ASN.1 gives the type, and its path.
     pub carried: &'static [(u16, &'static str, &'static str)],
+    /// The IEs whose octets may carry a type of another protocol, as a handover to
+    /// another system has them: the identifier, the name that the other protocol gives
+    /// the type, which it carries itself, and the name of that protocol. The tables of
+    /// the other protocol read and write the type, once it is [registered](register).
+    pub foreign: &'static [(u16, &'static str, &'static str)],
     /// The names of the values of each ENUMERATED, as the specification spells them, in
     /// the order of the names of the types.
     pub enumerations: &'static [(&'static str, &'static [&'static str])],
@@ -211,6 +216,91 @@ pub enum Shape {
     /// specification names and the ASN.1 does not. The view shows them as they are, or
     /// as the transfer of that type under its name, once they are written or opened so.
     Carrier(u16),
+    /// Octets that carry the type of another protocol, by the name that that protocol
+    /// gives it and its own name: the tables of that protocol read it, as the transfer
+    /// that they carry it as.
+    Foreign(&'static str, &'static str),
+}
+
+/// The protocols that a program registered.
+#[cfg(feature = "std")]
+static REGISTERED: std::sync::RwLock<Vec<&'static Protocol>> = std::sync::RwLock::new(Vec::new());
+
+/// Register `protocol`, so that the trees, the views and the paths of another protocol
+/// read and write the types of `protocol` that the octets of its IEs carry, as its
+/// [`foreign`](Protocol::foreign) IEs have them. A protocol that is registered again is
+/// registered once. Without the feature `std`, which has the register, it does nothing.
+pub fn register(protocol: &'static Protocol) {
+    #[cfg(feature = "std")]
+    {
+        let mut registered = REGISTERED
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !registered.iter().any(|known| known.name == protocol.name) {
+            registered.push(protocol);
+        }
+    }
+    #[cfg(not(feature = "std"))]
+    let _ = protocol;
+}
+
+/// The registered protocol of the name `protocol`.
+pub(crate) fn registered(protocol: &str) -> Option<&'static Protocol> {
+    #[cfg(feature = "std")]
+    {
+        let registered = REGISTERED
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        registered
+            .iter()
+            .find(|known| known.name == protocol)
+            .copied()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let _ = protocol;
+        None
+    }
+}
+
+/// The registered protocol `protocol`, whose type `name` the octets of an IE carry, or
+/// the error that says which call registers it.
+pub(crate) fn foreign(name: &str, protocol: &str) -> Result<&'static Protocol, Error> {
+    if let Some(found) = registered(protocol) {
+        return Ok(found);
+    }
+    Err(Error::value(alloc::format!(
+        "{name} is a type of {protocol}: call oxirush_{}::inspect::register() once, and its \
+         tables read and write it",
+        protocol.to_ascii_lowercase()
+    )))
+}
+
+impl Protocol {
+    /// Whether the octets of the IE `id` may carry a type, of this protocol or of
+    /// another.
+    pub(crate) fn carries(&self, id: u16) -> bool {
+        let own = self.carried.iter().map(|(carrier, ..)| carrier);
+        let other = self.foreign.iter().map(|(carrier, ..)| carrier);
+        own.chain(other).any(|carrier| *carrier == id)
+    }
+
+    /// The type of another protocol that ASN.1 names `name` and the octets of an IE of
+    /// this one may carry, with the name of that protocol.
+    pub(crate) fn foreign_type(&self, name: &str) -> Option<(&'static str, &'static str)> {
+        let mut foreign = self.foreign.iter();
+        let found = foreign.find(|(_, known, _)| same_name(known, name));
+        found.map(|(_, known, protocol)| (*known, *protocol))
+    }
+
+    /// The functions of a type that the octets of an IE may carry, by the name that
+    /// ASN.1 gives it: one of this protocol, or one of another that is registered.
+    pub(crate) fn carried_or_foreign(&self, name: &str) -> Option<Typed> {
+        (self.carried_typed)(name).or_else(|| {
+            let (name, protocol) = self.foreign_type(name)?;
+            (foreign(name, protocol).ok()?.carried_typed)(name)
+        })
+    }
 }
 
 /// A message, as the paths need it: the name that ASN.1 gives it, the name of its type

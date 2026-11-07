@@ -99,6 +99,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 mod bits;
 pub mod check;

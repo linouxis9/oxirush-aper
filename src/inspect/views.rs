@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 use oxirush_utils::tree::{Map, Value};
 
 use super::paths::{EDITED, extended, member_shape, of_a_transfer, written_ie};
-use super::{Protocol, Shape, Typed, same_name};
+use super::{Protocol, Shape, Typed, foreign, same_name};
 use crate::Error;
 use crate::json::{self, hex};
 
@@ -93,6 +93,13 @@ impl Protocol {
     /// ASN.1 names `name`: its decoded value beside them, or why they are not of that
     /// type.
     pub(crate) fn opened(&self, raw: Value, name: &str) -> Value {
+        // A type of another protocol is opened by its tables, or says why it is not.
+        if let Some((name, protocol)) = self.foreign_type(name) {
+            return match foreign(name, protocol) {
+                Ok(other) => other.opened(raw, name),
+                Err(error) => contained(raw, Err(error)),
+            };
+        }
         let typed = (self.carried_typed)(name);
         let carries_none = || Error::no_such_member(format!("octets carry no {name}"));
         let mut transfer = contained(raw, typed.ok_or_else(carries_none));
@@ -103,8 +110,18 @@ impl Protocol {
     /// The octets of the IE `id`, which is written as a type that they may carry: one
     /// member, the name of that type with its value, which is its octets by now.
     fn carried_octets(&self, written: &Value, id: u16) -> Result<Value, Error> {
-        let carried = self.carried.iter().filter(|(carrier, ..)| *carrier == id);
-        let names: Vec<_> = carried.map(|(_, name, _)| *name).collect();
+        let carried = self
+            .carried
+            .iter()
+            .map(|(carrier, name, _)| (carrier, name));
+        let foreign = self
+            .foreign
+            .iter()
+            .map(|(carrier, name, _)| (carrier, name));
+        let carried = carried
+            .chain(foreign)
+            .filter(|(carrier, _)| **carrier == id);
+        let names: Vec<_> = carried.map(|(_, name)| *name).collect();
         let mut members = written.as_object().into_iter().flatten();
         match (members.next(), members.next()) {
             (Some((name, octets)), None) if names.iter().any(|known| same_name(known, name)) => {
@@ -142,6 +159,13 @@ impl Protocol {
     /// deep in its view. What is deeper than the inspection goes keeps its octets, with
     /// why.
     fn expand(&self, value: &mut Value, depth: usize, shape: Shape) {
+        // A type of another protocol, by its tables.
+        if let Shape::Foreign(name, protocol) = shape {
+            if let Ok(other) = foreign(name, protocol) {
+                other.expand(value, depth, other.carried_shape(name));
+            }
+            return;
+        }
         let deep = depth > NESTING;
         if let Some(object) = value.as_object_mut() {
             let field = if object.contains_key("value") {
@@ -229,6 +253,11 @@ impl Protocol {
                 4 * NESTING
             )));
         }
+        // A type of another protocol, by its tables.
+        if let Shape::Foreign(name, protocol) = shape {
+            let other = foreign(name, protocol)?;
+            return other.collapse(value, member, depth, other.carried_shape(name));
+        }
         if let Some(object) = value.as_object_mut() {
             // An IE may be written with its name as `id`, and with its `octets`.
             written_ie(self, object)?;
@@ -252,7 +281,7 @@ impl Protocol {
                             Some((self.transfer_typed)(key)?)
                         }
                         // A type that the octets of an IE may carry, by its name.
-                        key => (self.carried_typed)(key),
+                        key => self.carried_or_foreign(key),
                     };
                     if let Some(transfer) = transfer {
                         // The decoded value, as the object itself when it has no member
@@ -325,7 +354,7 @@ impl Protocol {
             "value" | "extensionValue" => id.and_then(self.ie_contents).ok_or_else(|| {
                 Error::form("an IE that contains no type has no decoded value beside its octets")
             })?,
-            key => match (self.carried_typed)(key) {
+            key => match self.carried_or_foreign(key) {
                 Some(carried) => carried,
                 None => (self.transfer_typed)(key)?,
             },
@@ -365,7 +394,7 @@ impl Protocol {
         };
         // Octets that are written as a type that they may carry.
         if let Some(written) = object.get_mut(field).filter(|value| value.is_object())
-            && self.carried.iter().any(|(carrier, ..)| *carrier == id)
+            && self.carries(id)
         {
             *written = self.carried_octets(written, id)?;
         }

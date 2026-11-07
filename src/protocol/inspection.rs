@@ -136,13 +136,15 @@ macro_rules! __transfers {
 
 /// The IEs of a protocol whose octets may carry a type that the specification names and
 /// the ASN.1 does not: the identifier of each, the name that ASN.1 gives the type, and the
-/// type.
+/// type; then, after `of`, those whose octets may carry a type of another protocol, with
+/// the name of that protocol.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __carried {
-    ($($id:literal $name:literal $carried:path;)*) => {
+    ($($id:literal $name:literal $carried:path;)* $(of $protocol:literal $fid:literal $fname:literal;)*) => {
         pub(crate) const CARRIED: &[(u16, &str, &str)] =
             &[$(($id, $name, stringify!($carried)),)*];
+        pub(crate) const FOREIGN: &[(u16, &str, &str)] = &[$(($fid, $fname, $protocol),)*];
         pub(crate) fn carried(name: &str) -> Option<$crate::inspect::Typed> {
             $(if $crate::inspect::same_name($name, name) {
                 return Some($crate::__typed!($carried));
@@ -176,8 +178,9 @@ use crate::Error;
 // The name of the protocol, the first segment of the paths of the IEs of the message of
 // a PDU, and what the ASN.1 says of the messages, the IEs and the types.
 use crate::inspect_registry::{
-    CARRIED, ENUMERATIONS, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGE_IE_CRITICALITIES,
-    MESSAGES, PROCEDURE_CRITICALITIES, PROTOCOL, ROOT, TRANSFER_FIELDS, TYPES,
+    CARRIED, ENUMERATIONS, FOREIGN, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES,
+    MESSAGE_IE_CRITICALITIES, MESSAGES, PROCEDURE_CRITICALITIES, PROTOCOL, ROOT,
+    TRANSFER_FIELDS, TYPES,
 };
 // The type that an IE of an extension container has where its identifier alone does not
 // say it: the one that the type which the container extends gives it.
@@ -197,6 +200,7 @@ pub(crate) static TABLES: Protocol = Protocol {
     ie_types: IE_TYPES,
     extension_types: EXTENSION_TYPES,
     carried: CARRIED,
+    foreign: FOREIGN,
     enumerations: ENUMERATIONS,
     item_criticalities: ITEM_CRITICALITIES,
     message_ie_criticalities: MESSAGE_IE_CRITICALITIES,
@@ -1007,6 +1011,17 @@ pub(crate) use $crate::inspect::Typed;
 /// value cannot have is an error, and the view is then as it was.
 pub fn open(view: &mut Value, path: &str) -> Result<(), Error> {
     shared::open(&TABLES, view, path)
+}
+
+/// Register the tables of this protocol, so that the trees, the views and the paths of
+/// the other protocol of the family read and write the handover containers of this one
+/// that the messages of that protocol carry: those of a handover between 5GS and EPS. A
+/// program that has them calls it once; a call after the first changes nothing.
+///
+/// Without it, such a container is written and read as its octets alone, and its name
+/// is an error that says to call this function.
+pub fn register() {
+    shared::register(&TABLES);
 }
 
 /// The view, as `to_view` writes views, of a view whose values another implementation

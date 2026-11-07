@@ -63,6 +63,7 @@ oxirush-aper = "0.1"
 | Feature | Adds |
 |---------|------|
 | `inspect` | `json`: values as trees of `oxirush_utils::tree`, in the form of the JSON Encoding Rules (X.697), with a readable form for a few 3GPP types, such as `"208-93"` for a PLMN identity |
+| `std` | With `inspect`, the register of the protocols whose tables a program registers, `inspect::register()` of oxirush-ngap and oxirush-s1ap: the handover containers of one protocol in the messages of the other. It is a lock of the standard library |
 
 `check`, which says how a PDU deviates from the object set of its message,
 needs no feature.

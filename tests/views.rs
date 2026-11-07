@@ -32,7 +32,8 @@
 //!                   OCTET STRING (CONTAINING SetupTransfer), flags Flags, tac TAC,
 //!                   items Items, iE-Extensions }                                  id 16
 //! ExtendedCause: the extension of Holder that is a Cause                         id 17
-//! Container     ::= OCTET STRING, which may carry an LteBlob, a Cause             id 18
+//! Container     ::= OCTET STRING, which may carry an LteBlob, a Cause, or a
+//!                   Wrapper of the protocol OTHER and a GhostBlob of GHOST        id 18
 //! Items         ::= SEQUENCE OF ProtocolIE-SingleContainer {{Item reject}}        id 20
 //! Payload       ::= OCTET STRING (CONTAINING Cause)                               id 21
 //! Item          ::= INTEGER (0..255)                                              id 30
@@ -218,6 +219,11 @@ static TOY: Protocol = Protocol {
         (19, "Holder", "crate::toy::Flags"),
     ],
     carried: &[(18, "LteBlob", "crate::toy::Holder")],
+    foreign: &[
+        (18, "Wrapper", "OTHER"),
+        (18, "Gauge", "SECOND"),
+        (18, "GhostBlob", "GHOST"),
+    ],
     enumerations: &[
         ("CauseNas", &["normal-release", "deregister"]),
         ("CauseRadioNetwork", &["unspecified", "user-inactivity"]),
@@ -1939,4 +1945,219 @@ fn a_written_tree_is_read_as_deep_as_256() {
     let as_viewed = |cause: Value| tree!({"choice-Extensions": {"id": 15, "criticality": "ignore", "value": (cause)}});
     assert!(causes(128, &as_viewed).is_ok());
     assert!(limit(causes(129, &as_viewed)));
+}
+
+// ── A type of another protocol ──────────────────────────────────────────────
+
+/// The SETUP REQUEST of a Container that carries a Wrapper of Speed 7 and Mode fast.
+fn wrapped() -> Vec<u8> {
+    ies(&[(18, 1, &ies(&[(15, 0, &[7]), (16, 1, &[1])]))])
+}
+
+/// The protocol OTHER, which the register of protocols, of the standard library, holds.
+#[cfg(feature = "std")]
+mod another_protocol {
+    use super::*;
+
+    /// OTHER, a protocol whose IE 40 may carry a Wrapper: a transfer of its protocol IEs,
+    /// Speed (INTEGER (0..255), id 15, mandatory, reject) and Mode (ENUMERATED { slow, fast },
+    /// id 16, ignore). The Container of TOY may carry a Wrapper as a type of OTHER, whose
+    /// IE 15 is no Cause: only the tables of OTHER read it.
+    const WRAPPER_IES: &[(u16, bool)] = &[(15, true), (16, false)];
+
+    const OTHER_TABLES: Protocol = Protocol {
+        name: "OTHER",
+        root: "other",
+        types: &[("Wrapper", Kind::Sequence(CONTAINER_OF_IES))],
+        messages: &[],
+        ie_names: &[(15, "Speed"), (16, "Mode"), (40, "Blob")],
+        ie_types: &[
+            (15, "crate::other::Speed", ""),
+            (16, "crate::other::Mode", ""),
+            (40, "crate::other::Blob<'a>", ""),
+        ],
+        extension_types: &[],
+        carried: &[(40, "Wrapper", "crate::other::Wrapper")],
+        foreign: &[],
+        enumerations: &[("Mode", &["slow", "fast"])],
+        item_criticalities: &[],
+        message_ie_criticalities: &[],
+        transfers: &[(
+            "Wrapper",
+            "Wrapper",
+            WRAPPER_IES,
+            &[(15, "reject"), (16, "ignore")],
+        )],
+        ie_id: |name| match name {
+            _ if inspect::same_name(name, "Speed") => Some(15),
+            _ if inspect::same_name(name, "Mode") => Some(16),
+            _ if inspect::same_name(name, "Blob") => Some(40),
+            _ => None,
+        },
+        kind_of: |name| (name == "Wrapper").then_some(&Kind::Sequence(CONTAINER_OF_IES)),
+        procedure_criticalities: &[],
+        ie_typed: |id| match id {
+            15 => Ok(Typed {
+                decode: item_decode,
+                encode: item_encode,
+            }),
+            16 => Ok(Typed {
+                decode: mode_decode,
+                encode: mode_encode,
+            }),
+            40 => Ok(Typed {
+                decode: octets_decode,
+                encode: octets_encode,
+            }),
+            _ => Err(Error::new(
+                ErrorKind::UnknownIe,
+                format!("no type for IE {id}"),
+            )),
+        },
+        extension_typed: |_, _| None,
+        ie_contents: |_| None,
+        type_form: |_| None,
+        transfer_fields: &[],
+        transfer_typed: |_| Err(Error::new(ErrorKind::NoSuchMember, "no transfer")),
+        carried_typed: |name| inspect::same_name(name, "Wrapper").then(ies_typed),
+        any_message: ies_typed,
+    };
+    static OTHER: Protocol = OTHER_TABLES;
+    /// SECOND, whose IE 40 may carry a Gauge, a transfer of the IEs of OTHER: a program
+    /// registers it beside OTHER.
+    static SECOND: Protocol = Protocol {
+        name: "SECOND",
+        root: "second",
+        types: &[("Gauge", Kind::Sequence(CONTAINER_OF_IES))],
+        carried: &[(40, "Gauge", "crate::second::Gauge")],
+        transfers: &[(
+            "Gauge",
+            "Gauge",
+            WRAPPER_IES,
+            &[(15, "reject"), (16, "ignore")],
+        )],
+        kind_of: |name| (name == "Gauge").then_some(&Kind::Sequence(CONTAINER_OF_IES)),
+        carried_typed: |name| inspect::same_name(name, "Gauge").then(ies_typed),
+        ..OTHER_TABLES
+    };
+
+    const MODES: [&str; 2] = ["slow", "fast"];
+
+    fn mode_decode(octets: &[u8]) -> Result<inspect::Decoded, Error> {
+        match octets {
+            [mode] => MODES
+                .get(usize::from(*mode))
+                .map(|name| (Value::from(*name), true, None))
+                .ok_or_else(|| decoding("no Mode")),
+            _ => Err(decoding("no Mode")),
+        }
+    }
+
+    fn mode_encode(value: &Value) -> Result<Vec<u8>, Error> {
+        let mode = MODES.iter().position(|name| Some(*name) == value.as_str());
+        Ok(vec![mode.ok_or_else(|| encoding("no Mode"))? as u8])
+    }
+
+    /// A tree of TOY writes the Container as a Wrapper of OTHER by the names of OTHER, and a
+    /// view opens it and edits it by the tables of OTHER, once OTHER is registered: twice
+    /// is once.
+    #[test]
+    fn a_type_of_another_protocol_is_read_and_written_by_the_tables_of_that_protocol() {
+        inspect::register(&OTHER);
+        inspect::register(&OTHER);
+        inspect::register(&SECOND);
+        let tree = tree!({"message": "SetupRequest", "ies": [
+            {"Container": {"Wrapper": {"protocolIEs": [{"Speed": 7}, {"Mode": "fast"}]}}},
+        ]});
+        let parts = inspect::tree_parts(&TOY, &tree).unwrap();
+        assert_eq!(parts.message, wrapped());
+        // and as a Gauge of SECOND, which is registered too
+        let gauge = tree!({"message": "SetupRequest", "ies": [
+            {"Container": {"Gauge": {"protocolIEs": [{"Speed": 7}, {"Mode": "fast"}]}}},
+        ]});
+        assert_eq!(
+            inspect::tree_parts(&TOY, &gauge).unwrap().message,
+            wrapped()
+        );
+        // Its decoded value, and its octets
+        for written in [
+            tree!({"decoded": {"protocolIEs": [{"Speed": 7}, {"Mode": "fast"}]}}),
+            tree!({"octets": hex(&ies(&[(15, 0, &[7]), (16, 1, &[1])]))}),
+        ] {
+            let tree =
+                tree!({"message": "SetupRequest", "ies": [{"Container": {"Wrapper": (written)}}]});
+            assert_eq!(inspect::tree_parts(&TOY, &tree).unwrap().message, wrapped());
+        }
+        // A name of TOY is no IE of OTHER
+        let cause = tree!({"message": "SetupRequest", "ies": [
+            {"Container": {"Wrapper": {"protocolIEs": [{"Cause": {"misc": null}}]}}},
+        ]});
+        assert_eq!(
+            inspect::tree_parts(&TOY, &cause).err().unwrap().kind(),
+            ErrorKind::UnknownIe
+        );
+
+        // The paths go through the name of the type into the IEs of OTHER
+        let mode = "/toy/Container/Wrapper/Mode";
+        assert_eq!(inspect::check_path(&TOY, "SetupRequest", mode), Ok(()));
+        let mode = format!("{mode}/value");
+        let names = inspect::enumerated_at(&TOY, "SetupRequest", &mode).unwrap();
+        assert_eq!(names, Some(&MODES[..]));
+        let mut view =
+            inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &wrapped()).unwrap();
+        let speed = "/toy/Container/Wrapper/Speed";
+        assert_eq!(
+            inspect::select(&TOY, &view, speed).unwrap_err().kind(),
+            ErrorKind::NotOpened
+        );
+        inspect::open(&TOY, &mut view, speed).unwrap();
+        let value = format!("{speed}/value");
+        assert_eq!(inspect::select(&TOY, &view, &value).unwrap(), [&tree!(7)]);
+        let opened = &view["message"]["protocolIEs"][0]["value"]["Wrapper"]["decoded"];
+        assert_eq!(
+            opened["protocolIEs"][0],
+            tree!({"id": 15, "criticality": "reject", "value": 7, "_raw_value": "07",
+                   "_original_id": 15, "_ie_name": "Speed"})
+        );
+        // Each value that the listing has, named by OTHER, is selected by its path
+        let listed = inspect::paths(&TOY, &view);
+        let speed = "/toy/Container/value/Wrapper/decoded/Speed/value";
+        assert!(
+            listed
+                .iter()
+                .any(|(path, value)| path == speed && *value == tree!(7))
+        );
+        for (path, value) in &listed {
+            assert_eq!(
+                inspect::select(&TOY, &view, path).unwrap(),
+                [value],
+                "{path}"
+            );
+        }
+        assert_eq!(inspect::view_parts(&TOY, &view).unwrap().message, wrapped());
+        // An edit is written by the type of OTHER, and what is not edited as it was received
+        let refused = inspect::set(&TOY, &mut view, &mode, tree!("medium"));
+        assert!(refused.is_ok() && inspect::view_parts(&TOY, &view).is_err());
+        inspect::set(&TOY, &mut view, &mode, tree!("slow")).unwrap();
+        let edited = ies(&[(18, 1, &ies(&[(15, 0, &[7]), (16, 1, &[0])]))]);
+        assert_eq!(inspect::view_parts(&TOY, &view).unwrap().message, edited);
+    }
+}
+
+/// The type of a protocol that is not registered is refused, and the error says the call
+/// that registers it.
+#[test]
+fn a_type_of_a_protocol_that_is_not_registered_is_refused_with_the_call_that_registers_it() {
+    const CALL: &str = "GhostBlob is a type of GHOST: call oxirush_ghost::inspect::register()";
+    let tree = tree!({"message": "SetupRequest", "ies": [{"Container": {"GhostBlob": {"a": 1}}}]});
+    let error = inspect::tree_parts(&TOY, &tree).err().unwrap();
+    assert!(error.to_string().contains(CALL), "{error}");
+    let path = "/toy/Container/GhostBlob/a";
+    let error = inspect::check_path(&TOY, "SetupRequest", path).unwrap_err();
+    assert!(error.to_string().contains(CALL), "{error}");
+    let mut view =
+        inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &wrapped()).unwrap();
+    inspect::open(&TOY, &mut view, "/toy/Container/GhostBlob").unwrap();
+    let error = inspect::select(&TOY, &view, path).unwrap_err();
+    assert!(error.to_string().contains(CALL), "{error}");
 }

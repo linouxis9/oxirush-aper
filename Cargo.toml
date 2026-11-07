@@ -23,6 +23,10 @@ include = [
 # The JSON forms of a value, as the trees of `oxirush-utils`, and the paths into the views
 # of the application protocols on them.
 inspect = ["dep:oxirush-utils"]
+# With `inspect`, the protocols that a program registers, whose types the octets of an IE
+# of another protocol carry: the handover containers of S1AP in NGAP, and the reverse.
+# The register is a lock of the standard library: without it, none is registered.
+std = []
 
 [package.metadata.docs.rs]
 all-features = true

@@ -2,6 +2,24 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
+## Unreleased
+
+- The octets of an IE of one protocol may carry a type of another, as the
+  transparent containers of a handover between 5GS and EPS do: S1AP's in
+  NGAP, and NGAP's in S1AP (TS 38.413 clauses 9.3.1.20 and 9.3.1.21, TS
+  36.413 clauses 9.2.1.56 and 9.2.1.57). The tables of a protocol name them,
+  `foreign`, with the protocol of each, and a program registers the tables of
+  that protocol with `register()`, which each protocol crate has in its
+  module `inspect`. The trees, the views and the paths of the first protocol
+  then write, open, list and edit such a container by the name of its type,
+  with the tables of the other: its members, its IEs by their names and its
+  enumerations. Without registration, the name is refused with the call that
+  registers it. The generator writes the table from what the build of the
+  protocol says, `Protocol::foreign`.
+- The feature `std` holds the register, a lock of the standard library:
+  without it, no protocol is registered. The build of the CI for
+  `thumbv7em-none-eabihf` takes `inspect` and not every feature.
+
 ## 0.1.0 - 2026-10-24
 
 The first version: the aligned variant of the Packed Encoding Rules, ITU-T

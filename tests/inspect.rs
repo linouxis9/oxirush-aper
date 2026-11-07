@@ -99,6 +99,7 @@ static TEST: Protocol = Protocol {
     ],
     extension_types: &[(17, "Holder", "crate::test::Cause")],
     carried: &[],
+    foreign: &[],
     enumerations: &[
         ("CauseNas", &["normal-release", "deregister"]),
         ("CauseRadioNetwork", &["unspecified", "user-inactivity"]),

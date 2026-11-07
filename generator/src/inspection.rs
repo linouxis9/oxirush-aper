@@ -390,13 +390,16 @@ fn generate_types(
 ///
 /// `carried` are the IEs whose octets ASN.1 leaves open and the specification gives a
 /// type of the protocol, each as the name of the IE after `id-` and the name of that
-/// type: the ASN.1 does not say them.
+/// type: the ASN.1 does not say them. `foreign` are those that it gives a type of another
+/// protocol, each as the name of the IE, the name of that protocol and the name that it
+/// gives the type.
 pub fn generate(
     protocol: &str,
     generated: &str,
     asn: &str,
     registry: &Registry,
     carried: &[(&str, &str)],
+    foreign: &[(&str, &str, &str)],
 ) -> Result<String> {
     let module = protocol.to_ascii_lowercase();
     let contained = Regex::new(
@@ -427,16 +430,24 @@ pub fn generate(
     }
     writeln!(out, "}}")?;
     // The identifier of an IE whose octets may carry a type, the name that ASN.1 gives
-    // that type, and the type.
+    // that type, and the type; then, after `of`, the protocol of a type of another one,
+    // the identifier and the name that that protocol gives the type.
+    let id_of = |ie: &str| {
+        let mut ies = registry.ies.iter();
+        let found = ies.find(|(_, known)| known.name == ie);
+        found
+            .map(|(id, _)| *id)
+            .ok_or_else(|| anyhow!("{ie} names no IE"))
+    };
     writeln!(out, "oxirush_aper::__carried! {{")?;
     for (ie, name) in carried {
-        let mut ies = registry.ies.iter();
-        let (id, _) = ies
-            .find(|(_, known)| known.name == *ie)
-            .ok_or_else(|| anyhow!("{ie} names no IE"))?;
+        let id = id_of(ie)?;
         let ty = registry.resolve(name);
         let ty = ty.ok_or_else(|| anyhow!("{name} names no type"))?;
         writeln!(out, "    {id} {name:?} {ty};")?;
+    }
+    for (ie, other, name) in foreign {
+        writeln!(out, "    of {other:?} {} {name:?};", id_of(ie)?)?;
     }
     writeln!(out, "}}")?;
     generate_readable(generated, &mut out)?;

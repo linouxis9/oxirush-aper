@@ -59,7 +59,8 @@ jobs:
           targets: thumbv7em-none-eabihf
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --lib --target thumbv7em-none-eabihf
-      - run: cargo build --lib --target thumbv7em-none-eabihf --all-features
+      # Every feature but `std`, the register of protocols, a lock of the standard library.
+      - run: cargo build --lib --target thumbv7em-none-eabihf --features inspect
 
   clippy:
     name: Clippy

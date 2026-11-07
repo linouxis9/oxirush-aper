@@ -29,7 +29,7 @@ use oxirush_utils::tree::{self, Edit, Family, Key, Listed, Next, Place, Root, St
 use oxirush_utils::tree::{Map, Value};
 
 use super::views::LOSSY;
-use super::{Kind, Member, Protocol, Sent, Shape, same_name, type_name};
+use super::{Kind, Member, Protocol, Sent, Shape, foreign, registered, same_name, type_name};
 use crate::{Error, ErrorKind};
 
 /// The member of a view that holds the message of the PDU.
@@ -210,7 +210,7 @@ impl Protocol {
         let Some(id) = id else {
             return Shape::Unknown;
         };
-        if self.carried.iter().any(|(carrier, ..)| *carrier == id) {
+        if self.carries(id) {
             return Shape::Carrier(id);
         }
         // An IE that has the type which the type that it extends gives it.
@@ -258,7 +258,8 @@ impl Protocol {
             ]
         };
         Some(match shape {
-            Shape::Unknown | Shape::Undecoded => return None,
+            // The members of a type of another protocol are those that its tables give.
+            Shape::Unknown | Shape::Undecoded | Shape::Foreign(..) => return None,
             Shape::Pdu(message) => vec![
                 ("procedure_code", Shape::Plain, false),
                 ("direction", Shape::Plain, false),
@@ -318,12 +319,16 @@ impl Protocol {
                     (LOSSY, Shape::Plain, true),
                 ]
             }
-            // Each type that the octets may carry, by the name that ASN.1 gives it.
+            // Each type that the octets may carry, by the name that ASN.1 gives it: one
+            // of this protocol, or one of another, which its tables read.
             Shape::Carrier(id) => {
                 let carried = self.carried.iter().filter(|(carrier, ..)| *carrier == id);
-                carried
-                    .map(|(_, name, ty)| (*name, Shape::Transfer(type_name(ty)), true))
-                    .collect()
+                let own =
+                    carried.map(|(_, name, ty)| (*name, Shape::Transfer(type_name(ty)), true));
+                let foreign = self.foreign.iter().filter(|(carrier, ..)| *carrier == id);
+                let other = foreign
+                    .map(|(_, name, protocol)| (*name, Shape::Foreign(name, protocol), true));
+                own.chain(other).collect()
             }
             Shape::Plain | Shape::Null | Shape::List(_) | Shape::Ies(_) | Shape::Extensions(_) => {
                 Vec::new()
@@ -713,11 +718,26 @@ fn received_member(entry: &Map) -> Option<&'static str> {
 
 // ── The family of the views ─────────────────────────────────────────────────
 
+/// The protocol whose tables read a place, by its name, where it is another than the one
+/// of the view: in the type of another protocol that the octets of an IE carry, which is
+/// registered.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Owner(Option<&'static str>);
+
+impl Owner {
+    /// The protocol of a place of a view of `protocol`.
+    fn or(self, protocol: &'static Protocol) -> &'static Protocol {
+        self.0.and_then(registered).unwrap_or(protocol)
+    }
+}
+
 /// What the family knows of a place of a view.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct At {
     /// What the value there is, as its type has it.
     shape: Shape,
+    /// The protocol whose tables have the type, where it is not that of the view.
+    owner: Owner,
     /// Whether the IEs on the way are selected by their names: the path starts with the
     /// root.
     named: bool,
@@ -737,6 +757,7 @@ impl At {
     fn of(self, shape: Shape) -> Self {
         Self {
             shape,
+            owner: self.owner,
             named: self.named,
             taken: self.taken.saturating_add(1),
             ..Self::default()
@@ -748,10 +769,26 @@ impl At {
     fn inside(self, shape: Shape) -> Self {
         Self {
             shape,
+            owner: self.owner,
             named: self.named,
             taken: self.taken,
             ..Self::default()
         }
+    }
+
+    /// The place itself, read by the tables of another protocol where the octets carry
+    /// a type of it: the transfer of that type, or why that protocol cannot read it.
+    fn owned(self) -> Result<Self, tree::Error> {
+        let Shape::Foreign(name, protocol) = self.shape else {
+            return Ok(self);
+        };
+        let other =
+            foreign(name, protocol).map_err(|error| refusal(error.kind(), error.reason()))?;
+        Ok(Self {
+            shape: other.carried_shape(name),
+            owner: Owner(Some(other.name)),
+            ..self
+        })
     }
 }
 
@@ -826,7 +863,7 @@ impl Family for Views<'_> {
     }
 
     fn null_is_value(&self, at: &At) -> bool {
-        self.protocol.resolved(at.shape) == Shape::Null
+        at.owner.or(self.protocol).resolved(at.shape) == Shape::Null
     }
 
     fn edited(&self, tree: &mut Value, keys: &[Key], at: &At, edit: Edit) {
@@ -894,21 +931,22 @@ impl Views<'_> {
         part: &str,
         next: &mut Next<'v, At>,
     ) -> Result<(), tree::Error> {
-        let at = *place.shape();
+        let at = place.shape().owned()?;
+        let protocol = at.owner.or(self.protocol);
         // An identifier that is no number is no path, wherever it is.
         if let Some(id) = part.strip_prefix("@id=")
             && id.parse::<u16>().is_err()
         {
             return Err(not_an_id(part));
         }
-        if at.named && at.taken == 2 && !self.protocol.selects_ies(part) {
-            let nearest = self.protocol.nearest_ie(part);
+        if at.named && at.taken == 2 && !protocol.selects_ies(part) {
+            let nearest = protocol.nearest_ie(part);
             return Err(refusal(
                 ErrorKind::UnknownIe,
-                format!("{part:?} is not an IE of {}{nearest}", self.protocol.name),
+                format!("{part:?} is not an IE of {}{nearest}", protocol.name),
             ));
         }
-        let shape = self.protocol.resolved(at.shape);
+        let shape = protocol.resolved(at.shape);
         match place.value() {
             Some(whole @ Value::Object(entry)) => {
                 self.object(place, whole, entry, at, shape, part, next)?
@@ -938,7 +976,7 @@ impl Views<'_> {
         part: &str,
         next: &mut Next<'v, At>,
     ) -> Result<(), tree::Error> {
-        let protocol = self.protocol;
+        let protocol = at.owner.or(self.protocol);
         // A transfer that is written as its decoded value itself is that value, but for
         // its octets.
         if let Shape::Transfer(contained) = shape
@@ -1124,7 +1162,7 @@ impl Views<'_> {
         part: &str,
         next: &mut Next<'v, At>,
     ) -> Result<(), tree::Error> {
-        let protocol = self.protocol;
+        let protocol = at.owner.or(self.protocol);
         let of = at.of(element(shape));
         if part == "*" {
             for (index, entry) in entries.iter().enumerate() {
@@ -1171,7 +1209,7 @@ impl Views<'_> {
         part: &str,
         next: &mut Next<'_, At>,
     ) -> Result<(), tree::Error> {
-        let protocol = self.protocol;
+        let protocol = at.owner.or(self.protocol);
         let named = at.named;
         match shape {
             Shape::Unknown | Shape::Undecoded => next.absent_once(part, at.of(Shape::Unknown)),
@@ -1267,7 +1305,7 @@ impl Views<'_> {
         part: &str,
         next: &mut Next<'v, At>,
     ) -> Result<(), tree::Error> {
-        let protocol = self.protocol;
+        let protocol = at.owner.or(self.protocol);
         match shape {
             // An edit changes nothing in what did not decode.
             Shape::Undecoded if next.edit().is_some() => {}
@@ -1486,7 +1524,7 @@ pub fn enumerated_at(
     // The value is of one type, wherever the path finds it.
     let mut names = None;
     for place in places {
-        let mut shape = place.shape().shape;
+        let (mut shape, protocol) = (place.shape().shape, place.shape().owner.or(protocol));
         // A type that is another one names it a few times at most.
         for _ in 0..16 {
             match shape {
@@ -1531,6 +1569,15 @@ enum Listing {
 /// The paths of the views of a protocol.
 struct Paths(&'static Protocol);
 
+/// What the listing knows of a place, and the protocol whose tables name its IEs where
+/// it is another than the one of the view: in the type of another protocol that the
+/// octets of an IE carry.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Spot {
+    listing: Listing,
+    owner: Owner,
+}
+
 impl Paths {
     fn of(value: Option<&Value>) -> Listing {
         match value.and_then(Value::as_object) {
@@ -1546,36 +1593,53 @@ impl Paths {
 }
 
 impl Family for Paths {
-    type Shape = Listing;
+    type Shape = Spot;
 
     fn root(&self) -> Root<'_> {
         Root::new(self.0.root, &[MESSAGE, IES], false)
     }
 
-    fn start(&self, _tree: &Value, _rooted: bool) -> Listing {
-        Listing::View
-    }
-
-    fn member(&self, shape: &Listing, name: &str, value: Option<&Value>) -> Listing {
-        match (shape, name) {
-            (Listing::View, MESSAGE) => Listing::Message,
-            (_, IES) if value.is_some_and(Value::is_array) => Listing::Ies,
-            _ => Self::of(value),
+    fn start(&self, _tree: &Value, _rooted: bool) -> Spot {
+        Spot {
+            listing: Listing::View,
+            owner: Owner::default(),
         }
     }
 
-    fn entry(&self, _shape: &Listing, value: Option<&Value>) -> Listing {
-        Self::of(value)
+    fn member(&self, shape: &Spot, name: &str, value: Option<&Value>) -> Spot {
+        let listing = match (shape.listing, name) {
+            (Listing::View, MESSAGE) => Listing::Message,
+            (_, IES) if value.is_some_and(Value::is_array) => Listing::Ies,
+            _ => Self::of(value),
+        };
+        // The octets of an IE opened as a type of another protocol, whose tables name
+        // the IEs in it.
+        let protocol = shape.owner.or(self.0);
+        let other = protocol
+            .foreign_type(name)
+            .filter(|_| value.is_some_and(Value::is_object));
+        let other = other.and_then(|(name, protocol)| foreign(name, protocol).ok());
+        Spot {
+            listing,
+            owner: other.map_or(shape.owner, |other| Owner(Some(other.name))),
+        }
+    }
+
+    fn entry(&self, shape: &Spot, value: Option<&Value>) -> Spot {
+        Spot {
+            listing: Self::of(value),
+            owner: shape.owner,
+        }
     }
 
     /// A view has `null` for the alternatives of the type NULL alone: what is absent is
     /// left out.
-    fn null_is_value(&self, _shape: &Listing) -> bool {
+    fn null_is_value(&self, _shape: &Spot) -> bool {
         true
     }
 
-    fn listed(&self, shape: &Listing, name: &str) -> Listed {
-        match (shape, name) {
+    fn listed(&self, shape: &Spot, name: &str) -> Listed {
+        match (shape.listing, name) {
             (Listing::Octets, "_raw_value" | "_raw_transfer") => Listed::As("octets"),
             (_, name) if !shown(name) => Listed::Hidden,
             // The IEs of a message go by name: under the root for the message of the
@@ -1586,13 +1650,14 @@ impl Family for Paths {
         }
     }
 
-    fn entry_names(&self, shape: &Listing, list: &[Value]) -> Option<Vec<Option<String>>> {
-        if *shape != Listing::Ies {
+    fn entry_names(&self, shape: &Spot, list: &[Value]) -> Option<Vec<Option<String>>> {
+        if shape.listing != Listing::Ies {
             return None;
         }
+        let protocol = shape.owner.or(self.0);
         // The list is read once, whatever its length: the identifiers are counted for
         // all of its IEs, not for each.
-        let ids: Vec<Option<u64>> = list.iter().map(|ie| self.0.entry_id(ie)).collect();
+        let ids: Vec<Option<u64>> = list.iter().map(|ie| protocol.entry_id(ie)).collect();
         let mut times: BTreeMap<u64, usize> = BTreeMap::new();
         for id in ids.iter().flatten() {
             *times.entry(*id).or_default() += 1;
@@ -1600,7 +1665,7 @@ impl Family for Paths {
         let name = |id: &Option<u64>| {
             let id = (*id)?;
             let known = u16::try_from(id).ok().filter(|_| times[&id] == 1)?;
-            self.0.ie_name_of(known).map(str::to_string)
+            protocol.ie_name_of(known).map(str::to_string)
         };
         Some(ids.iter().map(name).collect())
     }
@@ -1803,6 +1868,11 @@ impl Protocol {
     /// of it is moved.
     pub(crate) fn by_name(&self, value: Value, shape: Shape) -> Result<Value, Error> {
         let shape = self.resolved(shape);
+        // A type of another protocol, as its tables show it.
+        if let Shape::Foreign(name, protocol) = shape {
+            let other = foreign(name, protocol)?;
+            return other.by_name(value, other.carried_shape(name));
+        }
         match value {
             Value::Object(mut entry) => match shape {
                 Shape::Transfer(_) => {
@@ -1900,6 +1970,11 @@ impl Protocol {
             ));
         }
         let shape = self.resolved(shape);
+        // A type of another protocol, as its tables write it.
+        if let Shape::Foreign(name, protocol) = shape {
+            let other = foreign(name, protocol)?;
+            return other.written(value, other.carried_shape(name), depth);
+        }
         match value {
             Value::Object(entry) => match shape {
                 Shape::Transfer(_) => {
