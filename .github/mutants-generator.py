@@ -13,16 +13,20 @@ and the program exits with 1 when there is one.
     python3 oxirush-aper/.github/mutants-generator.py MUTANTS.json SHARD SHARDS
 
 MUTANTS.json is what `cargo mutants --list --json --diff` writes in generator/; the
-shard SHARD of SHARDS takes every SHARDS-th mutant from the SHARD-th.
+shard SHARD of SHARDS takes every SHARDS-th mutant from the SHARD-th. The `exclude_re` of
+generator/.cargo/mutants.toml is applied here to every mutant too: cargo-mutants 27.1.0
+lists a mutant that deletes a field of a struct expression whatever it says.
 """
 
 import hashlib
 import json
 import os
 import pathlib
+import re
 import signal
 import subprocess
 import sys
+import tomllib
 
 APER = pathlib.Path(__file__).resolve().parent.parent
 PROTOCOLS = ["ngap", "s1ap"]
@@ -116,7 +120,11 @@ def main():
         sys.exit(f"the generator does not write the bindings unchanged: {baseline}")
     counts = {"caught": 0, "missed": 0, "unviable": 0}
     missed = []
-    for mutant in json.load(open(mutants))[shard::shards]:
+    with open(APER / "generator" / ".cargo" / "mutants.toml", "rb") as config:
+        excluded = [re.compile(pattern) for pattern in tomllib.load(config).get("exclude_re", [])]
+    listed = json.load(open(mutants))
+    listed = [mutant for mutant in listed if not any(p.search(mutant["name"]) for p in excluded)]
+    for mutant in listed[shard::shards]:
         diff = mutant["diff"].encode()
         file = APER / "generator" / mutant["file"]
         subprocess.run(["patch", "--quiet", str(file)], input=diff, check=True)
