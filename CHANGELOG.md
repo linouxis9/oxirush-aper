@@ -14,6 +14,21 @@ All notable changes to `oxirush-aper` are recorded here.
   `Message::DIRECTION`, the object sets, `Deviation::UnknownProcedure` and the
   errors of a wrong message have it. `Display` and `name()` give
   `InitiatingMessage` and the two others, which `named()` reads.
+- `ObjectSet` is public: the direction, the procedure code, the name and the
+  criticality of the procedure of a message, and each IE of its object set with
+  its criticality and its `Presence`, which, as `Criticality`, the bindings take
+  for theirs. The marker type of a protocol finds them: `object_sets()`,
+  `object_set(direction, code)` and `object_set_named(name)`, beside
+  `ie_names()` and `item_criticality(id)`.
+- `build_ngap!` and `build_s1ap!` take the message alone, and the criticality
+  of the PDU before it where it is not that of its procedure:
+  `build_ngap!(IGNORE NGSetupRequest, ...)`. A variant of the kind of a PDU is
+  the name of the type of its message, as `NGSetupFailure`.
+- `set_ie::<T>(value)` of a message and of a transfer changes an IE, and
+  `Ie::field(criticality, value)` and `Ie::field_of::<M>(value)` build one.
+- A field of the macro that extracts IEs takes the one value that the type of an
+  IE is a name for by `From`, which the bindings implement, as
+  `From<AMFUENGAPID> for u64`.
 - oxirush-utils 0.2.0, whose trees read a member of a `SEQUENCE` by its name.
 - The generator writes the codec of each member of a `SEQUENCE` in one line:
   the bindings of NGAP are 4794 lines shorter, those of S1AP 2106.
@@ -28,6 +43,9 @@ All notable changes to `oxirush-aper` are recorded here.
   a build with debug assertions made in `check()`.
 - `check::deviations`, `check::structure_deviations` and `check::Wrong` are
   hidden: only the checks of a PDU call them.
+- The macros `__with_ie_mut!` and `__build_ie!` (`with_ngap_ie_mut!` and
+  `build_ngap_ie!` of the protocol crates), the module `messages` of a
+  registry, `protocol::__Field`, and `Protocol::__procedure_criticality`.
 
 ### Migration from 0.1
 
@@ -38,6 +56,18 @@ All notable changes to `oxirush-aper` are recorded here.
 | `pdu.direction() == "InitiatingMessage"` | `pdu.direction() == Direction::Initiating` |
 | `Error::wrong_message(expected, held, "SuccessfulOutcome", code)` | `Error::wrong_message(expected, held, Direction::Successful, code)` |
 | `impl Diagnostics { type Criticality = ...; }` | no such type: the criticality is `Criticality` |
+| `build_ngap!(InitiatingMessage, NGSetup, NGSetupRequest, ...)` | `build_ngap!(NGSetupRequest, ...)` |
+| `build_ngap!(SuccessfulOutcome, NGSetup, IGNORE, NGSetupResponse, ...)` | `build_ngap!(IGNORE NGSetupResponse, ...)` |
+| `NgapPduKind::Unsuccessful_NGSetup` | `NgapPduKind::NGSetupFailure` |
+| `with_ngap_ie_mut!(m, M, AMF_UE_NGAP_ID(id) = 9u64)` | `m.set_ie::<ie::AMF_UE_NGAP_ID>(9u64)` |
+| `build_ngap_ie!(REJECT Item(v))` | `ie::Item::field(Criticality::Reject, v)` (trait `Ie` in scope) |
+| `build_ngap_ie!(Msg, Cause(v))` | `ie::Cause::field_of::<Msg>(v)` |
+| `inspect::message_ies(name)`, `message_ie_criticalities(name)` | `Ngap::object_set_named(name)?.ies` |
+| `inspect::message_criticality(name)` | `Ngap::object_set_named(name)?.criticality` |
+| `inspect::message_named(name)` | `Ngap::object_set_named(name)`, its `direction` and `procedure_code` |
+| `inspect::message_names()` | `Ngap::object_sets()` |
+| `inspect::message_name(&pdu)` | `Ngap::object_set(pdu.direction(), pdu.procedure_code())?.name` |
+| `inspect::ie_names()`, `inspect::item_criticality(id)` | `Ngap::ie_names()`, `Ngap::item_criticality(id)` (a `Criticality`) |
 
 ### Added
 
