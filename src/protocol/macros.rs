@@ -21,7 +21,7 @@
 macro_rules! __procedures {
     (protocol $protocol:ident $protocol_name:literal, bindings $bindings:ident, pdu $pdu:ident,
         kind $kind:ident, hooks $hooks:meta;
-    $($code:literal $procedure:ident $($criticality:ident)? {
+    $($code:literal $procedure:ident $criticality:ident {
         $(InitiatingMessage $initiating:ident $initiating_name:literal $initiating_type:ty
             $([$($initiating_ie:literal $initiating_criticality:ident
                 $initiating_presence:ident),*])?;)?
@@ -88,16 +88,6 @@ macro_rules! __procedures {
             $crate::__message!(crate::$protocol, $bindings, Unsuccessful, $code,
                 $unsuccessful_type $([$($unsuccessful_ie),*])?);
         )?)*
-
-        /// The name that ASN.1 gives the message of a direction and a procedure code.
-        pub(crate) fn message_name(direction: $crate::Direction, code: u8) -> Option<&'static str> {
-            match (direction, code) {
-                $($(($crate::Direction::Initiating, $code) => Some($initiating_name),)?)*
-                $($(($crate::Direction::Successful, $code) => Some($successful_name),)?)*
-                $($(($crate::Direction::Unsuccessful, $code) => Some($unsuccessful_name),)?)*
-                _ => None,
-            }
-        }
 
         impl crate::$bindings::$pdu<'_> {
             /// Return the ASN.1 procedure name.
@@ -172,24 +162,15 @@ macro_rules! __procedures {
             }
         }
 
-        /// The criticality that ASN.1 assigns to the procedure of a code.
-        pub(crate) const fn procedure_criticality(
-            code: u8,
-        ) -> Option<$crate::Criticality> {
-            match code {
-                $($($code => Some($crate::__criticality!($criticality)),)?)*
-                _ => None,
-            }
-        }
-
         /// The object set of each message: the direction and the procedure code of its
-        /// PDU, the name that ASN.1 gives it, and the IEs that its container of protocol
-        /// IEs can have, in the order of the set.
+        /// PDU, the name that ASN.1 gives it, the criticality of its procedure, and the IEs
+        /// that its container of protocol IEs can have, in the order of the set.
         pub(crate) const OBJECT_SETS: &[$crate::protocol::ObjectSet] = &[
             $($($crate::protocol::ObjectSet {
                 direction: $crate::Direction::Initiating,
                 procedure_code: $code,
                 name: $initiating_name,
+                criticality: $crate::__criticality!($criticality),
                 ies: $crate::__object_set!($bindings $([$(
                     $initiating_ie $initiating_criticality $initiating_presence
                 ),*])?),
@@ -198,6 +179,7 @@ macro_rules! __procedures {
                 direction: $crate::Direction::Successful,
                 procedure_code: $code,
                 name: $successful_name,
+                criticality: $crate::__criticality!($criticality),
                 ies: $crate::__object_set!($bindings $([$(
                     $successful_ie $successful_criticality $successful_presence
                 ),*])?),
@@ -206,6 +188,7 @@ macro_rules! __procedures {
                 direction: $crate::Direction::Unsuccessful,
                 procedure_code: $code,
                 name: $unsuccessful_name,
+                criticality: $crate::__criticality!($criticality),
                 ies: $crate::__object_set!($bindings $([$(
                     $unsuccessful_ie $unsuccessful_criticality $unsuccessful_presence
                 ),*])?),
@@ -216,49 +199,25 @@ macro_rules! __procedures {
         pub(crate) const OBJECT_SET_INDEX: [[u16; 256]; 3] =
             $crate::protocol::__object_set_index(OBJECT_SETS);
 
-        /// The messages: the direction, the procedure code, the name that ASN.1 gives it
-        /// and the type of each, the IEs of its object set, each with its identifier and
-        /// whether its presence is mandatory, and the path of its type.
+        /// The messages, as the inspection reads them: the object set of each, the
+        /// functions of its type and the path of its type, in the order of the sets.
         #[cfg(feature = "inspect")]
-        #[allow(clippy::type_complexity)]
-        pub(crate) const MESSAGES: &[(
-            $crate::Direction,
-            u8,
-            &str,
-            fn() -> $crate::inspect::Typed,
-            &[(u16, bool)],
-            &str,
-        )] = &[
-            $($(($crate::Direction::Initiating, $code, $initiating_name,
+        pub(crate) const MESSAGES: &[$crate::inspect::Message] = &[
+            $($((
+                $crate::__set_of!(Initiating, $code),
                 || $crate::__typed!($initiating_type),
-                &[$($(($initiating_ie, $crate::__presence!($initiating_presence))),*)?],
-                stringify!($initiating_type)),)?)*
-            $($(($crate::Direction::Successful, $code, $successful_name,
+                stringify!($initiating_type),
+            ),)?)*
+            $($((
+                $crate::__set_of!(Successful, $code),
                 || $crate::__typed!($successful_type),
-                &[$($(($successful_ie, $crate::__presence!($successful_presence))),*)?],
-                stringify!($successful_type)),)?)*
-            $($(($crate::Direction::Unsuccessful, $code, $unsuccessful_name,
+                stringify!($successful_type),
+            ),)?)*
+            $($((
+                $crate::__set_of!(Unsuccessful, $code),
                 || $crate::__typed!($unsuccessful_type),
-                &[$($(($unsuccessful_ie, $crate::__presence!($unsuccessful_presence))),*)?],
-                stringify!($unsuccessful_type)),)?)*
-        ];
-
-        /// The criticality that ASN.1 assigns to each procedure, by its code.
-        #[cfg(feature = "inspect")]
-        pub(crate) const PROCEDURE_CRITICALITIES: &[(u8, &str)] =
-            &[$($(($code, stringify!($criticality)),)?)*];
-
-        /// The criticality that ASN.1 assigns to the IEs of each message: the name that
-        /// ASN.1 gives the message, then each IE of its object set with its identifier and
-        /// its criticality.
-        #[cfg(feature = "inspect")]
-        pub(crate) const MESSAGE_IE_CRITICALITIES: &[(&str, &[(u16, &str)])] = &[
-            $($(($initiating_name,
-                &[$($(($initiating_ie, stringify!($initiating_criticality))),*)?]),)?)*
-            $($(($successful_name,
-                &[$($(($successful_ie, stringify!($successful_criticality))),*)?]),)?)*
-            $($(($unsuccessful_name,
-                &[$($(($unsuccessful_ie, stringify!($unsuccessful_criticality))),*)?]),)?)*
+                stringify!($unsuccessful_type),
+            ),)?)*
         ];
     };
 }
@@ -306,12 +265,8 @@ macro_rules! __message {
         impl<'a> $crate::protocol::Message<'a> for $type {
             const DIRECTION: $crate::Direction = $crate::Direction::$direction;
             const PROCEDURE_CODE: u8 = $code;
-            // The class of an elementary procedure has `ignore` by default.
             const CRITICALITY: $crate::Criticality =
-                match crate::registry::procedure_criticality($code) {
-                    Some(criticality) => criticality,
-                    None => $crate::Criticality::Ignore,
-                };
+                $crate::__set_of!($direction, $code).criticality;
             fn __decode_owned(octets: &[u8]) -> Result<Self, $crate::Error> {
                 // The same type, of the octets that are read here.
                 fn read<'a>(octets: &'a [u8]) -> Result<$type, $crate::Error> {
@@ -410,7 +365,7 @@ macro_rules! __transfer_sets {
                 }
             }
             impl<'a> $crate::protocol::Transfer<'a> for crate::$bindings::$type<'a> {
-                const __OBJECT_SET: &'static [(u16, $crate::Criticality, bool)] = &[$((
+                const __OBJECT_SET: &'static [(u16, $crate::Criticality, $crate::Presence)] = &[$((
                     $ie,
                     $crate::__criticality!($criticality),
                     $crate::__presence!($presence),
@@ -452,22 +407,18 @@ macro_rules! __transfer_sets {
         )*
 
         /// The transfers of protocol IEs: the name that ASN.1 gives each, the name of its
-        /// type in the bindings, the IEs of its object set, each with its identifier and
-        /// whether its presence is mandatory, and the criticality that the set assigns
-        /// each, in the order of the set.
+        /// type in the bindings, and the IEs of its object set.
         #[cfg(feature = "inspect")]
-        #[allow(clippy::type_complexity)]
-        pub(crate) const TRANSFERS: &[(&str, &str, &[(u16, bool)], &[(u16, &str)])] = &[$((
+        pub(crate) const TRANSFERS: &[$crate::inspect::Transfer] = &[$((
             $name,
             stringify!($type),
-            &[$(($ie, $crate::__presence!($presence))),*],
-            &[$(($ie, stringify!($criticality))),*],
+            <crate::$bindings::$type<'static> as $crate::protocol::Transfer<'static>>::__OBJECT_SET,
         ),)*];
     };
 }
 
 /// The IEs of an object set, each as its identifier, the criticality that the set
-/// assigns it and whether its presence is mandatory: none for a message that has no
+/// assigns it and its presence: none for a message that has no
 /// container of protocol IEs.
 #[doc(hidden)]
 #[macro_export]
@@ -491,13 +442,27 @@ macro_rules! __object_set {
 #[macro_export]
 macro_rules! __presence {
     (mandatory) => {
-        true
+        $crate::Presence::Mandatory
     };
     (optional) => {
-        false
+        $crate::Presence::Optional
     };
     (conditional) => {
-        false
+        $crate::Presence::Conditional
+    };
+}
+
+/// The object set of the message of a direction and a procedure code, in the registry of
+/// the protocol whose crate calls it: a constant.
+#[doc(hidden)]
+#[macro_export]
+// The registry of a protocol calls it in its crate, whose items `crate::` names.
+#[allow(clippy::crate_in_macro_def)]
+macro_rules! __set_of {
+    ($direction:ident, $code:literal) => {
+        &crate::registry::OBJECT_SETS[crate::registry::OBJECT_SET_INDEX
+            [$crate::Direction::$direction as usize][$code]
+            as usize]
     };
 }
 
@@ -587,9 +552,8 @@ macro_rules! __ies {
 
         /// The criticality that ASN.1 assigns to each IE that a value holds alone, in a
         /// single container, when its object sets give it one.
-        #[cfg(feature = "inspect")]
-        pub(crate) const ITEM_CRITICALITIES: &[(u16, &str)] =
-            &[$($(($id, stringify!($item)),)?)*];
+        pub(crate) const ITEM_CRITICALITIES: &[(u16, $crate::Criticality)] =
+            &[$($(($id, $crate::__criticality!($item)),)?)*];
 
         /// The path of the type of each IE that has one type, and that of the type that
         /// its octets contain.
@@ -698,6 +662,46 @@ macro_rules! __protocol {
         )]
         pub type Deviation = $crate::check::Deviation<$protocol>;
 
+        impl $protocol {
+            /// The object set of each message of the protocol: its direction, its procedure
+            /// code, its name, the criticality of its procedure and its IEs, each with its
+            /// criticality and its presence.
+            pub fn object_sets() -> &'static [$crate::ObjectSet] {
+                crate::registry::OBJECT_SETS
+            }
+
+            /// The object set of the message of a direction and a procedure code; `None`
+            /// where the specification has no such message.
+            pub fn object_set(
+                direction: $crate::Direction,
+                procedure_code: u8,
+            ) -> Option<&'static $crate::ObjectSet> {
+                $crate::protocol::object_set::<$protocol>(direction, procedure_code)
+            }
+
+            /// The object set of the message of a name: its letters and its digits,
+            /// whatever their case and whatever is between them.
+            pub fn object_set_named(name: &str) -> Option<&'static $crate::ObjectSet> {
+                $crate::protocol::object_set_named::<$protocol>(name)
+            }
+
+            /// The identifier of each IE with the name that ASN.1 gives it after `id-`, in
+            /// the order of the identifiers.
+            pub fn ie_names() -> &'static [(u16, &'static str)] {
+                crate::registry::IE_NAMES
+            }
+
+            /// The criticality that ASN.1 assigns to the IE `id` where a value holds it
+            /// alone, in a single container: an item of a list of single containers, or
+            /// the alternative that extends a CHOICE. `None` for an IE that no object set
+            /// of a single container has, as the IEs of a message, and for one that two of
+            /// these sets give two criticalities.
+            pub fn item_criticality(id: u16) -> Option<$crate::Criticality> {
+                let mut items = crate::registry::ITEM_CRITICALITIES.iter();
+                items.find(|(known, _)| *known == id).map(|(_, criticality)| *criticality)
+            }
+        }
+
         impl $crate::protocol::Protocol for $protocol {
             const NAME: &'static str = $protocol_name;
             type Pdu<'a> = crate::$bindings::$pdu<'a>;
@@ -713,10 +717,6 @@ macro_rules! __protocol {
                 octets: &[u8],
             ) -> Option<Result<(Option<$crate::Error>, $crate::Faults), $crate::Error>> {
                 crate::registry::decodes(id, octets)
-            }
-            #[inline]
-            fn __procedure_criticality(code: u8) -> Option<$crate::Criticality> {
-                crate::registry::procedure_criticality(code)
             }
         }
 

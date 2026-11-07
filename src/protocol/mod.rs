@@ -143,6 +143,78 @@ impl crate::json::Tree for Criticality {
 #[cfg(feature = "inspect")]
 oxirush_utils::impl_serde!(Criticality);
 
+/// Whether an IE of an object set is always there, as the ASN.1 of the application
+/// protocols of 3GPP has it (`Presence ::= ENUMERATED { optional, conditional, mandatory
+/// }`): a receiver checks the mandatory IEs alone, since a condition is prose. The
+/// bindings of each protocol take this type for theirs. Its `Display`, and the trees,
+/// name it as ASN.1 does, as `mandatory`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Presence {
+    /// The IE may be there.
+    Optional,
+    /// The IE is there under a condition that the specification states.
+    Conditional,
+    /// The IE is always there.
+    Mandatory,
+}
+
+impl Presence {
+    /// The three, in the order of their indexes in PER.
+    pub const ALL: [Self; 3] = [Self::Optional, Self::Conditional, Self::Mandatory];
+    /// The names that ASN.1 gives them, in the same order.
+    pub const NAMES: [&'static str; 3] = ["optional", "conditional", "mandatory"];
+
+    /// The name that ASN.1 gives it: `optional`, `conditional` or `mandatory`.
+    pub const fn name(self) -> &'static str {
+        Self::NAMES[self as usize]
+    }
+}
+
+impl core::fmt::Display for Presence {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+impl AsnType for Presence {
+    const NAME: &'static str = "Presence";
+}
+
+impl<'a> Decode<'a> for Presence {
+    #[inline]
+    fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+        Ok(Self::ALL[reader.enumerated(3, 0, false)? as usize])
+    }
+}
+
+impl Encode for Presence {
+    #[inline]
+    fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+        writer.index(*self as u64, 3, false);
+        Ok(())
+    }
+}
+
+/// The tree of a presence is its name, as ASN.1 gives it.
+#[cfg(feature = "inspect")]
+impl crate::json::Tree for Presence {
+    const NAME: &'static str = "Presence";
+
+    fn to_tree(&self) -> crate::json::Value {
+        crate::json::text(self.name())
+    }
+
+    fn from_tree(
+        value: &crate::json::Value,
+        reading: &mut crate::json::Reading,
+    ) -> Result<Self, crate::json::Refused> {
+        Ok(Self::ALL[reading.named(value, &Self::NAMES)?])
+    }
+}
+
+#[cfg(feature = "inspect")]
+oxirush_utils::impl_serde!(Presence);
+
 /// The direction of a PDU, the alternative of the PDU that holds a message: the
 /// initiating message of a procedure, or its successful or unsuccessful outcome. Its
 /// `Display`, and the trees, name it as ASN.1 does, as `InitiatingMessage`.
@@ -216,18 +288,17 @@ pub trait Protocol: Diagnostics + Copy + core::fmt::Debug + 'static {
     #[doc(hidden)]
     #[allow(clippy::type_complexity)]
     fn __decodes(id: u16, octets: &[u8]) -> Option<Result<(Option<Error>, Faults), Error>>;
-    /// The criticality that ASN.1 assigns to the procedure of a code.
-    #[doc(hidden)]
-    fn __procedure_criticality(code: u8) -> Option<Criticality>;
 }
 
-/// What the registry has of a message: the direction and the procedure code of its PDU,
-/// the name that ASN.1 gives it, and the IEs of its object set in the order of the set,
-/// each as its identifier, the criticality that the set assigns it and whether its
-/// presence is mandatory. A message that has no container of protocol IEs, as a private
-/// message, has no object set.
-#[doc(hidden)]
-#[derive(Debug)]
+/// A message of a protocol, as its ASN.1 has it: the direction and the procedure code of
+/// its PDU, the name that ASN.1 gives it, the criticality of its procedure, which its PDU
+/// has, and the IEs of its object set in the order of the set, each as its identifier,
+/// the criticality that the set assigns it and its presence. A message that has no
+/// container of protocol IEs, as a private message, has no object set.
+///
+/// The marker type of each protocol finds them: `Ngap::object_set(Direction::Initiating,
+/// 42)` of oxirush-ngap is the object set of a UE CONTEXT RELEASE REQUEST.
+#[derive(Debug, PartialEq, Eq)]
 pub struct ObjectSet {
     /// The direction of its PDU.
     pub direction: Direction,
@@ -235,8 +306,10 @@ pub struct ObjectSet {
     pub procedure_code: u8,
     /// The name that ASN.1 gives the message.
     pub name: &'static str,
+    /// The criticality that ASN.1 assigns to its procedure.
+    pub criticality: Criticality,
     /// The IEs of its object set.
-    pub ies: Option<&'static [(u16, Criticality, bool)]>,
+    pub ies: Option<&'static [(u16, Criticality, Presence)]>,
 }
 
 /// The object set of the message of a direction and a procedure code, when the
@@ -245,6 +318,34 @@ pub struct ObjectSet {
 pub fn object_set<P: Protocol>(direction: Direction, code: u8) -> Option<&'static ObjectSet> {
     let at = P::__OBJECT_SET_INDEX[direction as usize][usize::from(code)];
     P::__OBJECT_SETS.get(usize::from(at))
+}
+
+/// The object set of the message of a name: its letters and its digits, whatever their
+/// case and whatever is between them, as `ue context release request`.
+#[doc(hidden)]
+pub fn object_set_named<P: Protocol>(name: &str) -> Option<&'static ObjectSet> {
+    let letters = |name: &'_ str| {
+        let letters = name.bytes().filter(u8::is_ascii_alphanumeric);
+        letters
+            .map(|letter| letter.to_ascii_lowercase())
+            .collect::<alloc::vec::Vec<_>>()
+    };
+    let name = letters(name);
+    P::__OBJECT_SETS
+        .iter()
+        .find(|set| letters(set.name) == name)
+}
+
+/// The criticality that ASN.1 assigns to the procedure of a message, as the registry of
+/// a protocol has it: its PDU has it when the macros are given no other.
+#[doc(hidden)]
+pub const fn __criticality_of(
+    sets: &[ObjectSet],
+    index: &[[u16; 256]; 3],
+    direction: Direction,
+    code: u8,
+) -> Criticality {
+    sets[index[direction as usize][code as usize] as usize].criticality
 }
 
 /// For the registry of a protocol: where each message is in its object sets, by its
@@ -287,7 +388,7 @@ pub fn __assigned<P: Protocol>(direction: Direction, code: u8, id: u16) -> Optio
 /// that the set does not have.
 #[doc(hidden)]
 #[inline]
-pub fn __assigned_in(ies: &[(u16, Criticality, bool)], id: u16) -> Option<Criticality> {
+pub fn __assigned_in(ies: &[(u16, Criticality, Presence)], id: u16) -> Option<Criticality> {
     let found = ies.iter().find(|(known, ..)| *known == id);
     found.map(|(_, assigned, _)| *assigned)
 }
@@ -410,9 +511,9 @@ pub trait Message<'a>: Container<'a> {
 )]
 pub trait Transfer<'a>: Container<'a> {
     /// The IEs of its object set, in the order of the set, each as its identifier, the
-    /// criticality that the set assigns it and whether its presence is mandatory.
+    /// criticality that the set assigns it and its presence.
     #[doc(hidden)]
-    const __OBJECT_SET: &'static [(u16, Criticality, bool)];
+    const __OBJECT_SET: &'static [(u16, Criticality, Presence)];
 }
 
 /// An IE of a protocol, as a marker type: `oxirush_ngap::ie::AMF_UE_NGAP_ID`. The
@@ -497,7 +598,7 @@ impl<T> __Field<T> for T {
 
 #[cfg(test)]
 mod tests {
-    use super::{Criticality, Direction};
+    use super::{Criticality, Direction, Presence};
     use alloc::string::ToString;
     use alloc::vec::Vec;
 
@@ -522,6 +623,18 @@ mod tests {
     }
 
     #[test]
+    fn a_presence_has_the_name_and_the_index_of_asn1() {
+        let names: Vec<_> = Presence::ALL.iter().map(ToString::to_string).collect();
+        assert_eq!(names, ["optional", "conditional", "mandatory"]);
+        for (index, presence) in Presence::ALL.into_iter().enumerate() {
+            let octets = crate::encode(&presence).unwrap();
+            assert_eq!(octets, [(index as u8) << 6]);
+            assert_eq!(crate::decode::<Presence>(&octets), Ok(presence));
+        }
+        assert!(crate::decode::<Presence>(&[0xc0]).is_err());
+    }
+
+    #[test]
     fn a_criticality_is_its_index_in_two_bits() {
         for (index, criticality) in Criticality::ALL.into_iter().enumerate() {
             let octets = crate::encode(&criticality).unwrap();
@@ -542,5 +655,16 @@ mod tests {
             assert_eq!(from_value::<Criticality>(&tree).unwrap(), criticality);
         }
         assert!(from_value::<Criticality>(&Value::from("rejected")).is_err());
+    }
+
+    #[cfg(feature = "inspect")]
+    #[test]
+    fn the_tree_of_a_presence_is_its_name() {
+        use crate::json::{Tree, Value, from_value};
+        for presence in Presence::ALL {
+            let tree = presence.to_tree();
+            assert_eq!(tree, Value::from(presence.name()));
+            assert_eq!(from_value::<Presence>(&tree).unwrap(), presence);
+        }
     }
 }

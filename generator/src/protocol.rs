@@ -788,7 +788,8 @@ impl core::fmt::Display for {PDU}<'_> {
             {PDU}::unsuccessfulOutcome(_) => "unsuccessful outcome",
         };
         let code = self.procedure_code();
-        match crate::registry::message_name(self.direction(), code) {
+        let set = oxirush_aper::protocol::object_set::<crate::{MARKER}>(self.direction(), code);
+        match set.map(|set| set.name) {
             Some(name) => write!(formatter, "{name} (procedure {code}, {direction})")?,
             None => write!(formatter, "an unknown message (procedure {code}, {direction})")?,
         }

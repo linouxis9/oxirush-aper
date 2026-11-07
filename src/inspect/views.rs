@@ -151,8 +151,9 @@ impl Protocol {
     /// but the private one is, a container of protocol IEs and nothing else.
     fn message_typed(&self, direction: Direction, code: u8) -> Typed {
         let mut messages = self.messages.iter();
-        let message = messages.find(|(of, procedure, ..)| *procedure == code && *of == direction);
-        message.map_or_else(self.any_message, |(_, _, _, typed, ..)| typed())
+        let message =
+            messages.find(|(set, ..)| set.procedure_code == code && set.direction == direction);
+        message.map_or_else(self.any_message, |(_, typed, _)| typed())
     }
 
     /// Decode the IEs and the transfers of `value`, a value of `shape` which is `depth`
@@ -456,18 +457,17 @@ impl Protocol {
     /// The name that ASN.1 gives the message of a direction and a procedure code.
     fn message_name_of(&self, direction: Direction, code: u8) -> Option<&'static str> {
         let mut messages = self.messages.iter();
-        let message = messages.find(|(of, procedure, ..)| *procedure == code && *of == direction);
-        message.map(|(_, _, name, ..)| *name)
+        let message =
+            messages.find(|(set, ..)| set.procedure_code == code && set.direction == direction);
+        message.map(|(set, ..)| set.name)
     }
 
     /// The criticality that ASN.1 assigns to the procedure of the message that it names
     /// `name`.
     fn message_criticality(&self, name: &str) -> Option<&'static str> {
         let mut messages = self.messages.iter();
-        let (_, code, ..) = messages.find(|(_, _, known, ..)| same_name(known, name))?;
-        let mut procedures = self.procedure_criticalities.iter();
-        let procedure = procedures.find(|(known, _)| known == code);
-        procedure.map(|(_, criticality)| *criticality)
+        let (set, ..) = messages.find(|(set, ..)| same_name(set.name, name))?;
+        Some(set.criticality.name())
     }
 }
 
@@ -650,8 +650,8 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
         Some(name) => {
             let name = name.as_str().ok_or_else(form)?;
             let mut messages = protocol.messages.iter();
-            let message = messages.find(|(_, _, known, ..)| same_name(known, name));
-            let (direction, code, name, ..) = message.ok_or_else(|| {
+            let message = messages.find(|(set, ..)| same_name(set.name, name));
+            let (set, ..) = message.ok_or_else(|| {
                 let nearest = protocol.nearest_message(name);
                 Error::unknown_message(format!(
                     "{name:?} is not a message of {}{nearest}",
@@ -664,7 +664,7 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
                      direction are those of its name"
                 )));
             }
-            (*direction, *code, Some(*name))
+            (set.direction, set.procedure_code, Some(set.name))
         }
         None => {
             const UNKNOWN: &str = "a procedure that the protocol does not have is written by \

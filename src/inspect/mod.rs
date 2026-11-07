@@ -66,28 +66,16 @@ pub struct Typed {
     pub encode: fn(&Value) -> Result<Vec<u8>, Error>,
 }
 
-/// A message of a protocol, as its tables have it: the direction, the procedure code,
-/// the name that ASN.1 gives it, the functions of its type, the IEs of its object set
-/// with their identifiers and whether each is mandatory, and the path of its type in
-/// the bindings.
-pub type Message = (
-    crate::Direction,
-    u8,
-    &'static str,
-    fn() -> Typed,
-    &'static [(u16, bool)],
-    &'static str,
-);
+/// A message of a protocol, as its tables have it: its object set, the functions of its
+/// type, and the path of its type in the bindings.
+pub type Message = (&'static crate::ObjectSet, fn() -> Typed, &'static str);
 
 /// A transfer of protocol IEs of a protocol, as its tables have it: the name that ASN.1
-/// gives it, the name of its type in the bindings, the IEs of its object set with their
-/// identifiers and whether each is mandatory, and the criticality that the set assigns
-/// each, in the order of the set.
+/// gives it, the name of its type in the bindings, and the IEs of its object set.
 pub type Transfer = (
     &'static str,
     &'static str,
-    &'static [(u16, bool)],
-    &'static [(u16, &'static str)],
+    &'static [(u16, crate::Criticality, crate::Presence)],
 );
 
 /// The tables of an application protocol that the paths read, which its generator
@@ -127,10 +115,7 @@ pub struct Protocol {
     pub enumerations: &'static [(&'static str, &'static [&'static str])],
     /// The criticality that ASN.1 assigns to each IE that a value holds alone, in a
     /// single container.
-    pub item_criticalities: &'static [(u16, &'static str)],
-    /// The criticality that ASN.1 assigns to the IEs of each message, by the name that
-    /// it gives the message.
-    pub message_ie_criticalities: &'static [(&'static str, &'static [(u16, &'static str)])],
+    pub item_criticalities: &'static [(u16, crate::Criticality)],
     /// The transfers of protocol IEs, each with its object set.
     pub transfers: &'static [Transfer],
     /// The identifier of the IE of a name, however the name is written: the protocol
@@ -139,8 +124,6 @@ pub struct Protocol {
     /// What a type of [`types`](Self::types) is, by its name: the protocol keeps the
     /// index that it reads, made once.
     pub kind_of: fn(&str) -> Option<&'static Kind>,
-    /// The criticality that ASN.1 assigns to each procedure, by its code.
-    pub procedure_criticalities: &'static [(u8, &'static str)],
     /// The functions of the type of each IE that has one type, by its identifier: an
     /// error that says why for one that has none.
     pub ie_typed: fn(u16) -> Result<Typed, Error>,
@@ -309,7 +292,7 @@ impl Protocol {
 pub struct Sent {
     pub(crate) name: &'static str,
     pub(crate) ty: &'static str,
-    pub(crate) ies: &'static [(u16, bool)],
+    pub(crate) ies: &'static [(u16, crate::Criticality, crate::Presence)],
 }
 
 /// A member of a SEQUENCE or an alternative of a CHOICE: the name that ASN.1 gives it,

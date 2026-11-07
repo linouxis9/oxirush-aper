@@ -156,16 +156,14 @@ macro_rules! __carried {
 
 /// The tables of a protocol for its trees, its views and their paths, and the functions of
 /// its module `inspect` that read them, written once: the protocol calls it in that module,
-/// with the module of its bindings, the type of its PDU, the cfg of its hooks, a message
-/// that is a container of protocol IEs and nothing else, and the documentation of
-/// `item_criticality`, which names what the protocol has in single containers.
+/// with the module of its bindings, the type of its PDU, the cfg of its hooks, and a
+/// message that is a container of protocol IEs and nothing else.
 #[doc(hidden)]
 #[macro_export]
 // A protocol calls it in its crate, whose items `crate::` names.
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! __inspect {
-    (bindings $bindings:ident, pdu $pdu:ident, hooks $hooks:meta, any $any:ty;
-        $(#[$item_doc:meta])*) => {
+    (bindings $bindings:ident, pdu $pdu:ident, hooks $hooks:meta, any $any:ty) => {
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -178,9 +176,8 @@ use crate::Error;
 // The name of the protocol, the first segment of the paths of the IEs of the message of
 // a PDU, and what the ASN.1 says of the messages, the IEs and the types.
 use crate::inspect_registry::{
-    CARRIED, ENUMERATIONS, FOREIGN, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES,
-    MESSAGE_IE_CRITICALITIES, MESSAGES, PROCEDURE_CRITICALITIES, PROTOCOL, ROOT,
-    TRANSFER_FIELDS, TYPES,
+    CARRIED, ENUMERATIONS, FOREIGN, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGES, PROTOCOL,
+    ROOT, TRANSFER_FIELDS, TYPES,
 };
 // The type that an IE of an extension container has where its identifier alone does not
 // say it: the one that the type which the container extends gives it.
@@ -203,11 +200,9 @@ pub(crate) static TABLES: Protocol = Protocol {
     foreign: FOREIGN,
     enumerations: ENUMERATIONS,
     item_criticalities: ITEM_CRITICALITIES,
-    message_ie_criticalities: MESSAGE_IE_CRITICALITIES,
     transfers: TRANSFERS,
     ie_id,
     kind_of,
-    procedure_criticalities: PROCEDURE_CRITICALITIES,
     ie_typed: crate::inspect_registry::ie,
     extension_typed: crate::registry::extension,
     ie_contents: crate::inspect_registry::ie_contents,
@@ -495,7 +490,7 @@ mod tests {
             distinct(name, &mut members.iter().map(|(member, ..)| *member));
         }
         distinct("the IEs", &mut IE_NAMES.iter().map(|(_, name)| *name));
-        let mut messages = MESSAGES.iter().map(|(_, _, name, ..)| *name);
+        let mut messages = MESSAGES.iter().map(|(set, ..)| set.name);
         distinct("the messages", &mut messages);
         // The names of an IE and of a member do not meet: a message that a view contains
         // has its IEs alone.
@@ -528,10 +523,10 @@ mod tests {
     /// The view of a message that ASN.1 names `name` and that has `ies` for IEs.
     fn view_of(name: &str, ies: Value) -> Value {
         let mut messages = MESSAGES.iter();
-        let (direction, code, ..) = messages.find(|(_, _, known, ..)| *known == name).unwrap();
+        let (set, ..) = messages.find(|(set, ..)| set.name == name).unwrap();
         tree!({
-            "direction": direction.name(),
-            "procedure_code": code,
+            "direction": set.direction.name(),
+            "procedure_code": set.procedure_code,
             "criticality": "reject",
             MESSAGE: {IES: ies},
         })
@@ -850,77 +845,6 @@ mod tests {
             }
         }
     }
-}
-
-/// The identifier and the name of each IE that an object set of the ASN.1 has, those of
-/// the extension containers included. An identifier that the ASN.1 defines and that no
-/// object set uses has no type, and is not among them.
-pub fn ie_names() -> &'static [(u16, &'static str)] {
-    crate::inspect_registry::IE_NAMES
-}
-
-/// The messages, each as the `direction` and the `procedure_code` that a view has for it
-/// and the name that ASN.1 gives it.
-pub fn message_names() -> impl Iterator<Item = ($crate::Direction, u8, &'static str)> {
-    let messages = crate::inspect_registry::MESSAGES.iter();
-    messages.map(|(direction, code, name, ..)| (*direction, *code, *name))
-}
-
-/// The name that ASN.1 gives the message of a PDU, as `InitialContextSetupResponse`; `None`
-/// for a procedure that the specification does not have in that direction.
-pub fn message_name(pdu: &crate::$bindings::$pdu<'_>) -> Option<&'static str> {
-    let (direction, code) = (pdu.direction(), pdu.procedure_code());
-    message_names()
-        .find(|(of, procedure, _)| *procedure == code && *of == direction)
-        .map(|(.., name)| name)
-}
-
-/// The `direction` and the `procedure_code` of the message that `name` names: a name is
-/// its letters and its digits, whatever their case and whatever is between them.
-pub fn message_named(name: &str) -> Option<($crate::Direction, u8)> {
-    message_names()
-        .find(|(.., known)| same_name(known, name))
-        .map(|(direction, code, _)| (direction, code))
-}
-
-/// The IEs that the message `name` can have, as its ASN.1 object set lists them: the
-/// identifier of each and whether its presence is mandatory, in the order of the set. The
-/// name is the one that ASN.1 gives the message, taken as [`message_named`] takes it.
-/// `None` for a name that is no message; a message without an object set of IEs, as a
-/// private message, has none.
-pub fn message_ies(name: &str) -> Option<&'static [(u16, bool)]> {
-    let mut messages = crate::inspect_registry::MESSAGES.iter();
-    let message = messages.find(|(_, _, known, ..)| same_name(known, name));
-    message.map(|(_, _, _, _, ies, _)| *ies)
-}
-
-/// The criticality that the ASN.1 object set of the message `name` assigns to each of its
-/// IEs: the identifier of each and `"reject"`, `"ignore"` or `"notify"`, in the order of
-/// the set, which is that of [`message_ies`]. The name is the one that ASN.1 gives the
-/// message, taken as [`message_named`] takes it. `None` for a name that is no message; a
-/// message without an object set of IEs, as a private message, has none.
-pub fn message_ie_criticalities(name: &str) -> Option<&'static [(u16, &'static str)]> {
-    let mut messages = crate::inspect_registry::MESSAGE_IE_CRITICALITIES.iter();
-    let message = messages.find(|(known, _)| same_name(known, name));
-    message.map(|(_, ies)| *ies)
-}
-
-/// The criticality that ASN.1 assigns to the procedure of the message `name`, which a PDU
-/// has beside its procedure code: `"reject"`, `"ignore"` or `"notify"`. The name is the
-/// one that ASN.1 gives the message, taken as [`message_named`] takes it. `None` for a
-/// name that is no message.
-pub fn message_criticality(name: &str) -> Option<&'static str> {
-    let (_, code) = message_named(name)?;
-    let mut procedures = crate::inspect_registry::PROCEDURE_CRITICALITIES.iter();
-    let procedure = procedures.find(|(known, _)| *known == code);
-    procedure.map(|(_, criticality)| *criticality)
-}
-
-$(#[$item_doc])*
-pub fn item_criticality(id: u16) -> Option<&'static str> {
-    let mut items = crate::inspect_registry::ITEM_CRITICALITIES.iter();
-    let item = items.find(|(known, _)| *known == id);
-    item.map(|(_, criticality)| *criticality)
 }
 
 /// The functions of the message of a procedure that the specification does not have in

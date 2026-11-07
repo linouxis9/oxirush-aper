@@ -48,8 +48,10 @@
 //! another form than the canonical one. A Holder is its members, each a tag, a length and
 //! its octets.
 
+use oxirush_aper::Criticality::{self, Ignore, Reject};
+use oxirush_aper::Presence::{self, Mandatory, Optional};
 use oxirush_aper::inspect::{self, Form, Kind, Member, Message, Protocol, Shape, Typed};
-use oxirush_aper::{Direction, Error, ErrorKind};
+use oxirush_aper::{Direction, Error, ErrorKind, ObjectSet};
 use oxirush_utils::tree;
 use oxirush_utils::tree::{Map, Value};
 
@@ -128,47 +130,64 @@ const TYPES: &[(&str, Kind)] = &[
     ("TacAlias", Kind::Is(Shape::Named("TAC"))),
 ];
 
-const SETUP_IES: &[(u16, bool)] = &[
-    (15, true),
-    (16, false),
-    (18, false),
-    (20, false),
-    (21, false),
-    (22, false),
-    (24, false),
+const SETUP_IES: &[(u16, Criticality, Presence)] = &[
+    (15, Ignore, Mandatory),
+    (16, Reject, Optional),
+    (18, Ignore, Optional),
+    (20, Reject, Optional),
+    (21, Ignore, Optional),
+    (22, Ignore, Optional),
+    (24, Ignore, Optional),
 ];
 
+/// A message of the toy protocol whose procedure is of a criticality and whose IEs are
+/// these.
+const fn set(
+    direction: Direction,
+    procedure_code: u8,
+    name: &'static str,
+    criticality: Criticality,
+    ies: Option<&'static [(u16, Criticality, Presence)]>,
+) -> ObjectSet {
+    ObjectSet {
+        direction,
+        procedure_code,
+        name,
+        criticality,
+        ies,
+    }
+}
+
+const SETUP_REQUEST: ObjectSet = set(
+    Direction::Initiating,
+    1,
+    "SetupRequest",
+    Reject,
+    Some(SETUP_IES),
+);
+const SETUP_RESPONSE: ObjectSet = set(
+    Direction::Successful,
+    1,
+    "SetupResponse",
+    Reject,
+    Some(&[(15, Ignore, Mandatory)]),
+);
+const RELEASE: ObjectSet = set(
+    Direction::Initiating,
+    2,
+    "Release",
+    Ignore,
+    Some(&[(15, Ignore, Mandatory)]),
+);
+const PRIVATE_MESSAGE: ObjectSet = set(Direction::Initiating, 3, "PrivateMessage", Ignore, None);
+
 const MESSAGES: &[Message] = &[
+    (&SETUP_REQUEST, ies_typed, "crate::toy::SetupRequest<'a>"),
+    (&SETUP_RESPONSE, ies_typed, "crate::toy::Release<'a>"),
+    (&RELEASE, release_typed, "crate::toy::Release<'a>"),
     (
-        Direction::Initiating,
-        1,
-        "SetupRequest",
-        ies_typed,
-        SETUP_IES,
-        "crate::toy::SetupRequest<'a>",
-    ),
-    (
-        Direction::Successful,
-        1,
-        "SetupResponse",
-        ies_typed,
-        &[(15, true)],
-        "crate::toy::Release<'a>",
-    ),
-    (
-        Direction::Initiating,
-        2,
-        "Release",
-        release_typed,
-        &[(15, true)],
-        "crate::toy::Release<'a>",
-    ),
-    (
-        Direction::Initiating,
-        3,
-        "PrivateMessage",
+        &PRIVATE_MESSAGE,
         private_typed,
-        &[],
         "crate::toy::PrivateMessage<'a>",
     ),
 ];
@@ -228,32 +247,10 @@ static TOY: Protocol = Protocol {
         ("CauseNas", &["normal-release", "deregister"]),
         ("CauseRadioNetwork", &["unspecified", "user-inactivity"]),
     ],
-    item_criticalities: &[(15, "ignore"), (30, "reject")],
-    message_ie_criticalities: &[
-        (
-            "SetupRequest",
-            &[
-                (15, "ignore"),
-                (16, "reject"),
-                (18, "ignore"),
-                (20, "reject"),
-                (21, "ignore"),
-                (22, "ignore"),
-                (24, "ignore"),
-            ],
-        ),
-        ("SetupResponse", &[(15, "ignore")]),
-        ("Release", &[(15, "ignore")]),
-    ],
-    transfers: &[(
-        "SetupTransfer",
-        "SetupTransfer",
-        &[(15, true)],
-        &[(15, "ignore")],
-    )],
+    item_criticalities: &[(15, Ignore), (30, Reject)],
+    transfers: &[("SetupTransfer", "SetupTransfer", &[(15, Ignore, Mandatory)])],
     ie_id,
     kind_of,
-    procedure_criticalities: &[(1, "reject"), (2, "ignore"), (3, "ignore")],
     ie_typed,
     extension_typed: |id, extended| (id == 17 && extended == "Holder").then(cause_typed),
     ie_contents: |id| matches!(id, 21 | 22).then(cause_typed),
@@ -1963,7 +1960,8 @@ mod another_protocol {
     /// Speed (INTEGER (0..255), id 15, mandatory, reject) and Mode (ENUMERATED { slow, fast },
     /// id 16, ignore). The Container of TOY may carry a Wrapper as a type of OTHER, whose
     /// IE 15 is no Cause: only the tables of OTHER read it.
-    const WRAPPER_IES: &[(u16, bool)] = &[(15, true), (16, false)];
+    const WRAPPER_IES: &[(u16, Criticality, Presence)] =
+        &[(15, Reject, Mandatory), (16, Ignore, Optional)];
 
     const OTHER_TABLES: Protocol = Protocol {
         name: "OTHER",
@@ -1981,13 +1979,7 @@ mod another_protocol {
         foreign: &[],
         enumerations: &[("Mode", &["slow", "fast"])],
         item_criticalities: &[],
-        message_ie_criticalities: &[],
-        transfers: &[(
-            "Wrapper",
-            "Wrapper",
-            WRAPPER_IES,
-            &[(15, "reject"), (16, "ignore")],
-        )],
+        transfers: &[("Wrapper", "Wrapper", WRAPPER_IES)],
         ie_id: |name| match name {
             _ if inspect::same_name(name, "Speed") => Some(15),
             _ if inspect::same_name(name, "Mode") => Some(16),
@@ -1995,7 +1987,6 @@ mod another_protocol {
             _ => None,
         },
         kind_of: |name| (name == "Wrapper").then_some(&Kind::Sequence(CONTAINER_OF_IES)),
-        procedure_criticalities: &[],
         ie_typed: |id| match id {
             15 => Ok(Typed {
                 decode: item_decode,
@@ -2030,12 +2021,7 @@ mod another_protocol {
         root: "second",
         types: &[("Gauge", Kind::Sequence(CONTAINER_OF_IES))],
         carried: &[(40, "Gauge", "crate::second::Gauge")],
-        transfers: &[(
-            "Gauge",
-            "Gauge",
-            WRAPPER_IES,
-            &[(15, "reject"), (16, "ignore")],
-        )],
+        transfers: &[("Gauge", "Gauge", WRAPPER_IES)],
         kind_of: |name| (name == "Gauge").then_some(&Kind::Sequence(CONTAINER_OF_IES)),
         carried_typed: |name| inspect::same_name(name, "Gauge").then(ies_typed),
         ..OTHER_TABLES

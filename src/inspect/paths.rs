@@ -160,11 +160,11 @@ impl Protocol {
     /// The message of a direction and a procedure code, or of a name.
     pub(crate) fn sent(&self, of: impl Fn(Direction, u8, &'static str) -> bool) -> Option<Sent> {
         let mut messages = self.messages.iter();
-        let message = messages.find(|(direction, code, name, ..)| of(*direction, *code, name));
-        message.map(|(_, _, name, _, ies, ty)| Sent {
-            name,
+        let message = messages.find(|(set, ..)| of(set.direction, set.procedure_code, set.name));
+        message.map(|(set, _, ty)| Sent {
+            name: set.name,
             ty: type_name(ty),
-            ies,
+            ies: set.ies.unwrap_or_default(),
         })
     }
 
@@ -475,7 +475,7 @@ impl Protocol {
     /// of its object set: `None` for a type that is no such transfer.
     fn transfer(&self, name: &str) -> Option<Sent> {
         let mut transfers = self.transfers.iter();
-        let (asn, ty, ies, _) = transfers.find(|(_, ty, ..)| *ty == name)?;
+        let (asn, ty, ies) = transfers.find(|(_, ty, _)| *ty == name)?;
         Some(Sent { name: asn, ty, ies })
     }
 
@@ -486,23 +486,14 @@ impl Protocol {
     fn assigned(&self, container: Shape, id: u16) -> Option<&'static str> {
         match container {
             Shape::Ies(Some(message)) => {
-                let mut messages = self.message_ie_criticalities.iter();
-                let ies = match messages.find(|(name, _)| same_name(name, message.name)) {
-                    Some((_, ies)) => *ies,
-                    None => {
-                        let mut transfers = self.transfers.iter();
-                        let (.., ies) = transfers.find(|(name, ..)| *name == message.name)?;
-                        *ies
-                    }
-                };
-                let ie = ies.iter().find(|(known, _)| *known == id);
-                ie.map(|(_, criticality)| *criticality)
+                let ie = message.ies.iter().find(|(known, ..)| *known == id);
+                ie.map(|(_, criticality, _)| criticality.name())
             }
             Shape::Ie(_) | Shape::List(Shape::Ie(_)) => {
                 let mut items = self.item_criticalities.iter();
                 items
                     .find(|(known, _)| *known == id)
-                    .map(|(_, criticality)| *criticality)
+                    .map(|(_, criticality)| criticality.name())
             }
             _ => None,
         }
@@ -547,7 +538,7 @@ impl Protocol {
     /// What an error says of `name`, which no message of the protocol has: the names of
     /// the messages that are nearest to it, if some are near.
     pub(crate) fn nearest_message(&self, name: &str) -> String {
-        let names: Vec<&str> = self.messages.iter().map(|(_, _, name, ..)| *name).collect();
+        let names: Vec<&str> = self.messages.iter().map(|(set, ..)| set.name).collect();
         nearest_names(&names, name)
     }
 }
@@ -1222,10 +1213,10 @@ impl Views<'_> {
                     // A name is that of an IE of the object set, where the tables have it.
                     if let Shape::Ies(Some(message)) = shape
                         && !part.starts_with("@id=")
-                        && !message.ies.iter().any(|(known, _)| *known == id)
+                        && !message.ies.iter().any(|(known, ..)| *known == id)
                     {
                         let ies: Vec<_> = (message.ies.iter())
-                            .map(|(id, _)| protocol.ie_name(*id))
+                            .map(|(id, ..)| protocol.ie_name(*id))
                             .collect();
                         return Err(fault(
                             ErrorKind::NoSuchMember,
@@ -1240,7 +1231,7 @@ impl Views<'_> {
                 } else if matches!(part, "*" | "-") || position(part).is_some() {
                     match shape {
                         Shape::Ies(Some(message)) => {
-                            for (id, _) in message.ies {
+                            for (id, ..) in message.ies {
                                 next.absent_once(part, at.of(Shape::Ie(Some(*id))));
                             }
                         }

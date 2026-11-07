@@ -9,7 +9,7 @@ use super::errors::__undecodable_ie;
 use super::read;
 use super::{Direction, Field, Message, Pdu, Protocol, Transfer, object_set};
 use crate::check::{Deviation, Wrong, deviations, structure_deviations};
-use crate::{Criticality, Decode, Error, ErrorKind, Faults, Octets, Reader, Writer};
+use crate::{Criticality, Decode, Error, ErrorKind, Faults, Octets, Presence, Reader, Writer};
 
 /// The protocol IEs of a message, which the ASN.1 has as a SEQUENCE of one container of
 /// protocol IEs, which a later release may add to: the additions are skipped.
@@ -296,12 +296,10 @@ fn checked<'p, X: Pdu<'p>>(pdu: &X, values: bool) -> Result<Vec<Deviation<X::Pro
         }]);
     };
     let mut found = Vec::new();
-    if let Some(assigned) = X::Protocol::__procedure_criticality(code)
-        && criticality != assigned
-    {
+    if criticality != message.criticality {
         found.push(Deviation::PduCriticality {
             criticality,
-            assigned,
+            assigned: message.criticality,
         });
     }
     let Some(set) = message.ies else {
@@ -360,7 +358,7 @@ fn transfer_checked<'a, T: Transfer<'a>>(
 /// `name`, with the value of each IE when `values` says so.
 fn container_deviations<P: Protocol>(
     name: &'static str,
-    set: &'static [(u16, Criticality, bool)],
+    set: &'static [(u16, Criticality, Presence)],
     octets: &[u8],
     values: bool,
     found: &mut Vec<Deviation<P>>,

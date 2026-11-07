@@ -22,7 +22,7 @@
 include!("toy/mod.rs");
 
 use oxirush_aper::check::Wrong;
-use oxirush_aper::{Direction, ErrorKind, Faults, Octets};
+use oxirush_aper::{Direction, ErrorKind, Faults, Octets, Presence};
 use toy::*;
 
 type Error = oxirush_aper::Error;
@@ -492,12 +492,12 @@ mod deviations {
     use super::*;
     use oxirush_aper::check::{Deviation, deviations};
 
-    fn set() -> Vec<(u16, Criticality, bool)> {
+    fn set() -> Vec<(u16, Criticality, Presence)> {
         vec![
-            (3, Criticality::Reject, true),
-            (1, Criticality::Ignore, false),
-            (2, Criticality::Reject, true),
-            (4, Criticality::Notify, false),
+            (3, Criticality::Reject, Presence::Mandatory),
+            (1, Criticality::Ignore, Presence::Optional),
+            (2, Criticality::Reject, Presence::Mandatory),
+            (4, Criticality::Notify, Presence::Conditional),
         ]
     }
 
@@ -905,4 +905,29 @@ fn a_failure_is_checked_and_a_container_in_another_form_is_told() -> Result<(), 
         "{found:?}"
     );
     Ok(())
+}
+
+/// The object sets of the toy protocol, by its marker type: each message with the
+/// criticality of its procedure and its IEs, found by its direction and its procedure
+/// code, or by its name however it is written.
+#[test]
+fn the_marker_of_a_protocol_finds_the_object_set_of_each_message() {
+    let sets = Toy::object_sets();
+    assert_eq!(sets.len(), 5);
+    let request = Toy::object_set(Direction::Initiating, 1).unwrap();
+    assert_eq!(request.name, "SetupRequest");
+    assert_eq!(request.criticality, Criticality::Reject);
+    let ies = request.ies.unwrap();
+    assert_eq!(ies[0], (1, Criticality::Reject, Presence::Mandatory));
+    assert_eq!(ies[1], (2, Criticality::Ignore, Presence::Optional));
+    assert_eq!(Toy::object_set_named("setup-request"), Some(request));
+    assert_eq!(Toy::object_set_named("SETUP REQUEST"), Some(request));
+    assert_eq!(Toy::object_set_named("setup"), None);
+    let notification = Toy::object_set(Direction::Initiating, 2).unwrap();
+    assert_eq!(notification.criticality, Criticality::Ignore);
+    assert_eq!(Toy::object_set(Direction::Successful, 2), None);
+    assert_eq!(Toy::object_set_named("PrivateMessage").unwrap().ies, None);
+    assert_eq!(Toy::ie_names()[1], (2, "Name"));
+    // No IE of the toy is in a single container.
+    assert_eq!(Toy::item_criticality(1), None);
 }

@@ -25,7 +25,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::{Criticality, Direction, Error, ErrorKind, Fault, Faults};
+use crate::{Criticality, Direction, Error, ErrorKind, Fault, Faults, Presence};
 
 /// What the bindings of a protocol give the deviations of their PDUs: their own types for
 /// the type of an error and the protocol cause of an answer and the item of its
@@ -549,14 +549,14 @@ pub enum Wrong {
 
 /// Add to `found` how `ies`, the IEs of a message in their order, each as its identifier
 /// and its criticality, deviate from `set`, the IEs of the object set of that message,
-/// each as its identifier, the criticality that the set assigns it and whether its
-/// presence is mandatory: those of the IEs in the order of the message, then the
+/// each as its identifier, the criticality that the set assigns it and its
+/// presence: those of the IEs in the order of the message, then the
 /// mandatory IEs that are missing in the order of the set. `value` says what is wrong
 /// with the value of the IE at a position, for an IE of the set whose value is not one
 /// of its type, and what of its encoding is in another form than the one of X.691.
 #[doc(hidden)]
 pub fn deviations<P: Diagnostics>(
-    set: &[(u16, Criticality, bool)],
+    set: &[(u16, Criticality, Presence)],
     ies: &[(u16, Criticality)],
     value: &dyn Fn(usize) -> (Option<Wrong>, Faults),
     found: &mut Vec<Deviation<P>>,
@@ -569,7 +569,7 @@ pub fn deviations<P: Diagnostics>(
 /// adds, but for what it says of the values.
 #[doc(hidden)]
 pub fn structure_deviations<P: Diagnostics>(
-    set: &[(u16, Criticality, bool)],
+    set: &[(u16, Criticality, Presence)],
     ies: &[(u16, Criticality)],
     found: &mut Vec<Deviation<P>>,
 ) {
@@ -579,7 +579,7 @@ pub fn structure_deviations<P: Diagnostics>(
 /// What [`deviations`] and [`structure_deviations`] add: with what is wrong with each
 /// value, when `value` says it, and without otherwise.
 fn compared<P: Diagnostics>(
-    set: &[(u16, Criticality, bool)],
+    set: &[(u16, Criticality, Presence)],
     ies: &[(u16, Criticality)],
     value: Option<&dyn Fn(usize) -> (Option<Wrong>, Faults)>,
     found: &mut Vec<Deviation<P>>,
@@ -661,8 +661,8 @@ fn compared<P: Diagnostics>(
             bit: noted.bit,
         }));
     }
-    for ((id, criticality, mandatory), first) in set.iter().zip(first) {
-        if *mandatory && first.is_none() {
+    for ((id, criticality, presence), first) in set.iter().zip(first) {
+        if *presence == Presence::Mandatory && first.is_none() {
             found.push(Deviation::MissingIe {
                 id: *id,
                 name: name(*id).unwrap_or_default(),

@@ -21,7 +21,7 @@
 //! two IEs.
 
 use oxirush_aper::inspect::{self, Form, Kind, Member, Message, Protocol, Shape, Typed};
-use oxirush_aper::{Direction, Error, ErrorKind};
+use oxirush_aper::{Criticality, Direction, Error, ErrorKind, ObjectSet, Presence};
 use oxirush_utils::tree;
 use oxirush_utils::tree::Value;
 
@@ -64,14 +64,18 @@ fn typed() -> Typed {
     }
 }
 
-const MESSAGES: &[Message] = &[(
-    Direction::Initiating,
-    1,
-    "Release",
-    typed,
-    &[(15, true), (16, false)],
-    "crate::test::Release<'a>",
-)];
+const RELEASE_SET: ObjectSet = ObjectSet {
+    direction: Direction::Initiating,
+    procedure_code: 1,
+    name: "Release",
+    criticality: Criticality::Reject,
+    ies: Some(&[
+        (15, Criticality::Ignore, Presence::Mandatory),
+        (16, Criticality::Reject, Presence::Optional),
+    ]),
+};
+
+const MESSAGES: &[Message] = &[(&RELEASE_SET, typed, "crate::test::Release<'a>")];
 
 const IE_NAMES: &[(u16, &str)] = &[(15, "Cause"), (16, "Holder"), (17, "ExtendedCause")];
 
@@ -104,12 +108,10 @@ static TEST: Protocol = Protocol {
         ("CauseNas", &["normal-release", "deregister"]),
         ("CauseRadioNetwork", &["unspecified", "user-inactivity"]),
     ],
-    item_criticalities: &[(15, "ignore")],
-    message_ie_criticalities: &[("Release", &[(15, "ignore"), (16, "reject")])],
+    item_criticalities: &[(15, Criticality::Ignore)],
     transfers: &[],
     ie_id,
     kind_of,
-    procedure_criticalities: &[(1, "reject")],
     ie_typed: |_| Err(Error::new(ErrorKind::UnknownIe, "no codec in this test")),
     extension_typed: |_, _| None,
     ie_contents: |_| None,
