@@ -310,6 +310,20 @@ macro_rules! __readers {
                 let name = <Self as $crate::AsnType>::NAME;
                 $crate::protocol::items_of_fields::<L>(name, fields)
             }
+
+            #[doc = concat!(
+                "Make the value that `value` converts into the value of the first occurrence \
+                 of the IE `T` in this ", $what, ", which keeps its criticality and its place: \
+                 `false` when it has none, which [`ie`](Self::ie) tells.\n\n\
+                 # Errors\n\n\
+                 An error of the kind `Encode` for a value that does not encode."
+            )]
+            pub fn set_ie<'v, T: $crate::protocol::Ie<Protocol = $protocol>>(
+                &mut self,
+                value: impl Into<T::Value<'v>>,
+            ) -> Result<bool, $crate::Error> {
+                $crate::protocol::__set_ie::<T, _>(&mut self.protocol_ies.0, &value.into())
+            }
         }
     };
 }
@@ -1091,66 +1105,6 @@ macro_rules! __extract_ie {
     };
 }
 
-/// `with_ngap_ie_mut!` and `with_s1ap_ie_mut!`: the first occurrence of an IE of a message
-/// or of a transfer, decoded, changed by an expression, and written back.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __with_ie_mut {
-    ($k:tt, $bindings:ident, $msg_var:expr, $msg:ident, $ie_name:ident($bind:ident) = $value:expr
-        $(,)?) => {{
-        $crate::__with_ie_mut!($k, $bindings, $msg_var, $msg, $ie_name($bind) => {
-            $bind.0 = $value;
-            true
-        })
-    }};
-    ($k:tt, $bindings:ident, $msg_var:expr, $msg:ident, $ie_name:ident($bind:ident) => $expr:expr
-        $(,)?) => {{
-        // The name is the type of what the IE is in.
-        let _: &$k::$bindings::$msg<'_> = &$msg_var;
-        // The IE that the macro that extracts IEs reads: the first one. The value is changed
-        // and written to octets of its own before the message is, which it borrowed its
-        // octets from.
-        let _written = match $crate::protocol::__first::<$k::ie::$ie_name, $k::$bindings::$msg<'_>>(
-            &$msg_var,
-        ) {
-            ::core::result::Result::Err(_error) => ::core::result::Result::Err(_error),
-            ::core::result::Result::Ok(::core::option::Option::None) => {
-                ::core::result::Result::Ok(::core::option::Option::None)
-            }
-            ::core::result::Result::Ok(::core::option::Option::Some((_index, mut $bind))) => {
-                let _changed: bool = $expr;
-                match $k::$bindings::encode_open_type(&$bind) {
-                    ::core::result::Result::Ok(_value) => ::core::result::Result::Ok(
-                        ::core::option::Option::Some((_index, _changed, _value)),
-                    ),
-                    ::core::result::Result::Err(_error) => ::core::result::Result::Err(_error),
-                }
-            }
-        };
-        match _written {
-            ::core::result::Result::Err(_error) => ::core::result::Result::Err(_error),
-            ::core::result::Result::Ok(::core::option::Option::None) => {
-                ::core::result::Result::Ok(false)
-            }
-            ::core::result::Result::Ok(::core::option::Option::Some((
-                _index,
-                _changed,
-                _value,
-            ))) => {
-                // The IE is where it was read, unless the message is another one each
-                // time that its expression is read.
-                match $msg_var.protocol_ies.0.get_mut(_index) {
-                    ::core::option::Option::Some(_ie) => {
-                        _ie.value = _value;
-                        ::core::result::Result::Ok(_changed)
-                    }
-                    ::core::option::Option::None => ::core::result::Result::Ok(false),
-                }
-            }
-        }
-    }};
-}
-
 /// `build_ngap!` and `build_s1ap!`: the PDU of a message and its IEs, with the
 /// criticality of the procedure of the message or the one written before it.
 #[doc(hidden)]
@@ -1267,20 +1221,10 @@ macro_rules! __ie_syntax {
     };
 }
 
-/// The criticality that the macros take as `REJECT`, `IGNORE` or `NOTIFY`, and that the
-/// registry writes as ASN.1 names it.
+/// The criticality of a line of the registry of a protocol, as ASN.1 names it.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __criticality {
-    (REJECT) => {
-        $crate::Criticality::Reject
-    };
-    (IGNORE) => {
-        $crate::Criticality::Ignore
-    };
-    (NOTIFY) => {
-        $crate::Criticality::Notify
-    };
     (reject) => {
         $crate::Criticality::Reject
     };
@@ -1289,58 +1233,5 @@ macro_rules! __criticality {
     };
     (notify) => {
         $crate::Criticality::Notify
-    };
-    ($other:tt) => {
-        compile_error!(concat!(
-            "`",
-            stringify!($other),
-            "` is no criticality: write REJECT, IGNORE or NOTIFY",
-        ))
-    };
-}
-
-/// `build_ngap_ie!` and `build_s1ap_ie!`: one IE, of a message or of a transfer whose name
-/// comes first, or in no message.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __build_ie {
-    ($k:tt, $bindings:ident, $name:literal, $msg:ident,
-        $criticality:ident $ie_name:ident ($($value:tt)+)) => {{
-        // The name is the type of a message that has protocol IEs.
-        $crate::protocol::__message_of_protocol_ies::<$k::$bindings::$msg<'_>>();
-        $crate::__build_ie!($k, $bindings, $name, $criticality $ie_name ($($value)+))
-    }};
-    // The criticality that the object set of the message assigns to the IE.
-    ($k:tt, $bindings:ident, $name:literal, $msg:ident, $ie_name:ident ($($value:tt)+)) => {{
-        $crate::protocol::__message_of_protocol_ies::<$k::$bindings::$msg<'_>>();
-        $crate::protocol::__assigned_ie::<$k::$bindings::$msg<'_>, _>(
-            <$k::ie::$ie_name as $crate::protocol::Ie>::ID,
-            stringify!($ie_name),
-            &<$k::ie::$ie_name as $crate::protocol::Ie>::value(($($value)+)),
-        )
-    }};
-    // An IE that is in no message: an item of a list of single containers.
-    ($k:tt, $bindings:ident, $name:literal, $criticality:ident $ie_name:ident ($($value:tt)+)) => {
-        $crate::protocol::__ie::<<$k::ie::$ie_name as $crate::protocol::Ie>::Protocol, _>(
-            <$k::ie::$ie_name as $crate::protocol::Ie>::ID,
-            $crate::__criticality!($criticality),
-            &<$k::ie::$ie_name as $crate::protocol::Ie>::value(($($value)+)),
-        )
-    };
-    // What is not written so, which says what is wrong.
-    ($k:tt, $bindings:ident, $name:literal, $ie_name:ident ($($value:tt)+)) => {
-        compile_error!(concat!(
-            "the criticality of the IE ",
-            stringify!($ie_name),
-            " is missing: an IE that goes in no message has it written, as REJECT, IGNORE \
-             or NOTIFY before its name",
-        ))
-    };
-    ($k:tt, $bindings:ident, $name:literal, $($other:tt)*) => {
-        compile_error!(concat!(
-            $name,
-            " takes the message, then the IE as `CRITICALITY Name(value)`, or the IE alone \
-             for one that is in no message"
-        ))
     };
 }

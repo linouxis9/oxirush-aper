@@ -326,11 +326,15 @@ fn block_8() {
 
 /// The Rust block 9 of README.md.
 fn block_9() {
+    use oxirush_aper::protocol::Ie;
     use toy::*;
 
     fn main() -> Result<(), Box<dyn std::error::Error>> {
         // A list of single containers: each item is an IE of its own
-        let items = vec![build_toy_ie!(REJECT Item(1u8))?, build_toy_ie!(REJECT Item(2u8))?];
+        let items = vec![
+            ie::Item::field(Criticality::Reject, 1u8)?,
+            ie::Item::field(Criticality::Reject, 2u8)?,
+        ];
         let pdu = build_toy!(SetupRequest,
             Identity(7u32),
             Items(items),
@@ -342,7 +346,7 @@ fn block_9() {
 
         // An IE of a message, changed in place
         let mut request: SetupRequest = pdu.decode_value()?;
-        with_toy_ie_mut!(request, SetupRequest, Identity(id) = 9)?;
+        request.set_ie::<ie::Identity>(9)?;
         println!("{:?}", request.ie::<ie::Identity>());
 
         // A SETUP REQUEST of two Identities: `ies::<T>()` gives each, the macros

@@ -5,14 +5,12 @@ use alloc::format;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-use super::{Container, Field, Message, Pdu, Protocol};
+use super::{Container, Field, Ie, Message, Pdu, Protocol};
 use crate::{Criticality, Encode, Error, ErrorKind, Octets, Writer};
 
-/// For the macro that builds an IE: one entry of the IEs of a message, which is the
-/// identifier of an IE, its criticality and its value in an open type, or why the value
-/// does not encode.
-#[doc(hidden)]
-pub fn __ie<P: Protocol, T: Encode>(
+/// One entry of the IEs of a container, which is the identifier of an IE, its criticality
+/// and its value in an open type, or why the value does not encode.
+pub(super) fn field<P: Protocol, T: Encode>(
     id: u16,
     criticality: Criticality,
     value: &T,
@@ -23,7 +21,7 @@ pub fn __ie<P: Protocol, T: Encode>(
 
 /// The criticality that the object set of `M` assigns to the IE `id`, which the macros
 /// name `name`: an error of the kind `Argument` for one that the set does not have.
-fn assigned<'a, M: Container<'a>>(id: u16, name: &str) -> Result<Criticality, Error> {
+pub(super) fn assigned<'a, M: Container<'a>>(id: u16, name: &str) -> Result<Criticality, Error> {
     M::__assigned(id).ok_or_else(|| {
         let why = format!(
             "{name} is no IE of the object set of {}, which assigns it no criticality: write \
@@ -34,15 +32,19 @@ fn assigned<'a, M: Container<'a>>(id: u16, name: &str) -> Result<Criticality, Er
     })
 }
 
-/// For the macro that builds one IE of a message without its criticality: the IE `id`
-/// with the criticality that the object set of `M` assigns to it.
+/// For `set_ie` of a message and of a transfer: the value of the first occurrence of the
+/// IE `T` among `fields` is `value`, in an open type; `false` when there is none.
 #[doc(hidden)]
-pub fn __assigned_ie<'a, M: Container<'a>, T: Encode>(
-    id: u16,
-    name: &str,
-    value: &T,
-) -> Result<<M::Protocol as Protocol>::Field<'static>, Error> {
-    __ie::<M::Protocol, T>(id, assigned::<M>(id, name)?, value)
+pub fn __set_ie<'a, T: Ie, F: Field<'a>>(
+    fields: &mut [F],
+    value: &T::Value<'_>,
+) -> Result<bool, Error> {
+    let Some(field) = fields.iter_mut().find(|field| field.id() == T::ID) else {
+        return Ok(false);
+    };
+    let octets = crate::encode(value).map(Octets::owned)?;
+    *field = F::__new(T::ID, field.criticality(), octets);
+    Ok(true)
 }
 
 /// For the macro that builds a PDU: the message that is being written, a container of

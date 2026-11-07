@@ -600,22 +600,6 @@ impl<'s, L: List> Iterator for Items<'s, L> {
     }
 }
 
-/// For the macro that changes an IE: the first occurrence of the IE `T` in `container`,
-/// with its position, decoded as its type; `None` when the container has none.
-#[doc(hidden)]
-pub fn __first<'s, 'a: 's, T: Ie, M: Container<'a> + InProtocol<Protocol = T::Protocol>>(
-    container: &'s M,
-) -> Result<Option<(usize, T::Value<'s>)>, Error> {
-    let source = Source::<T::Protocol>::__of_fields(M::NAME, container.__fields());
-    match source.ies_entries::<T>() {
-        None => Ok(None),
-        Some(Err(error)) => Err(error),
-        Some(Ok(entry)) => entry
-            .decode::<T>(M::NAME)
-            .map(|value| Some((entry.position, value))),
-    }
-}
-
 /// The items of the first occurrence of the list `L` among `fields`, the IEs of a value
 /// that ASN.1 names `message`.
 pub fn items_of_fields<'s, L: List>(

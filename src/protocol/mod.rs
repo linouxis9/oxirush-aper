@@ -57,15 +57,15 @@ mod macros;
 mod pdu;
 mod read;
 
-pub use build::{__Message, __assigned_ie, __ie, __message_of_protocol_ies};
+pub use build::{__Message, __message_of_protocol_ies, __set_ie};
 pub use errors::{__missing_ie, __undecodable_ie, __wrong_message, ie_name};
 pub use pdu::{
     check, check_structure, check_transfer, check_transfer_structure, holds_key, message_octets,
     message_octets_as_its_type, of_message, protocol_ies, set_protocol_ies,
 };
 pub use read::{
-    __Decoded, __Each, __Entry, __Fields, __Holds, __Item, __Source, __Walk, __first, __pdu_holds,
-    Ies, Items, Source, items_of_fields,
+    __Decoded, __Each, __Entry, __Fields, __Holds, __Item, __Source, __Walk, __pdu_holds, Ies,
+    Items, Source, items_of_fields,
 };
 
 use crate::check::Diagnostics;
@@ -538,6 +538,35 @@ pub trait Ie: Copy + core::fmt::Debug + 'static {
     #[inline]
     fn value<'a>(value: impl Into<Self::Value<'a>>) -> Self::Value<'a> {
         value.into()
+    }
+
+    /// The IE of a criticality and of the value that `value` converts into, as an entry
+    /// of a container of protocol IEs: an IE of a message or of a transfer of another
+    /// criticality than the one of its object set, or the IE that a single container
+    /// holds, as the item of a list of E-RABs of S1AP.
+    ///
+    /// # Errors
+    ///
+    /// An error of the kind `Encode` for a value that does not encode.
+    fn field<'a>(
+        criticality: Criticality,
+        value: impl Into<Self::Value<'a>>,
+    ) -> Result<<Self::Protocol as Protocol>::Field<'static>, Error> {
+        build::field::<Self::Protocol, _>(Self::ID, criticality, &value.into())
+    }
+
+    /// The IE of the value that `value` converts into, with the criticality that the
+    /// object set of the message or of the transfer `M` assigns it.
+    ///
+    /// # Errors
+    ///
+    /// An error of the kind `Encode` for a value that does not encode, and of the kind
+    /// `Argument` for an IE that the object set of `M` does not have.
+    fn field_of<'m, 'a, M: Container<'m, Protocol = Self::Protocol>>(
+        value: impl Into<Self::Value<'a>>,
+    ) -> Result<<Self::Protocol as Protocol>::Field<'static>, Error> {
+        let criticality = build::assigned::<M>(Self::ID, Self::NAME)?;
+        build::field::<Self::Protocol, _>(Self::ID, criticality, &value.into())
     }
 
     /// The value of the IE that `octets` hold, which borrows nothing from them, for

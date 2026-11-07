@@ -22,6 +22,7 @@
 include!("toy/mod.rs");
 
 use oxirush_aper::check::Wrong;
+use oxirush_aper::protocol::Ie;
 use oxirush_aper::{Direction, ErrorKind, Faults, Octets, Presence};
 use toy::*;
 
@@ -29,8 +30,8 @@ type Error = oxirush_aper::Error;
 
 /// A SETUP REQUEST of an identity, a name and two items, as a PDU that owns its octets.
 fn setup(identity: u32, name: &'static str) -> TOY_PDU {
-    let first = build_toy_ie!(REJECT Item(1u8)).unwrap();
-    let second = build_toy_ie!(REJECT Item(2u8)).unwrap();
+    let first = ie::Item::field(Criticality::Reject, 1u8).unwrap();
+    let second = ie::Item::field(Criticality::Reject, 2u8).unwrap();
     build_toy!(
         SetupRequest,
         Identity(identity),
@@ -103,11 +104,12 @@ fn a_transfer_has_the_criticalities_of_its_object_set_and_is_checked_against_it(
 -> Result<(), Error> {
     // The object set of the transfer assigns ignore to Identity and reject to Name, where
     // that of SETUP REQUEST assigns the reverse.
-    let identity = build_toy_ie!(SetupTransfer, Identity(7u32))?;
-    let name = build_toy_ie!(SetupTransfer, Name("toy"))?;
+    let identity = ie::Identity::field_of::<SetupTransfer>(7u32)?;
+    let name = ie::Name::field_of::<SetupTransfer>("toy")?;
     assert_eq!(identity.criticality, Criticality::Ignore);
     assert_eq!(name.criticality, Criticality::Reject);
-    let error = build_toy_ie!(SetupTransfer, Items(vec![build_toy_ie!(REJECT Item(1u8))?]));
+    let error =
+        ie::Items::field_of::<SetupTransfer>(vec![ie::Item::field(Criticality::Reject, 1u8)?]);
     assert_eq!(
         error.unwrap_err().to_string(),
         "Items is no IE of the object set of SetupTransfer, which assigns it no criticality: \
@@ -185,7 +187,7 @@ fn a_value_borrows_from_the_pdu() -> Result<(), Error> {
 #[test]
 fn the_first_of_a_repeated_ie_is_read_and_changed_and_check_reports_the_second() -> Result<(), Error>
 {
-    let identity = |id: u32| build_toy_ie!(SetupRequest, REJECT Identity(id)).unwrap();
+    let identity = |id: u32| ie::Identity::field(Criticality::Reject, id).unwrap();
     let pdu = request(vec![identity(1), identity(2)]);
     assert_eq!(read(&pdu)?.0, 1);
     let every: Vec<_> = pdu.ies::<ie::Identity>().collect::<Result<_, _>>()?;
@@ -201,10 +203,7 @@ fn the_first_of_a_repeated_ie_is_read_and_changed_and_check_reports_the_second()
     ));
     // The message: the first one changes.
     let mut message: SetupRequest = pdu.decode_value()?;
-    assert_eq!(
-        with_toy_ie_mut!(message, SetupRequest, Identity(id) = 9),
-        Ok(true)
-    );
+    assert_eq!(message.set_ie::<ie::Identity>(9), Ok(true));
     let every: Vec<_> = message.ies::<ie::Identity>().collect::<Result<_, _>>()?;
     assert_eq!(every, [Identity(9), Identity(2)]);
     Ok(())
@@ -214,7 +213,7 @@ fn the_first_of_a_repeated_ie_is_read_and_changed_and_check_reports_the_second()
 fn an_ie_that_does_not_decode_is_an_error_of_the_readers_and_of_check_alone() -> Result<(), Error> {
     // An identity whose length, in its first two bits, is four octets, and that ends there.
     let spoiled = field(1, Criticality::Reject, &[0xc0]);
-    let pdu = request(vec![spoiled, build_toy_ie!(SetupRequest, Name("toy"))?]);
+    let pdu = request(vec![spoiled, ie::Name::field_of::<SetupRequest>("toy")?]);
     let error = read(&pdu).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::UndecodableIe);
     assert_eq!(
@@ -343,9 +342,9 @@ fn the_items_of_a_list_are_walked_and_each_is_decoded() -> Result<(), Error> {
     // an error, after which the walk goes on.
     let other = field(11, Criticality::Ignore, &[0x05]);
     let spoiled = field(10, Criticality::Reject, &[]);
-    let good = build_toy_ie!(REJECT Item(3u8))?;
-    let list = build_toy_ie!(SetupRequest, Items(vec![other, spoiled, good]))?;
-    let pdu = request(vec![build_toy_ie!(SetupRequest, Identity(7u32))?, list]);
+    let good = ie::Item::field(Criticality::Reject, 3u8)?;
+    let list = ie::Items::field_of::<SetupRequest>(vec![other, spoiled, good])?;
+    let pdu = request(vec![ie::Identity::field_of::<SetupRequest>(7u32)?, list]);
     let items: Vec<_> = pdu.items::<ie::Items>().collect();
     assert_eq!(items.len(), 2);
     let error = items[0].as_ref().unwrap_err();
@@ -431,8 +430,8 @@ fn the_readers_read_what_the_codec_of_the_container_reads() -> Result<(), Error>
             let name: Vec<u8> = (0..length).map(|at| at as u8).collect();
             let id = [1u16, 2, 2, 4][next(4) as usize];
             ies.push(match id {
-                2 => build_toy_ie!(SetupRequest, Name(name))?,
-                1 => build_toy_ie!(SetupRequest, Identity(next(1 << 32) as u32))?,
+                2 => ie::Name::field_of::<SetupRequest>(name)?,
+                1 => ie::Identity::field_of::<SetupRequest>(next(1 << 32) as u32)?,
                 _ => field(id, Criticality::Notify, &name),
             });
         }
@@ -674,7 +673,7 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
         Some(CauseProtocol::abstract_syntax_error_reject)
     );
     // The deviations that errors of the macros tell of
-    let error = read(&request(vec![build_toy_ie!(SetupRequest, Name("toy"))?])).unwrap_err();
+    let error = read(&request(vec![ie::Name::field_of::<SetupRequest>("toy")?])).unwrap_err();
     let missing = Deviation::<Toy>::of(&error).unwrap();
     assert!(
         matches!(missing, Deviation::MissingIe { id: 1, .. }),
@@ -716,13 +715,13 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
 /// The errors of the readers name the IE, the message and the position of the IE.
 #[test]
 fn an_error_of_the_readers_names_the_ie_its_message_and_its_position() -> Result<(), Error> {
-    let error = read(&request(vec![build_toy_ie!(SetupRequest, Name("toy"))?])).unwrap_err();
+    let error = read(&request(vec![ie::Name::field_of::<SetupRequest>("toy")?])).unwrap_err();
     assert_eq!(
         error.to_string(),
         "this SetupRequest has no Identity, which the field `identity` requires"
     );
     let spoiled = field(1, Criticality::Reject, &[0xc0]);
-    let pdu = request(vec![build_toy_ie!(SetupRequest, Name("toy"))?, spoiled]);
+    let pdu = request(vec![ie::Name::field_of::<SetupRequest>("toy")?, spoiled]);
     let error = read(&pdu).unwrap_err();
     assert_eq!(
         error.ie().map(|ie| (ie.id, ie.position)),
@@ -814,7 +813,7 @@ fn the_items_of_a_list_are_read_around_values_in_fragments() -> Result<(), Error
         )
     };
     let item = |value: u8| field(10, Criticality::Reject, &[value]);
-    let identity = build_toy_ie!(SetupRequest, Identity(7u32))?;
+    let identity = ie::Identity::field_of::<SetupRequest>(7u32)?;
     let name = field(
         2,
         Criticality::Ignore,

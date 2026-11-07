@@ -633,13 +633,6 @@ macro_rules! build_toy {
     };
 }
 
-/// Build one IE of the toy protocol, as `build_ngap_ie!` builds one of NGAP.
-#[macro_export]
-macro_rules! build_toy_ie {
-    ($($arguments:tt)*) => {
-        ::oxirush_aper::__build_ie!($crate, toy, "build_toy_ie!", $($arguments)*)
-    };
-}
 
 /// Extract the IEs of a message or of a PDU of the toy protocol, as `extract_ngap_ies!`
 /// does for NGAP.
@@ -650,10 +643,3 @@ macro_rules! extract_toy_ies {
     };
 }
 
-/// Change one IE of a message of the toy protocol, as `with_ngap_ie_mut!` does for NGAP.
-#[macro_export]
-macro_rules! with_toy_ie_mut {
-    ($($arguments:tt)*) => {
-        ::oxirush_aper::__with_ie_mut!($crate, toy, $($arguments)*)
-    };
-}

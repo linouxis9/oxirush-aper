@@ -23,6 +23,7 @@
 
 include!("toy/mod.rs");
 
+use oxirush_aper::protocol::Ie;
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::Duration;
 use toy::*;
@@ -46,8 +47,8 @@ fn bounded(test: impl FnOnce() + Send + 'static) {
 #[test]
 fn the_ies_of_a_message_are_walked_once_each() {
     bounded(|| {
-        let identity = |id: u32| build_toy_ie!(SetupRequest, REJECT Identity(id)).unwrap();
-        let name = build_toy_ie!(SetupRequest, Name("toy")).unwrap();
+        let identity = |id: u32| ie::Identity::field(Criticality::Reject, id).unwrap();
+        let name = ie::Name::field_of::<SetupRequest>("toy").unwrap();
         let message = SetupRequest::new(ProtocolIEContainer(vec![name, identity(1), identity(2)]));
         let every: Vec<_> = message.ies::<ie::Identity>().take(4).collect();
         assert_eq!(every, [Ok(Identity(1)), Ok(Identity(2))]);
@@ -58,8 +59,8 @@ fn the_ies_of_a_message_are_walked_once_each() {
 #[test]
 fn the_items_of_a_list_are_walked_once_each() {
     bounded(|| {
-        let first = build_toy_ie!(REJECT Item(1u8)).unwrap();
-        let second = build_toy_ie!(REJECT Item(2u8)).unwrap();
+        let first = ie::Item::field(Criticality::Reject, 1u8).unwrap();
+        let second = ie::Item::field(Criticality::Reject, 2u8).unwrap();
         let pdu = build_toy!(SetupRequest, Identity(7u32), Items(vec![first, second])).unwrap();
         let items: Vec<_> = pdu.items::<ie::Items>().take(4).collect();
         assert_eq!(items, [Ok(Item(1)), Ok(Item(2))]);
