@@ -930,7 +930,7 @@ impl Bindings {
             writeln!(
                 out,
                 "use oxirush_aper::{{AsnType, BitString, Bits, Decode, Encode, Error, \
-                 ObjectIdentifier, Octets, Reader, UNBOUNDED, Writer}};"
+                 ObjectIdentifier, Octets, Reader, UNBOUNDED, Writer, in_field}};"
             )?;
             writeln!(out, "#[cfg(feature = \"inspect\")]")?;
             writeln!(
@@ -1337,7 +1337,7 @@ impl Bindings {
                     out,
                     "{inline}fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {{"
                 )?;
-                self.encode(out, kind, "self.0", false)?;
+                self.encode(out, kind, "self.0", false, "?")?;
                 writeln!(out, "Ok(())")?;
                 writeln!(out, "}} }}")?;
                 writeln!(out, "#[cfg(feature = \"inspect\")]")?;
@@ -1484,12 +1484,7 @@ impl Bindings {
         let mut position = 0;
         for member in members {
             let name = &member.name;
-            let in_field = |result: &str| {
-                format!(
-                    "match {result} {{ Ok(value) => value, \
-                     Err(error) => return Err(error.in_field({name:?})) }}"
-                )
-            };
+            let in_field = |result: &str| format!("{result}.map_err(in_field({name:?}))?");
             let value = self.decode(&member.kind, &in_field)?;
             // What owns its octets is copied out of the octets that are read.
             let value = match member.owned {
@@ -1528,27 +1523,20 @@ impl Bindings {
             writeln!(out, "writer.bit(self.{}.is_some());", member.name)?;
         }
         // A value of a member that does not encode is an error that says the member, as
-        // the reader says the one where a decoding stopped: each statement that may
-        // fail returns its error with the name.
-        let fallible = regex::Regex::new(r"(?m)^(?P<call>[^\n{}]+)\?;$")?;
+        // the reader says the one where a decoding stopped.
         for member in members {
-            let mut written = String::new();
+            let tail = format!(".map_err(in_field({:?}))?", member.name);
             match member.optional {
                 true => {
-                    writeln!(written, "if let Some(value) = &self.{} {{", member.name)?;
-                    self.encode(&mut written, &member.kind, "value", true)?;
-                    writeln!(written, "}}")?;
+                    writeln!(out, "if let Some(value) = &self.{} {{", member.name)?;
+                    self.encode(out, &member.kind, "value", true, &tail)?;
+                    writeln!(out, "}}")?;
                 }
                 false => {
                     let value = format!("self.{}", member.name);
-                    self.encode(&mut written, &member.kind, &value, false)?
+                    self.encode(out, &member.kind, &value, false, &tail)?
                 }
             }
-            let named = format!(
-                "if let Err(error) = ${{call}} {{ return Err(error.in_field({:?})); }}",
-                member.name
-            );
-            out.push_str(&fallible.replace_all(&written, named.as_str()));
         }
         writeln!(out, "Ok(())")?;
         writeln!(out, "}} }}")?;
@@ -1654,7 +1642,7 @@ impl Bindings {
             if member.addition {
                 writeln!(out, "let start = writer.begin_open_type();")?;
             }
-            self.encode(out, &member.kind, "value", true)?;
+            self.encode(out, &member.kind, "value", true, "?")?;
             if member.addition {
                 writeln!(out, "writer.end_open_type(start);")?;
             }
@@ -2087,8 +2075,16 @@ impl Bindings {
     }
 
     /// The statements that write `value`, of a kind, to `writer`. `value` is a
-    /// reference when `by_reference` says so.
-    fn encode(&self, out: &mut String, kind: &Kind, value: &str, by_reference: bool) -> Result<()> {
+    /// reference when `by_reference` says so, and `tail` follows each call that may
+    /// fail: `?`, or what returns the error of a member.
+    fn encode(
+        &self,
+        out: &mut String,
+        kind: &Kind,
+        value: &str,
+        by_reference: bool,
+        tail: &str,
+    ) -> Result<()> {
         // A value that is copied, and a reference to one that is not.
         let copied = match by_reference {
             true => format!("*{value}"),
@@ -2109,24 +2105,26 @@ impl Bindings {
                 };
                 match (range.lower, range.upper, range.extensible) {
                     (Some(lower), Some(upper), false) if lower < 0 => {
-                        writeln!(out, "writer.signed({wide}, {lower}, {upper})?;")?
+                        writeln!(out, "writer.signed({wide}, {lower}, {upper}){tail};")?
                     }
                     (Some(lower), Some(upper), false) => {
-                        writeln!(out, "writer.unsigned({wide}, {lower}, {upper})?;")?
+                        writeln!(out, "writer.unsigned({wide}, {lower}, {upper}){tail};")?
                     }
-                    (Some(lower), Some(upper), true) if lower < 0 => {
-                        writeln!(out, "writer.signed_extensible({wide}, {lower}, {upper})?;")?
-                    }
+                    (Some(lower), Some(upper), true) if lower < 0 => writeln!(
+                        out,
+                        "writer.signed_extensible({wide}, {lower}, {upper}){tail};"
+                    )?,
                     (Some(lower), Some(upper), true) => writeln!(
                         out,
-                        "writer.unsigned_extensible({wide}, {lower}, {upper})?;"
+                        "writer.unsigned_extensible({wide}, {lower}, {upper}){tail};"
                     )?,
                     (Some(lower), None, _) if lower < 0 => {
-                        writeln!(out, "writer.semi_constrained({wide}, {lower})?;")?
+                        writeln!(out, "writer.semi_constrained({wide}, {lower}){tail};")?
                     }
-                    (Some(lower), None, _) => {
-                        writeln!(out, "writer.semi_constrained_unsigned({wide}, {lower})?;")?
-                    }
+                    (Some(lower), None, _) => writeln!(
+                        out,
+                        "writer.semi_constrained_unsigned({wide}, {lower}){tail};"
+                    )?,
                     _ => writeln!(out, "writer.unconstrained({wide});")?,
                 }
             }
@@ -2134,19 +2132,29 @@ impl Bindings {
             Kind::Octets(range) => match range.extensible {
                 true => writeln!(
                     out,
-                    "writer.octet_string_extensible({referred}, {})?;",
+                    "writer.octet_string_extensible({referred}, {}){tail};",
                     bounds(range)
                 )?,
-                false => writeln!(out, "writer.octet_string({referred}, {})?;", bounds(range))?,
+                false => writeln!(
+                    out,
+                    "writer.octet_string({referred}, {}){tail};",
+                    bounds(range)
+                )?,
             },
-            Kind::Bits(range) => writeln!(out, "writer.bits_sized({copied}, {})?;", bounds(range))?,
+            Kind::Bits(range) => {
+                writeln!(out, "writer.bits_sized({copied}, {}){tail};", bounds(range))?
+            }
             Kind::BitString(range) => match range.extensible {
                 true => writeln!(
                     out,
-                    "writer.bit_string_extensible({referred}, {})?;",
+                    "writer.bit_string_extensible({referred}, {}){tail};",
                     bounds(range)
                 )?,
-                false => writeln!(out, "writer.bit_string({referred}, {})?;", bounds(range))?,
+                false => writeln!(
+                    out,
+                    "writer.bit_string({referred}, {}){tail};",
+                    bounds(range)
+                )?,
             },
             Kind::Text {
                 of: "utf8_string", ..
@@ -2154,34 +2162,37 @@ impl Bindings {
             Kind::Text { of, range } => match range.extensible {
                 true => writeln!(
                     out,
-                    "writer.{of}_extensible({referred}, {})?;",
+                    "writer.{of}_extensible({referred}, {}){tail};",
                     bounds(range)
                 )?,
-                false => writeln!(out, "writer.{of}({referred}, {})?;", bounds(range))?,
+                false => writeln!(out, "writer.{of}({referred}, {}){tail};", bounds(range))?,
             },
             Kind::ObjectIdentifier => writeln!(out, "writer.object_identifier({referred});")?,
             Kind::Open => writeln!(out, "writer.open_type({referred});")?,
-            Kind::Named(_) => writeln!(out, "{value}.encode(writer)?;")?,
+            Kind::Named(_) => writeln!(out, "{value}.encode(writer){tail};")?,
             Kind::List { of, range } => {
                 let (lower, upper) = (range.lower.unwrap_or(0), range.upper);
                 match upper {
                     Some(upper) if upper < 65536 => {
-                        writeln!(out, "writer.size({value}.len(), {lower}, {upper})?;")?;
+                        writeln!(out, "writer.size({value}.len(), {lower}, {upper}){tail};")?;
                         writeln!(out, "for item in {value}.iter() {{")?;
-                        self.encode(out, of, "item", true)?;
+                        self.encode(out, of, "item", true, tail)?;
                         writeln!(out, "}}")?;
                     }
                     upper => {
                         let upper =
                             upper.map_or("UNBOUNDED".to_string(), |upper| upper.to_string());
-                        writeln!(out, "Writer::check_size({value}.len(), {lower}, {upper})?;")?;
+                        writeln!(
+                            out,
+                            "Writer::check_size({value}.len(), {lower}, {upper}){tail};"
+                        )?;
                         writeln!(out, "let mut left = &{value}[..];")?;
                         writeln!(
                             out,
                             "loop {{ let (count, more) = writer.length(left.len());"
                         )?;
                         writeln!(out, "for item in &left[..count] {{")?;
-                        self.encode(out, of, "item", true)?;
+                        self.encode(out, of, "item", true, tail)?;
                         writeln!(out, "}}")?;
                         writeln!(out, "left = &left[count..]; if !more {{ break; }} }}")?;
                     }

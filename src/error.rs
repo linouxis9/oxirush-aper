@@ -105,6 +105,15 @@ impl ErrorIe {
     }
 }
 
+/// For the bindings: `map_err(in_field("x"))` gives the error of the member `x` of a
+/// SEQUENCE, which did not decode or encode, the name of that member, as
+/// [`Error::in_field`] does.
+#[doc(hidden)]
+#[inline]
+pub fn in_field(name: &'static str) -> impl FnOnce(Error) -> Error {
+    move |error| error.in_field(name)
+}
+
 /// The error of every function of the crate that can fail, and of the bindings that
 /// are built on it.
 ///

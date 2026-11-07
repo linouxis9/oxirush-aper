@@ -44,7 +44,7 @@ pub use registry::{Deviation, Toy, ToyPduKind, ie};
 /// The bindings, as the generator writes them for a protocol.
 #[allow(dead_code, non_camel_case_types, clippy::new_without_default)]
 pub mod toy {
-    use oxirush_aper::{AsnType, Decode, Encode, Error, Octets, Reader, UNBOUNDED, Writer};
+    use oxirush_aper::{AsnType, Decode, Encode, Error, Octets, Reader, UNBOUNDED, Writer, in_field};
 
     /// Read a SEQUENCE of a container of protocol IEs, with an extension marker.
     macro_rules! message {
@@ -70,7 +70,7 @@ pub mod toy {
                 fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
                     let extended = reader.bit()?;
                     let protocol_ies = ProtocolIEContainer::decode(reader)
-                        .map_err(|error| error.in_field("protocol_ies"))?;
+                        .map_err(in_field("protocol_ies"))?;
                     if extended {
                         reader.skip_additions()?;
                     }
@@ -82,7 +82,7 @@ pub mod toy {
                     writer.bit(false);
                     self.protocol_ies
                         .encode(writer)
-                        .map_err(|error| error.in_field("protocol_ies"))
+                        .map_err(in_field("protocol_ies"))
                 }
             }
         };
@@ -163,12 +163,12 @@ pub mod toy {
     }
     impl<'a> Decode<'a> for ProtocolIEField<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            let id = ProtocolIEID::decode(reader).map_err(|error| error.in_field("id"))?;
+            let id = ProtocolIEID::decode(reader).map_err(in_field("id"))?;
             let criticality =
-                Criticality::decode(reader).map_err(|error| error.in_field("criticality"))?;
+                Criticality::decode(reader).map_err(in_field("criticality"))?;
             let value = reader
                 .open_type()
-                .map_err(|error| error.in_field("value"))?;
+                .map_err(in_field("value"))?;
             Ok(Self {
                 id,
                 criticality,
