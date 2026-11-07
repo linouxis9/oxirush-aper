@@ -68,7 +68,8 @@ def tested():
 
 def generate(protocol):
     """The digest of the formatted bindings of `protocol`, None when the generator
-    fails, or "unviable" when it does not build. The crate is left as it was."""
+    fails or writes what rustfmt cannot read, or "unviable" when it does not build. The
+    crate is left as it was."""
     crate = APER.parent / f"oxirush-{protocol}"
     env = dict(os.environ, CARGO=subprocess.check_output(["which", "cargo"], text=True).strip())
     manifest = ["--manifest-path", "build/Cargo.toml"]
@@ -80,7 +81,10 @@ def generate(protocol):
             return None
         files = written(protocol)
         rust = [file for file in files if file.endswith(".rs")]
-        subprocess.run(["rustfmt", "--edition", "2024", *rust], cwd=crate, check=True)
+        # Bindings that are no Rust are not those that the generator writes unchanged
+        formatted = subprocess.run(["rustfmt", "--edition", "2024", *rust], **quiet)
+        if formatted.returncode != 0:
+            return None
         digest = hashlib.sha256()
         for file in files:
             digest.update((crate / file).read_bytes())
