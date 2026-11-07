@@ -81,10 +81,6 @@ struct Member {
     name: String,
     /// The name that ASN.1 gives the member or the alternative.
     asn: String,
-    /// The name that rasn-compiler gives the field of a member of a SEQUENCE: the one
-    /// that the bindings had before the rule of [`crate::names`], and that the oracle
-    /// of the tests has.
-    was: String,
     /// Whether the value owns its octets: the extension container of a SEQUENCE and
     /// the extension of a CHOICE, which a value has seldom, so that a type whose own
     /// members borrow nothing has no lifetime for them.
@@ -144,11 +140,6 @@ pub struct Written {
     pub borrowing: BTreeSet<String>,
     /// The types that hold a key: the types of [`Keys::types`], and those that hold one.
     pub keys: BTreeSet<String>,
-    /// Each member of each SEQUENCE, a line each, in the order of the bindings: the type,
-    /// the identifier that ASN.1 gives the member, the name of its field by the rule of
-    /// [`crate::names`], and the name that rasn-compiler gives it, which the bindings
-    /// had before that rule. Tab-separated, after a line of headings.
-    pub fields: String,
 }
 
 /// What the bindings are told of the keys of a protocol: `Debug` prints no octet of one.
@@ -215,22 +206,10 @@ pub fn bindings(
             .insert(ty.to_string(), example.to_string());
     }
     let text = bindings.write(&modules)?;
-    let mut fields = String::from("type\tASN.1 identifier\tfield\tfield before the rule\n");
-    for entry in modules.iter().flat_map(|module| &module.entries) {
-        if let Entry::Definition(definition) = entry
-            && let Shape::Sequence(members) = &definition.shape
-        {
-            for member in members {
-                let (of, asn) = (&definition.name, &member.asn);
-                writeln!(fields, "{of}\t{asn}\t{}\t{}", member.name, member.was)?;
-            }
-        }
-    }
     Ok(Written {
         text,
         borrowing: bindings.borrowing,
         keys: bindings.keys,
-        fields,
     })
 }
 
@@ -326,7 +305,6 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
                     let asn = asn.unwrap_or_else(|| variant.ident.to_string());
                     let mut member = Member {
                         name: variant.ident.to_string(),
-                        was: variant.ident.to_string(),
                         owned: attributes.choice && asn == EXTENSION_OF_A_CHOICE,
                         asn,
                         kind: Kind::Null,
@@ -452,7 +430,6 @@ fn member(field: &syn::Field) -> Result<Member> {
         name: crate::names::field_name(&asn),
         owned: asn == EXTENSIONS_OF_A_SEQUENCE,
         asn,
-        was: name,
         optional,
         addition: false,
         number: 0,

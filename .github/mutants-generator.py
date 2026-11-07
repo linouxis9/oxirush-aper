@@ -1,8 +1,7 @@
 """The mutants of generator/ against its own tests and the bindings that it writes: a
 mutant is caught when a test of generator/ fails, or when the bindings of oxirush-ngap or
-of oxirush-s1ap that it writes, formatted, or the names of their fields in
-build/fields.tsv, differ from those that the generator writes unchanged, or when it fails
-to write them; missed when the tests pass and the bindings are the same, and unviable
+of oxirush-s1ap that it writes, formatted, differ from those that the generator writes
+unchanged, or when it fails to write them; missed when the tests pass and the bindings are the same, and unviable
 when it does not build. The tests check what those two protocols do not have. A mutant
 that makes the tests or the generator run past 10 minutes, or take more than 8 GiB of
 address space, fails, and is caught: without the limits it took the runner down. The
@@ -49,15 +48,13 @@ def ran(command, **options):
 
 
 def written(protocol):
-    """What the generator writes for a protocol crate: the bindings, and the names that
-    it gives the fields of the ASN.1."""
+    """What the generator writes for a protocol crate: the bindings."""
     return [
         f"src/{protocol}.rs",
         "src/registry.rs",
         "src/inspect_registry.rs",
         "oracle/src/bindings.rs",
         "oracle/src/types.rs",
-        "build/fields.tsv",
     ]
 
 

@@ -257,7 +257,8 @@ fn write(writer: &mut Writer<'_>, field: &Field) {
 }
 
 /// Fields that the octets choose, read from the octets: no field makes the reader
-/// panic, and the fields that were read are written and read again as the same.
+/// panic, a reader that notes faults reads the same, and the fields that were read are
+/// written and read again as the same.
 ///
 /// The first octet says how many fields are read, 32 at most, and three octets say
 /// each: which field, and its constraint. The rest is what they are read from.
@@ -283,6 +284,13 @@ pub fn fields(octets: &[u8]) {
         read_as.push(*step);
     }
     assert!(reader.position() <= data.len() * 8);
+    // A reader that notes the forms that X.691 does not give reads what one that does not
+    // reads, and stops where it stops.
+    let mut noting = Reader::noting(data);
+    let read_alike = fields.iter().map(Some).chain(core::iter::once(None));
+    for (step, field) in script.iter().zip(read_alike) {
+        assert_eq!(read(&mut noting, *step).as_ref(), field, "{data:02x?}");
+    }
 
     // Written, they are octets that hold the same fields, and that are written again
     // as the same octets: a value has one encoding.

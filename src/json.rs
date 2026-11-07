@@ -55,11 +55,6 @@ use oxirush_utils::identity::Plmn;
 use crate::reader::Alphabet;
 use crate::{BitString, Bits, Error, ErrorKind, ObjectIdentifier, Octets};
 
-/// The tree of `value`.
-pub fn to_value<T: Tree>(value: &T) -> Value {
-    value.to_tree()
-}
-
 /// The value of the type `T` that `value` writes.
 ///
 /// # Errors

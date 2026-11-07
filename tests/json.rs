@@ -4,9 +4,7 @@
 
 use std::borrow::Cow;
 
-use oxirush_aper::json::{
-    self, Characters, Reading, Refused, Tree, from_value, hex, to_value, unhex,
-};
+use oxirush_aper::json::{self, Characters, Reading, Refused, Tree, from_value, hex, unhex};
 use oxirush_aper::{AsnType, BitString, Bits, ErrorKind, ObjectIdentifier, Octets};
 use oxirush_utils::tree;
 use oxirush_utils::tree::Value;
@@ -283,7 +281,7 @@ fn with(name: &str, value: Value) -> Value {
 
 #[test]
 fn each_construct_has_its_form_and_is_read_back() {
-    assert_eq!(to_value(&sample()), written());
+    assert_eq!(sample().to_tree(), written());
     assert_eq!(from_value::<Sample>(&written()).unwrap(), sample());
 }
 
@@ -291,7 +289,7 @@ fn each_construct_has_its_form_and_is_read_back() {
 fn a_bit_string_of_one_size_is_its_octets_in_a_member_that_may_be_absent() {
     // X.697 (02/2021) §24.1: a bit string whose type has one size is a JSON string,
     // wherever a value of the type is.
-    assert_eq!(to_value(&sample())["day-of-week"], tree!("fe"));
+    assert_eq!(sample().to_tree()["day-of-week"], tree!("fe"));
     let read = from_value::<Sample>(&with("day-of-week", tree!("FE"))).unwrap();
     assert_eq!(read.day_of_week, sample().day_of_week);
     let (kind, why) = refused(&with("day-of-week", tree!({"value": "FE", "length": 7})));
@@ -792,7 +790,7 @@ fn the_readable_forms_read_and_write_their_values() {
 /// JSON Encoding Rules; octets are read from hexadecimal and written in it.
 #[test]
 fn a_value_is_read_in_its_readable_form() {
-    use oxirush_aper::json::{Form, Reading, Refused, Tree, from_value, read_readable, to_value};
+    use oxirush_aper::json::{Form, Reading, Refused, Tree, from_value, read_readable};
     #[derive(Debug, PartialEq)]
     struct Tac(Value);
     impl Tree for Tac {
@@ -809,7 +807,7 @@ fn a_value_is_read_in_its_readable_form() {
         Tac(tree!("000102"))
     );
     assert!(from_value::<Tac>(&tree!(1 << 24)).is_err());
-    assert_eq!(to_value(&Octets::from(&[0xab, 0xcd])), tree!("abcd"));
+    assert_eq!(Octets::from(&[0xab, 0xcd]).to_tree(), tree!("abcd"));
     assert_eq!(
         from_value::<Octets>(&tree!("ABCD")).unwrap(),
         Octets::from(vec![0xab, 0xcd])

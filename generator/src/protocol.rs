@@ -234,8 +234,6 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     fs::write("src/registry.rs", &list)?;
     fs::write("src/inspect_registry.rs", inspection)?;
     fs::write(path, oracle).context("write the bindings of the oracle")?;
-    // The name of each field, and the one that it had before the rule of the generator.
-    fs::write("build/fields.tsv", &bindings.fields)?;
     // A PDU is serialized as the tree of its message, which `inspect.rs` writes.
     let serde = format!("#[cfg(feature = \"serde\")]\noxirush_utils::impl_serde!({pdu}<'a>);\n");
     ensure!(

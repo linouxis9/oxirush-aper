@@ -9,8 +9,7 @@
 /// set, each with its identifier, its criticality and its presence. A message that has no
 /// container of protocol IEs, as a private message, has no object set.
 ///
-/// The codes that the macros take by the names of the procedures, the type of the message
-/// that they build, the kinds of a PDU, the messages whose protocol IEs a PDU gives and,
+/// The type of the message that the macros build, the kinds of a PDU, the messages whose protocol IEs a PDU gives and,
 /// with the `inspect` feature, the messages of a view and of a tree, the IEs that each can
 /// have and the criticality that ASN.1 assigns all come from these lines. The type of a
 /// message is written with the lifetime `'a`, which the macro declares where it names the
@@ -34,13 +33,6 @@ macro_rules! __procedures {
             $([$($unsuccessful_ie:literal $unsuccessful_criticality:ident
                 $unsuccessful_presence:ident),*])?;)?
     })*) => {
-        /// The procedure codes, by the names of the procedures.
-        #[doc(hidden)]
-        #[allow(non_upper_case_globals)]
-        pub mod procedures {
-            $(pub const $procedure: u8 = $code;)*
-        }
-
         /// The type of the message of each procedure, by its direction.
         #[doc(hidden)]
         #[allow(non_snake_case, non_camel_case_types)]
@@ -581,11 +573,6 @@ macro_rules! __ies {
                     $id => {
                         let value: Result<($ie, _), $crate::Error> =
                             $crate::decode_with_faults(octets);
-                        // A reader that notes reads what one that does not reads.
-                        debug_assert_eq!(
-                            value.as_ref().map(|(value, _)| value),
-                            $crate::decode::<$ie>(octets).as_ref()
-                        );
                         Some(value.map(|(value, faults)| {
                             ($crate::encode_strict(&value).err(), faults)
                         }))
