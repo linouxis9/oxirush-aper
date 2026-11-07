@@ -1896,7 +1896,8 @@ impl Protocol {
                 _ => {
                     let members = self.member_shapes(shape, &entry);
                     for (name, value) in entry.iter_mut() {
-                        *value = self.by_name(value.take(), member_shape(&members, name))?;
+                        *value =
+                            self.by_name(core::mem::take(value), member_shape(&members, name))?;
                     }
                     Ok(Value::Object(entry))
                 }
@@ -1904,7 +1905,7 @@ impl Protocol {
             Value::Array(mut entries) => {
                 let of = element(shape);
                 for entry in &mut entries {
-                    *entry = match (of, entry.take()) {
+                    *entry = match (of, core::mem::take(entry)) {
                         (Shape::Ie(_) | Shape::Extension(..), Value::Object(entry)) => {
                             self.ie_by_name(entry, of, shape)?
                         }

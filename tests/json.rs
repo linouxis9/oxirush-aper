@@ -175,36 +175,48 @@ impl Tree for Sample {
     fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
         let members = reading.members(value, MEMBERS)?;
         Ok(Self {
-            flag: reading.member(&members, 0, |v, r| r.boolean(v))?,
-            id: reading.member(&members, 1, |v, r| r.unsigned(v, 0, 1_099_511_627_775))?,
-            rate: reading.member(&members, 2, |v, r| r.unsigned(v, u64::MIN, u64::MAX))?,
-            small: reading.member(&members, 3, |v, r| Ok(r.signed(v, -8, 7)? as i8))?,
-            kind: reading.member(&members, 4, Kind::from_tree)?,
-            either: reading.member(&members, 5, Either::from_tree)?,
-            octets: reading.member(&members, 6, |v, r| json::read_octets(r, v))?,
-            plmn: reading.member(&members, 7, |v, r| r.octet_array(v))?,
-            fixed_bits: reading.member(&members, 8, |v, r| json::read_bits(r, v, 12, 12))?,
-            mask: reading.member(&members, 9, |v, r| {
+            flag: reading.member(&members, "flag", |v, r| r.boolean(v))?,
+            id: reading.member(&members, "id", |v, r| r.unsigned(v, 0, 1_099_511_627_775))?,
+            rate: reading.member(&members, "rate", |v, r| r.unsigned(v, u64::MIN, u64::MAX))?,
+            small: reading.member(&members, "small", |v, r| Ok(r.signed(v, -8, 7)? as i8))?,
+            kind: reading.member(&members, "kind", Kind::from_tree)?,
+            either: reading.member(&members, "either", Either::from_tree)?,
+            octets: reading.member(&members, "octets", |v, r| json::read_octets(r, v))?,
+            plmn: reading.member(&members, "plmn", |v, r| r.octet_array(v))?,
+            fixed_bits: reading
+                .member(&members, "fixed-bits", |v, r| json::read_bits(r, v, 12, 12))?,
+            mask: reading.member(&members, "mask", |v, r| {
                 json::read_bit_string(r, v, 16, 16, true)
             })?,
-            address: reading.member(&members, 10, |v, r| {
+            address: reading.member(&members, "address", |v, r| {
                 json::read_bit_string(r, v, 1, 160, true)
             })?,
-            day_of_week: reading.optional(&members, 11, |v, r| json::read_bits(r, v, 7, 7))?,
-            few: reading.member(&members, 12, |v, r| json::read_bits(r, v, 1, 32))?,
-            name: reading.member(&members, 13, |v, r| json::read_text(r, v, Characters::Utf8))?,
-            printable: reading.member(&members, 14, |v, r| {
+            day_of_week: reading
+                .optional(&members, "day-of-week", |v, r| json::read_bits(r, v, 7, 7))?,
+            few: reading.member(&members, "few", |v, r| json::read_bits(r, v, 1, 32))?,
+            name: reading.member(&members, "name", |v, r| {
+                json::read_text(r, v, Characters::Utf8)
+            })?,
+            printable: reading.member(&members, "printable", |v, r| {
                 json::read_text(r, v, Characters::Printable)
             })?,
-            visible: reading.member(&members, 15, |v, r| {
+            visible: reading.member(&members, "visible", |v, r| {
                 json::read_text(r, v, Characters::Visible)
             })?,
-            ia5: reading.member(&members, 16, |v, r| json::read_text(r, v, Characters::Ia5))?,
-            object: reading.member(&members, 17, |v, r| json::read_object_identifier(r, v))?,
-            open: reading.member(&members, 18, |v, r| json::read_octets(r, v))?,
-            list: reading.member(&members, 19, |v, r| r.list(v, Either::from_tree))?,
-            absent: reading.optional(&members, 20, |v, r| Ok(r.unsigned(v, 0, 255)? as u8))?,
-            later: reading.optional(&members, 21, Kind::from_tree)?,
+            ia5: reading.member(&members, "ia5", |v, r| {
+                json::read_text(r, v, Characters::Ia5)
+            })?,
+            object: reading.member(&members, "object", |v, r| {
+                json::read_object_identifier(r, v)
+            })?,
+            open: reading.member(&members, "open", |v, r| json::read_octets(r, v))?,
+            list: reading.member(&members, "list", |v, r| r.list(v, Either::from_tree))?,
+            absent: reading.optional(
+                &members,
+                "absent",
+                |v, r| Ok(r.unsigned(v, 0, 255)? as u8),
+            )?,
+            later: reading.optional(&members, "later", Kind::from_tree)?,
         })
     }
 }
@@ -540,7 +552,7 @@ fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
     );
 
     let mut without = written();
-    without.as_object_mut().unwrap().remove("flag");
+    without.as_object_mut().unwrap().shift_remove("flag");
     let (kind, why) = refused(&without);
     assert_eq!(kind, ErrorKind::Value);
     assert_eq!(
@@ -550,7 +562,7 @@ fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
 
     // A member that may be absent is.
     without = written();
-    without.as_object_mut().unwrap().remove("later");
+    without.as_object_mut().unwrap().shift_remove("later");
     assert_eq!(from_value::<Sample>(&without).unwrap().later, None);
 
     let (_, why) = refused(&tree!([1]));

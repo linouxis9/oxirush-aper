@@ -1793,7 +1793,7 @@ impl Bindings {
             "let members = reading.members(value, &[{}])?;",
             names.join(", ")
         )?;
-        for (position, member) in members.iter().enumerate() {
+        for member in members {
             let read = match &member.kind {
                 Kind::Named(name) => format!("{name}::from_tree"),
                 kind => format!("|value, reading| {}", self.read_json(kind)),
@@ -1805,8 +1805,8 @@ impl Bindings {
             };
             writeln!(
                 out,
-                "let {} = reading.{how}(&members, {position}, {read})?;",
-                member.name
+                "let {} = reading.{how}(&members, {:?}, {read})?;",
+                member.name, member.asn
             )?;
         }
         let names: Vec<&str> = members.iter().map(|member| member.name.as_str()).collect();

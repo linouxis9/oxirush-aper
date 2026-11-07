@@ -179,7 +179,7 @@ impl Protocol {
                 .and_then(|v| u16::try_from(v).ok())
                 && let Some(raw) = object.get_mut(field).filter(|v| v.is_string())
             {
-                let raw = raw.take();
+                let raw = core::mem::take(raw);
                 let decoded = match deep {
                     true => too_deep(),
                     false => {
@@ -225,7 +225,7 @@ impl Protocol {
                             true => too_deep(),
                             false => (self.transfer_typed)(key),
                         };
-                        *child = contained(child.take(), typed);
+                        *child = contained(core::mem::take(child), typed);
                     }
                     self.expand(child, depth + 1, member_shape(&members, key));
                 }
@@ -535,7 +535,10 @@ pub fn tree(
     let ies = view(protocol, direction, code, Value::Null, raw)
         .ok()
         .filter(|view| view.get(LOSSY).is_none())
-        .and_then(|mut view| view.pointer_mut("/message/protocolIEs").map(Value::take))
+        .and_then(|mut view| {
+            let message = view.get_mut("message")?;
+            message.get_mut("protocolIEs").map(core::mem::take)
+        })
         .filter(Value::is_array)
         .and_then(|listed| protocol.by_name(listed, Shape::Ies(sent)).ok());
     match ies {

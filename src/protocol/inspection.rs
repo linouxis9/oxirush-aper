@@ -827,7 +827,7 @@ mod tests {
         }
         let found = paths(&shallow);
         assert_eq!(found.len(), 1);
-        assert!(found[0].0.ends_with("/0/a") && found[0].1 == 1);
+        assert!(found[0].0.ends_with("/0/a") && found[0].1 == tree!(1));
     }
 
     #[test]

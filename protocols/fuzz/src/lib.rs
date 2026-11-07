@@ -198,8 +198,7 @@ pub fn view(octets: &[u8]) {
     // Where the tree has an IE as its octets the view says why, and so does its path
     // list: octets that do not decode, or that are in another form than the one of X.691,
     // have a `_decode_error`, and those that a typed value has no place for `_lossy`.
-    let (Some(Value::Array(shown)), Some(Value::Array(viewed))) =
-        (tree.get("ies"), view.pointer("/message/protocolIEs"))
+    let (Some(Value::Array(shown)), Some(Value::Array(viewed))) = (tree.get("ies"), ies_of(&view))
     else {
         return;
     };
@@ -388,6 +387,11 @@ fn checked(pdu: &Pdu) {
         let alone = Pdu::from_view(&written(&view));
         assert_eq!(alone.as_ref(), Ok(pdu), "{view}");
     }
+}
+
+/// The IEs of the message of a view.
+fn ies_of(view: &Value) -> Option<&Value> {
+    view.get("message")?.get("protocolIEs")
 }
 
 /// The octets of a PDU, what `check` says of it and how the crate writes it again.
@@ -732,12 +736,10 @@ pub fn edit(input: Edits) {
     else {
         return;
     };
-    let (Some(Value::Array(was)), Ok(after)) =
-        (before.pointer("/message/protocolIEs"), changed.to_view())
-    else {
+    let (Some(Value::Array(was)), Ok(after)) = (ies_of(&before), changed.to_view()) else {
         return;
     };
-    let Some(Value::Array(is)) = after.pointer("/message/protocolIEs") else {
+    let Some(Value::Array(is)) = ies_of(&after) else {
         return;
     };
     if was.len() != is.len() {

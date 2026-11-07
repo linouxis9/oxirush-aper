@@ -33,7 +33,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-oxirush-utils = { version = "0.1.0", optional = true, features = ["tree"] }
+oxirush-utils = { version = "0.2.0", optional = true, features = ["tree"] }
 
 [dev-dependencies]
 # The oracle of the tests: the codec of another implementation.
