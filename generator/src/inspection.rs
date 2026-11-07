@@ -482,6 +482,18 @@ mod tests {
             let field = item.fields.iter().next().unwrap();
             assert_eq!(rasn_kind(&field.attrs).unwrap().2, default, "{attribute}");
         }
+        // The identifier is what `identifier` names, and no other pair names one
+        let named = |attribute: &str| {
+            let item: syn::ItemStruct =
+                syn::parse_str(&format!("struct Holder {{ {attribute} count: u8 }}")).unwrap();
+            let field = item.fields.iter().next().unwrap();
+            rasn_kind(&field.attrs).unwrap().0
+        };
+        assert_eq!(
+            named(r#"#[rasn(identifier = "Count")]"#).as_deref(),
+            Some("Count")
+        );
+        assert_eq!(named(r#"#[rasn(other = "Count")]"#), None);
     }
 
     /// A type is followed through 16 types that each wrap the next, an OPTIONAL or a box
@@ -530,10 +542,12 @@ mod tests {
         let generated = r#"
             #[rasn(delegate, size("256"))] pub struct Fixed(pub BitString);
             #[rasn(delegate, size("1..=256"))] pub struct Varying(pub BitString);
+            pub struct Pair(pub BitString, pub u8);
         "#;
         let mut out = String::new();
         generate_types(generated, &BTreeMap::new(), &mut out).unwrap();
         assert!(!out.contains("Fixed"), "{out}");
+        assert!(!out.contains("Pair"), "{out}");
         assert!(out.contains("Varying = bits;"), "{out}");
     }
 }

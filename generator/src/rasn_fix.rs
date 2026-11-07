@@ -523,4 +523,42 @@ mod tests {
 "#;
         assert_eq!(fixed, expected);
     }
+
+    /// The `new` that takes the sized type is that of the type of the field, after it,
+    /// not that of a type before it with a field of the same name.
+    #[test]
+    fn the_new_of_a_sized_field_is_that_of_its_type() {
+        let first = r#"    pub struct First {
+        #[rasn(size("0..=300"))]
+        pub long: OctetString,
+    }
+    impl First {
+        pub fn new(
+            long: OctetString,
+        ) -> Self {
+"#;
+        let mut second = String::from(
+            "    pub struct Second {\n        #[rasn(size(\"0..=300\"))]\n        pub long: OctetString,\n",
+        );
+        for at in 0..8 {
+            second.push_str(&format!("        pub other{at}: u8,\n"));
+        }
+        second.push_str(
+            "    }\n    impl Second {\n        pub fn new(\n            long: OctetString,\n",
+        );
+        for at in 0..8 {
+            second.push_str(&format!("            other{at}: u8,\n"));
+        }
+        second.push_str("        ) -> Self {\n");
+        let fixed = fix_long_inline_strings(&format!("{first}{second}")).unwrap();
+        let sized = "crate::sized::SizedOctetString<0, 300>";
+        assert_eq!(fixed.matches(&format!("pub long: {sized},")).count(), 2);
+        assert_eq!(
+            fixed
+                .matches(&format!("            long: {sized},"))
+                .count(),
+            2
+        );
+        assert!(!fixed.contains("long: OctetString"), "{fixed}");
+    }
 }

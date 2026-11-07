@@ -2598,4 +2598,23 @@ mod tests {
         );
         assert_eq!(new("Second"), "pub fn new(count: Count) -> Self { Self {");
     }
+
+    /// A well-known number that is a bit string has one size, which is its number of
+    /// bits; one whose size varies is refused.
+    #[test]
+    fn a_well_known_number_has_one_size() {
+        let text = text("CellIdentity ::= BIT STRING (SIZE (28))");
+        assert!(text.contains("json::Form::Number(28)"), "{text}");
+        let error = written(
+            "CellIdentity ::= BIT STRING (SIZE (20..28))",
+            Keys::default(),
+        )
+        .err()
+        .unwrap();
+        let error = format!("{error:#}");
+        assert!(
+            error.contains("a number of a size that the type does not give"),
+            "{error}"
+        );
+    }
 }

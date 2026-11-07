@@ -296,6 +296,9 @@ mod tests {
             ("m1thresholdeventA2", "m1_thresholdevent_a2"),
             ("cdma2000OneXPilot", "cdma2000_one_x_pilot"),
             ("fiveGProSeLayer2RemoteUE", "five_g_prose_layer2_remote_ue"),
+            // An abbreviation in mixed case ends the capitalised word that it starts in.
+            ("SeNB-ID", "s_enb_id"),
+            ("PDUIPv6Prefix", "pdu_ipv6_prefix"),
             // The first letter is of the abbreviation that the capitals after it are.
             ("tAC", "tac"),
             ("sST", "sst"),
