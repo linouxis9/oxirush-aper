@@ -32,8 +32,6 @@ fn setup(identity: u32, name: &'static str) -> TOY_PDU {
     let first = build_toy_ie!(REJECT Item(1u8)).unwrap();
     let second = build_toy_ie!(REJECT Item(2u8)).unwrap();
     build_toy!(
-        InitiatingMessage,
-        Setup,
         SetupRequest,
         Identity(identity),
         Name(name),
@@ -242,7 +240,7 @@ fn an_ie_that_does_not_decode_is_an_error_of_the_readers_and_of_check_alone() ->
 
 #[test]
 fn a_pdu_of_another_message_is_an_error_and_lax_fields_are_none() -> Result<(), Error> {
-    let response = build_toy!(SuccessfulOutcome, Setup, SetupResponse, Identity(7u32))?;
+    let response = build_toy!(SetupResponse, Identity(7u32))?;
     assert_eq!(read(&response).unwrap_err().kind(), ErrorKind::WrongMessage);
     let lax = |pdu: &TOYPDU<'_>| {
         extract_toy_ies!(pdu, SetupRequest, lax identity: u32 = Identity(id));
@@ -321,13 +319,7 @@ fn a_value_in_fragments_is_gathered_and_kept() -> Result<(), Error> {
     // A name of 20,000 octets is in two fragments in its open type, and its octet string
     // in two more.
     let long: Vec<u8> = (0..20_000).map(|at| (at % 251) as u8).collect();
-    let pdu = build_toy!(
-        InitiatingMessage,
-        Setup,
-        SetupRequest,
-        Identity(7u32),
-        Name(long.clone()),
-    )?;
+    let pdu = build_toy!(SetupRequest, Identity(7u32), Name(long.clone()),)?;
     let octets = pdu.encode()?;
     let pdu = TOYPDU::decode(&octets)?;
     let name = pdu.ie::<ie::Name>().unwrap()?;
@@ -886,7 +878,7 @@ fn the_protocol_ies_of_a_pdu_are_read_and_set_as_they_are() -> Result<(), Error>
 /// another form than the canonical one is told.
 #[test]
 fn a_failure_is_checked_and_a_container_in_another_form_is_told() -> Result<(), Error> {
-    let failure = build_toy!(UnsuccessfulOutcome, Setup, SetupFailure, Identity(7u32))?;
+    let failure = build_toy!(SetupFailure, Identity(7u32))?;
     assert_eq!(failure.check()?, []);
     // The identity of four octets, its length in two octets
     let octets = [

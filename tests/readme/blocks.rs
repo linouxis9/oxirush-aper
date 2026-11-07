@@ -300,7 +300,7 @@ fn block_8() {
     fn main() -> Result<(), Box<dyn std::error::Error>> {
         // A PDU by the names of its IEs, each with the criticality that the object
         // set of the message assigns it
-        let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
+        let pdu = build_toy!(SetupRequest,
             Identity(7u32),
             Name("gNB-1"),
         )?;
@@ -331,7 +331,7 @@ fn block_9() {
     fn main() -> Result<(), Box<dyn std::error::Error>> {
         // A list of single containers: each item is an IE of its own
         let items = vec![build_toy_ie!(REJECT Item(1u8))?, build_toy_ie!(REJECT Item(2u8))?];
-        let pdu = build_toy!(InitiatingMessage, Setup, SetupRequest,
+        let pdu = build_toy!(SetupRequest,
             Identity(7u32),
             Items(items),
         )?;
@@ -348,7 +348,7 @@ fn block_9() {
         // A SETUP REQUEST of two Identities: `ies::<T>()` gives each, the macros
         // take the first, and its container is checked against the object set of
         // its message without decoding a value
-        let twice = build_toy!(InitiatingMessage, Setup, SetupRequest,
+        let twice = build_toy!(SetupRequest,
             Identity(7u32),
             Identity(8u32),
         )?;

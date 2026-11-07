@@ -161,9 +161,3 @@ pub fn __message_of_protocol_ies<'a, M: Container<'a>>() {
         )
     };
 }
-
-/// For the macro that builds a PDU: `M` is the message that the procedure of `Q` has in
-/// its direction, which is the type `Q` names.
-#[doc(hidden)]
-#[inline]
-pub fn __message_of<M, Q>(_: fn(M) -> Q) {}

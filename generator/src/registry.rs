@@ -6,15 +6,11 @@ use std::fmt::Write;
 use anyhow::{Result, anyhow, bail, ensure};
 use regex::Regex;
 
-/// The messages of a procedure, as ASN.1 labels each and as a PDU and a kind name it.
-pub(crate) const DIRECTIONS: [(&str, &str, &str); 3] = [
-    ("INITIATING MESSAGE", "InitiatingMessage", "Initiating"),
-    ("SUCCESSFUL OUTCOME", "SuccessfulOutcome", "Successful"),
-    (
-        "UNSUCCESSFUL OUTCOME",
-        "UnsuccessfulOutcome",
-        "Unsuccessful",
-    ),
+/// The messages of a procedure, as ASN.1 labels each and as a PDU names it.
+pub(crate) const DIRECTIONS: [(&str, &str); 3] = [
+    ("INITIATING MESSAGE", "InitiatingMessage"),
+    ("SUCCESSFUL OUTCOME", "SuccessfulOutcome"),
+    ("UNSUCCESSFUL OUTCOME", "UnsuccessfulOutcome"),
 ];
 
 /// A procedure: its name as the macros take it, the `CRITICALITY` of the elementary
@@ -262,6 +258,16 @@ impl Registry {
 
     /// The path of a type as the list writes it: with its lifetime when the type
     /// borrows.
+    /// The name of the type of each message, in the bindings.
+    pub(crate) fn message_types(&self) -> impl Iterator<Item = &str> {
+        let messages = self
+            .procedures
+            .values()
+            .flat_map(|procedure| &procedure.messages);
+        let types = messages.flatten().map(|message| message.ty.as_str());
+        types.map(|ty| ty.rsplit(':').next().unwrap_or(ty))
+    }
+
     fn written(&self, path: &str) -> String {
         let name = path.rsplit(':').next().unwrap_or(path);
         match self.borrowing.contains(name) {
@@ -299,7 +305,7 @@ impl Registry {
              triggering {initiating} {successful} {unsuccessful} }}"
         )?;
         // The procedure code, the name and the criticality, then for each message its
-        // direction, its kind, the name that ASN.1 gives it, its type and the IEs of its
+        // direction, the name of its type, the name that ASN.1 gives it and the IEs of its
         // object set, in brackets: a message without an object set has none.
         writeln!(
             out,
@@ -307,21 +313,22 @@ impl Registry {
              {name}PDU, kind {marker}PduKind, hooks oxirush_{module}_hooks;"
         )?;
         for (code, procedure) in &self.procedures {
-            write!(out, "    {code} {}", procedure.name)?;
-            if let Some(criticality) = &procedure.criticality {
-                write!(out, " {criticality}")?;
-            }
-            write!(out, " {{")?;
-            for ((_, direction, kind), message) in DIRECTIONS.iter().zip(&procedure.messages) {
+            // The class of an elementary procedure has `ignore` by default.
+            let criticality = procedure.criticality.as_deref().unwrap_or("ignore");
+            write!(out, "    {code} {} {criticality} {{", procedure.name)?;
+            for ((_, direction), message) in DIRECTIONS.iter().zip(&procedure.messages) {
                 if let Some(Message { name, ty, ies }) = message {
-                    let kind = format!("{kind}_{}", procedure.name);
-                    // A message borrows: the macros give its type its lifetime.
+                    // A message borrows, and is a type of the module of the bindings: the
+                    // macros write its path and its lifetime.
                     let ty = self.written(ty);
-                    ensure!(
-                        ty.ends_with("<'a>"),
-                        "{name} is a message that borrows nothing"
-                    );
-                    write!(out, " {direction} {kind} {name:?} {ty}")?;
+                    let bare = ty.strip_prefix(&format!("crate::{module}::"));
+                    let bare = bare.and_then(|ty| ty.strip_suffix("<'a>"));
+                    let Some(ty) = bare else {
+                        bail!(
+                            "{name} is a message of the type {ty}, which the macros do not write"
+                        );
+                    };
+                    write!(out, " {direction} {ty} {name:?}")?;
                     if let Some(ies) = ies {
                         let ies = ies.iter().map(|(id, c, p)| format!("{id} {c} {p}"));
                         let ies: Vec<_> = ies.collect();
@@ -463,7 +470,7 @@ impl Registry {
             let stated = criticality.captures(&c[1]);
             let stated = stated.ok_or_else(|| anyhow!("{} has no CRITICALITY", procedure.name))?;
             procedure.criticality = Some(stated[1].to_string());
-            for ((label, ..), message) in DIRECTIONS.iter().zip(&mut procedure.messages) {
+            for ((label, _), message) in DIRECTIONS.iter().zip(&mut procedure.messages) {
                 // The label of an unsuccessful outcome ends with that of a successful one.
                 let name = Regex::new(&format!(r"\b{label}\s+([A-Za-z][A-Za-z0-9-]*)"))?;
                 if let Some(name) = name.captures(&c[1]) {

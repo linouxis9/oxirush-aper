@@ -60,14 +60,7 @@ fn the_items_of_a_list_are_walked_once_each() {
     bounded(|| {
         let first = build_toy_ie!(REJECT Item(1u8)).unwrap();
         let second = build_toy_ie!(REJECT Item(2u8)).unwrap();
-        let pdu = build_toy!(
-            InitiatingMessage,
-            Setup,
-            SetupRequest,
-            Identity(7u32),
-            Items(vec![first, second]),
-        )
-        .unwrap();
+        let pdu = build_toy!(SetupRequest, Identity(7u32), Items(vec![first, second])).unwrap();
         let items: Vec<_> = pdu.items::<ie::Items>().take(4).collect();
         assert_eq!(items, [Ok(Item(1)), Ok(Item(2))]);
     });

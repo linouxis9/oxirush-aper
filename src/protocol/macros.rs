@@ -22,34 +22,18 @@ macro_rules! __procedures {
     (protocol $protocol:ident $protocol_name:literal, bindings $bindings:ident, pdu $pdu:ident,
         kind $kind:ident, hooks $hooks:meta;
     $($code:literal $procedure:ident $criticality:ident {
-        $(InitiatingMessage $initiating:ident $initiating_name:literal $initiating_type:ty
+        $(InitiatingMessage $initiating:ident $initiating_name:literal
             $([$($initiating_ie:literal $initiating_criticality:ident
                 $initiating_presence:ident),*])?;)?
-        $(SuccessfulOutcome $successful:ident $successful_name:literal $successful_type:ty
+        $(SuccessfulOutcome $successful:ident $successful_name:literal
             $([$($successful_ie:literal $successful_criticality:ident
                 $successful_presence:ident),*])?;)?
         $(UnsuccessfulOutcome $unsuccessful:ident $unsuccessful_name:literal
-            $unsuccessful_type:ty
             $([$($unsuccessful_ie:literal $unsuccessful_criticality:ident
                 $unsuccessful_presence:ident),*])?;)?
     })*) => {
-        /// The type of the message of each procedure, by its direction.
-        #[doc(hidden)]
-        #[allow(non_snake_case, non_camel_case_types)]
-        pub mod messages {
-            pub mod InitiatingMessage {
-                $($(pub type $procedure<'a> = $initiating_type;)?)*
-            }
-            pub mod SuccessfulOutcome {
-                $($(pub type $procedure<'a> = $successful_type;)?)*
-            }
-            pub mod UnsuccessfulOutcome {
-                $($(pub type $procedure<'a> = $unsuccessful_type;)?)*
-            }
-        }
-
-        /// The direction and the procedure of a PDU: each variant is one message.
-        #[allow(non_camel_case_types)]
+        /// The message of a PDU, which says its direction and its procedure: each variant
+        /// is one message, by the name of its type.
         #[derive(Clone, Debug, PartialEq, Eq)]
         #[non_exhaustive]
         pub enum $kind {
@@ -78,15 +62,15 @@ macro_rules! __procedures {
         // The type of each message is a message, and no other type is one.
         $($(
             $crate::__message!(crate::$protocol, $bindings, Initiating, $code,
-                $initiating_type $([$($initiating_ie),*])?);
+                crate::$bindings::$initiating<'a> $([$($initiating_ie),*])?);
         )?)*
         $($(
             $crate::__message!(crate::$protocol, $bindings, Successful, $code,
-                $successful_type $([$($successful_ie),*])?);
+                crate::$bindings::$successful<'a> $([$($successful_ie),*])?);
         )?)*
         $($(
             $crate::__message!(crate::$protocol, $bindings, Unsuccessful, $code,
-                $unsuccessful_type $([$($unsuccessful_ie),*])?);
+                crate::$bindings::$unsuccessful<'a> $([$($unsuccessful_ie),*])?);
         )?)*
 
         impl crate::$bindings::$pdu<'_> {
@@ -127,13 +111,13 @@ macro_rules! __procedures {
         pub(crate) fn message_type_name(direction: $crate::Direction, code: u8) -> Option<&'static str> {
             match (direction, code) {
                 $($(($crate::Direction::Initiating, $code) => {
-                    Some($crate::protocol::__type_name(stringify!($initiating_type)))
+                    Some(stringify!($initiating))
                 })?)*
                 $($(($crate::Direction::Successful, $code) => {
-                    Some($crate::protocol::__type_name(stringify!($successful_type)))
+                    Some(stringify!($successful))
                 })?)*
                 $($(($crate::Direction::Unsuccessful, $code) => {
-                    Some($crate::protocol::__type_name(stringify!($unsuccessful_type)))
+                    Some(stringify!($unsuccessful))
                 })?)*
                 _ => None,
             }
@@ -153,10 +137,10 @@ macro_rules! __procedures {
                 $crate::encode(&message)
             }
             match (pdu.direction(), pdu.procedure_code()) {
-                $($(($crate::Direction::Initiating, $code) => Some(rewritten::<$initiating_type>(pdu)),)?)*
-                $($(($crate::Direction::Successful, $code) => Some(rewritten::<$successful_type>(pdu)),)?)*
+                $($(($crate::Direction::Initiating, $code) => Some(rewritten::<crate::$bindings::$initiating<'_>>(pdu)),)?)*
+                $($(($crate::Direction::Successful, $code) => Some(rewritten::<crate::$bindings::$successful<'_>>(pdu)),)?)*
                 $($(($crate::Direction::Unsuccessful, $code) => {
-                    Some(rewritten::<$unsuccessful_type>(pdu))
+                    Some(rewritten::<crate::$bindings::$unsuccessful<'_>>(pdu))
                 })?)*
                 _ => None,
             }
@@ -205,18 +189,18 @@ macro_rules! __procedures {
         pub(crate) const MESSAGES: &[$crate::inspect::Message] = &[
             $($((
                 $crate::__set_of!(Initiating, $code),
-                || $crate::__typed!($initiating_type),
-                stringify!($initiating_type),
+                || $crate::__typed!(crate::$bindings::$initiating<'a>),
+                stringify!($initiating),
             ),)?)*
             $($((
                 $crate::__set_of!(Successful, $code),
-                || $crate::__typed!($successful_type),
-                stringify!($successful_type),
+                || $crate::__typed!(crate::$bindings::$successful<'a>),
+                stringify!($successful),
             ),)?)*
             $($((
                 $crate::__set_of!(Unsuccessful, $code),
-                || $crate::__typed!($unsuccessful_type),
-                stringify!($unsuccessful_type),
+                || $crate::__typed!(crate::$bindings::$unsuccessful<'a>),
+                stringify!($unsuccessful),
             ),)?)*
         ];
     };
@@ -1167,30 +1151,23 @@ macro_rules! __with_ie_mut {
     }};
 }
 
-/// `build_ngap!` and `build_s1ap!`: a PDU of a direction, a procedure, its criticality or
-/// the one of its procedure, a message, and its IEs.
+/// `build_ngap!` and `build_s1ap!`: the PDU of a message and its IEs, with the
+/// criticality of the procedure of the message or the one written before it.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __build {
-    ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, REJECT, $msg:ident
-        $(, $($ies:tt)*)?) => {
-        $crate::__build_pdu!($k, $bindings, $direction, $proc,
-            $crate::Criticality::Reject, $msg, $($($ies)*)?)
+    ($k:tt, $bindings:ident, $name:literal, REJECT $msg:ident $(, $($ies:tt)*)?) => {
+        $crate::__build_pdu!($k, $bindings, $crate::Criticality::Reject, $msg, $($($ies)*)?)
     };
-    ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, IGNORE, $msg:ident
-        $(, $($ies:tt)*)?) => {
-        $crate::__build_pdu!($k, $bindings, $direction, $proc,
-            $crate::Criticality::Ignore, $msg, $($($ies)*)?)
+    ($k:tt, $bindings:ident, $name:literal, IGNORE $msg:ident $(, $($ies:tt)*)?) => {
+        $crate::__build_pdu!($k, $bindings, $crate::Criticality::Ignore, $msg, $($($ies)*)?)
     };
-    ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, NOTIFY, $msg:ident
-        $(, $($ies:tt)*)?) => {
-        $crate::__build_pdu!($k, $bindings, $direction, $proc,
-            $crate::Criticality::Notify, $msg, $($($ies)*)?)
+    ($k:tt, $bindings:ident, $name:literal, NOTIFY $msg:ident $(, $($ies:tt)*)?) => {
+        $crate::__build_pdu!($k, $bindings, $crate::Criticality::Notify, $msg, $($($ies)*)?)
     };
     // The criticality of the PDU is that of its procedure.
-    ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, $msg:ident
-        $(, $($ies:tt)*)?) => {
-        $crate::__build_pdu!($k, $bindings, $direction, $proc,
+    ($k:tt, $bindings:ident, $name:literal, $msg:ident $(, $($ies:tt)*)?) => {
+        $crate::__build_pdu!($k, $bindings,
             <$k::$bindings::$msg<'static> as $crate::protocol::Message<'static>>::CRITICALITY,
             $msg, $($($ies)*)?)
     };
@@ -1198,8 +1175,9 @@ macro_rules! __build {
     ($k:tt, $bindings:ident, $name:literal, $($other:tt)*) => {
         compile_error!(concat!(
             $name,
-            " takes the direction, the procedure, the criticality of the PDU, the message, \
-             and each IE as `CRITICALITY Name(value)`"
+            " takes the message, after REJECT, IGNORE or NOTIFY for a PDU of another \
+             criticality than its procedure, then each IE as `Name(value)` or \
+             `CRITICALITY Name(value)`"
         ))
     };
 }
@@ -1208,14 +1186,8 @@ macro_rules! __build {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __build_pdu {
-    ($k:tt, $bindings:ident, $direction:ident, $proc:ident, $outer:expr, $msg:ident,
-        $($ies:tt)*) => {{
-        // The message is the one that the procedure has in that direction, and a container
-        // of protocol IEs.
-        $crate::protocol::__message_of(
-            |message: $k::$bindings::$msg<'static>|
-                -> $k::registry::messages::$direction::$proc<'static> { message },
-        );
+    ($k:tt, $bindings:ident, $outer:expr, $msg:ident, $($ies:tt)*) => {{
+        // The message is a container of protocol IEs.
         $crate::protocol::__message_of_protocol_ies::<$k::$bindings::$msg<'static>>();
         #[allow(unused_mut)]
         let mut _message = $crate::protocol::__Message::<

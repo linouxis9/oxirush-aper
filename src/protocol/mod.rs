@@ -57,7 +57,7 @@ mod macros;
 mod pdu;
 mod read;
 
-pub use build::{__Message, __assigned_ie, __ie, __message_of, __message_of_protocol_ies};
+pub use build::{__Message, __assigned_ie, __ie, __message_of_protocol_ies};
 pub use errors::{__missing_ie, __undecodable_ie, __wrong_message, ie_name};
 pub use pdu::{
     check, check_structure, check_transfer, check_transfer_structure, holds_key, message_octets,

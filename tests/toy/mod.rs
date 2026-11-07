@@ -585,9 +585,9 @@ pub mod registry {
 oxirush_aper::__protocol! { protocol Toy "TOY", bindings toy, pdu TOYPDU, triggering initiating_message successful_outcome unsuccessful_outcome }
 oxirush_aper::__procedures! {
     protocol Toy "TOY", bindings toy, pdu TOYPDU, kind ToyPduKind, hooks any();
-    1 Setup reject { InitiatingMessage Initiating_Setup "SetupRequest" crate::toy::SetupRequest<'a> [1 reject mandatory, 2 ignore optional, 3 reject optional]; SuccessfulOutcome Successful_Setup "SetupResponse" crate::toy::SetupResponse<'a> [1 reject mandatory]; UnsuccessfulOutcome Unsuccessful_Setup "SetupFailure" crate::toy::SetupFailure<'a> [1 reject mandatory]; }
-    2 Notification ignore { InitiatingMessage Initiating_Notification "Notification" crate::toy::Notification<'a> [1 ignore mandatory]; }
-    3 Private ignore { InitiatingMessage Initiating_Private "PrivateMessage" crate::toy::PrivateMessage<'a>; }
+    1 Setup reject { InitiatingMessage SetupRequest "SetupRequest" [1 reject mandatory, 2 ignore optional, 3 reject optional]; SuccessfulOutcome SetupResponse "SetupResponse" [1 reject mandatory]; UnsuccessfulOutcome SetupFailure "SetupFailure" [1 reject mandatory]; }
+    2 Notification ignore { InitiatingMessage Notification "Notification" [1 ignore mandatory]; }
+    3 Private ignore { InitiatingMessage PrivateMessage "PrivateMessage"; }
 }
 oxirush_aper::__ies! {
     protocol Toy "TOY";

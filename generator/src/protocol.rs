@@ -216,6 +216,7 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     let named = Regex::new(&format!(r"crate::{module}::([A-Za-z][A-Za-z0-9_]*)"))?;
     let pdu = format!("{name}PDU");
     let mut types: BTreeSet<&str> = BTreeSet::from([pdu.as_str()]);
+    types.extend(registry.message_types());
     for text in [&list, &inspection] {
         types.extend(
             named
@@ -242,7 +243,7 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     );
     let mut text = bindings.text.replacen(&serde, "", 1);
     text.push_str(&support(protocol, &bindings.borrowing)?);
-    transfers(protocol, &text, &list, &registry)?;
+    transfers(&text, &registry)?;
     let file = format!("src/{module}.rs");
     fs::write(file, text).with_context(|| format!("write the {name} bindings"))
 }
@@ -403,20 +404,13 @@ fn oracle_support(protocol: &Protocol, generated: &str) -> Result<String> {
 
 /// Whether the transfers of protocol IEs of the registry, which it reads from the ASN.1,
 /// are the types of the bindings that are a container of protocol IEs and no message of
-/// the registry `list`: each SEQUENCE whose one member is `protocolIEs`. A protocol may
-/// have none.
-fn transfers(protocol: &Protocol, bindings: &str, list: &str, registry: &Registry) -> Result<()> {
+/// the registry: each SEQUENCE whose one member is `protocolIEs`. A protocol may have
+/// none.
+fn transfers(bindings: &str, registry: &Registry) -> Result<()> {
     let containers = Regex::new(
         r"pub struct (\w+)<'a>\s*\{\s*pub protocol_ies:\s*ProtocolIEContainer<'a>,?\s*\}",
     )?;
-    // A message of a procedure, as `"Name" crate::ngap::Type<'a> [IEs]`, whose name may
-    // have a hyphen (`"E-RABSetupRequest"`): an IE has `=>`.
-    let module = protocol.module();
-    let messages = Regex::new(&format!(r#""[\w-]+" crate::{module}::(\w+)<'a>( \[|;)"#))?;
-    let messages: BTreeSet<&str> = messages
-        .captures_iter(list)
-        .map(|c| c.get(1).expect("a name").as_str())
-        .collect();
+    let messages: BTreeSet<&str> = registry.message_types().collect();
     let found: BTreeSet<&str> = (containers.captures_iter(bindings))
         .map(|c| c.get(1).expect("a name").as_str())
         .filter(|name| !messages.contains(name))
@@ -837,39 +831,28 @@ pub fn decode_open_type<'a, T: Decode<'a>>(value: &'a [u8]) -> Result<T, crate::
 mod tests {
     use super::*;
 
-    const TOY: Protocol = Protocol {
-        name: "Toy",
-        modules: "toy",
-        carried: &[],
-        foreign: &[],
-        keys: &[],
-        plmn: "",
-        aliases: &[],
-        ue_ids: UeIds {
-            ie: "",
-            choice: "",
-            pair: ("", "", ""),
-            first: "",
-        },
-        release_request: "",
-        release_display: "",
-        other_message: "",
-        no_message: "",
-        examples: &[],
-        correct: Ok,
-    };
-
     /// The transfers of protocol IEs that the bindings have are those that the registry
     /// reads from the ASN.1, beside the messages.
     #[test]
     fn the_transfers_of_the_bindings_are_those_of_the_asn1() {
         let oracle = "pub enum TriggeringMessage { initiating_message = 0, }";
         let registry = Registry::read("Toy", oracle, "", BTreeSet::new(), BTreeSet::new());
-        let registry = registry.unwrap();
+        let mut registry = registry.unwrap();
         let bindings = "pub struct Holder<'a> { pub protocol_ies: ProtocolIEContainer<'a>, }";
-        let error = transfers(&TOY, bindings, "", &registry).unwrap_err();
+        let error = transfers(bindings, &registry).unwrap_err();
         assert!(error.to_string().contains(r#"{"Holder"}"#), "{error}");
-        let list = r#""Holder" crate::toy::Holder<'a> [ ];"#;
-        assert!(transfers(&TOY, bindings, list, &registry).is_ok());
+        // A message of a procedure is no transfer.
+        let holder = crate::registry::Message {
+            name: "Holder".into(),
+            ty: "crate::toy::Holder".into(),
+            ies: Some(Vec::new()),
+        };
+        let procedure = crate::registry::Procedure {
+            name: "Hold".into(),
+            criticality: None,
+            messages: [Some(holder), None, None],
+        };
+        registry.procedures.insert(1, procedure);
+        assert!(transfers(bindings, &registry).is_ok());
     }
 }
