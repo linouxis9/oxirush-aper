@@ -4,7 +4,7 @@
 use alloc::format;
 use alloc::string::{String, ToString};
 
-use super::{Container, CriticalityOf, Protocol, name, object_set};
+use super::{Container, CriticalityOf, Direction, Protocol, name, object_set};
 use crate::{Error, ErrorIe};
 
 /// The IE of an identifier, as an error names it: the name that ASN.1 gives it after
@@ -19,7 +19,7 @@ pub fn ie_name<P: Protocol>(id: u16) -> String {
 /// A PDU of the message of `direction` and `code`, which is read as the message that
 /// ASN.1 names `expected`.
 #[doc(hidden)]
-pub fn __wrong_message<P: Protocol>(expected: &str, direction: &str, code: u8) -> Error {
+pub fn __wrong_message<P: Protocol>(expected: &str, direction: Direction, code: u8) -> Error {
     let held = object_set::<P>(direction, code).map(|set| set.name);
     Error::wrong_message(expected, held, direction, code)
 }

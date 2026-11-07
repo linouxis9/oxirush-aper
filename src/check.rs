@@ -25,7 +25,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::{Criticality, Error, ErrorKind, Fault, Faults};
+use crate::{Criticality, Direction, Error, ErrorKind, Fault, Faults};
 
 /// What the bindings of a protocol give the deviations of their PDUs: their own types for
 /// the criticality, the type of an error and the protocol cause of an answer and the
@@ -65,7 +65,7 @@ pub trait Diagnostics {
     /// `triggering` gives: an ERROR INDICATION has them, and a response of the procedure
     /// of the message has not.
     fn criticality_diagnostics(
-        triggering: Option<(u8, &str)>,
+        triggering: Option<(u8, Direction)>,
         criticality: Self::Criticality,
         items: Option<Vec<Self::Item>>,
     ) -> Self::CriticalityDiagnostics;
@@ -235,8 +235,8 @@ pub enum Deviation<P: Diagnostics> {
     UnknownProcedure {
         /// The procedure code.
         procedure_code: u8,
-        /// `InitiatingMessage`, `SuccessfulOutcome` or `UnsuccessfulOutcome`.
-        direction: &'static str,
+        /// The direction of the PDU.
+        direction: Direction,
         /// The criticality of the PDU.
         criticality: P::Criticality,
     },
@@ -499,7 +499,7 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
 /// where no deviation has an item.
 pub fn criticality_diagnostics<P: Diagnostics>(
     procedure_code: u8,
-    direction: &str,
+    direction: Direction,
     criticality: P::Criticality,
     deviations: &[Deviation<P>],
 ) -> P::CriticalityDiagnostics {

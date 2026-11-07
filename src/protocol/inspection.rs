@@ -530,7 +530,7 @@ mod tests {
         let mut messages = MESSAGES.iter();
         let (direction, code, ..) = messages.find(|(_, _, known, ..)| *known == name).unwrap();
         tree!({
-            "direction": direction,
+            "direction": direction.name(),
             "procedure_code": code,
             "criticality": "reject",
             MESSAGE: {IES: ies},
@@ -861,7 +861,7 @@ pub fn ie_names() -> &'static [(u16, &'static str)] {
 
 /// The messages, each as the `direction` and the `procedure_code` that a view has for it
 /// and the name that ASN.1 gives it.
-pub fn message_names() -> impl Iterator<Item = (&'static str, u8, &'static str)> {
+pub fn message_names() -> impl Iterator<Item = ($crate::Direction, u8, &'static str)> {
     let messages = crate::inspect_registry::MESSAGES.iter();
     messages.map(|(direction, code, name, ..)| (*direction, *code, *name))
 }
@@ -877,7 +877,7 @@ pub fn message_name(pdu: &crate::$bindings::$pdu<'_>) -> Option<&'static str> {
 
 /// The `direction` and the `procedure_code` of the message that `name` names: a name is
 /// its letters and its digits, whatever their case and whatever is between them.
-pub fn message_named(name: &str) -> Option<(&'static str, u8)> {
+pub fn message_named(name: &str) -> Option<($crate::Direction, u8)> {
     message_names()
         .find(|(.., known)| same_name(known, name))
         .map(|(direction, code, _)| (direction, code))

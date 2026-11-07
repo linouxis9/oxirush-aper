@@ -58,7 +58,7 @@ macro_rules! __procedures {
             $($(#[doc = concat!("`", $unsuccessful_name, "`.")] $unsuccessful,)?)*
             /// A procedure that the specification does not have in that direction, which
             /// is the one that `direction()` of the PDU gives.
-            Other { direction: &'static str, procedure_code: u8 },
+            Other { direction: $crate::Direction, procedure_code: u8 },
         }
 
         impl $kind {
@@ -77,24 +77,24 @@ macro_rules! __procedures {
 
         // The type of each message is a message, and no other type is one.
         $($(
-            $crate::__message!(crate::$protocol, $bindings, "InitiatingMessage", $code,
+            $crate::__message!(crate::$protocol, $bindings, Initiating, $code,
                 $initiating_type $([$($initiating_ie),*])?);
         )?)*
         $($(
-            $crate::__message!(crate::$protocol, $bindings, "SuccessfulOutcome", $code,
+            $crate::__message!(crate::$protocol, $bindings, Successful, $code,
                 $successful_type $([$($successful_ie),*])?);
         )?)*
         $($(
-            $crate::__message!(crate::$protocol, $bindings, "UnsuccessfulOutcome", $code,
+            $crate::__message!(crate::$protocol, $bindings, Unsuccessful, $code,
                 $unsuccessful_type $([$($unsuccessful_ie),*])?);
         )?)*
 
         /// The name that ASN.1 gives the message of a direction and a procedure code.
-        pub(crate) fn message_name(direction: &str, code: u8) -> Option<&'static str> {
+        pub(crate) fn message_name(direction: $crate::Direction, code: u8) -> Option<&'static str> {
             match (direction, code) {
-                $($(("InitiatingMessage", $code) => Some($initiating_name),)?)*
-                $($(("SuccessfulOutcome", $code) => Some($successful_name),)?)*
-                $($(("UnsuccessfulOutcome", $code) => Some($unsuccessful_name),)?)*
+                $($(($crate::Direction::Initiating, $code) => Some($initiating_name),)?)*
+                $($(($crate::Direction::Successful, $code) => Some($successful_name),)?)*
+                $($(($crate::Direction::Unsuccessful, $code) => Some($unsuccessful_name),)?)*
                 _ => None,
             }
         }
@@ -134,15 +134,15 @@ macro_rules! __procedures {
         /// the type of the message of a direction and a procedure code, when the
         /// protocol has that message.
         #[cfg($hooks)]
-        pub(crate) fn message_type_name(direction: &str, code: u8) -> Option<&'static str> {
+        pub(crate) fn message_type_name(direction: $crate::Direction, code: u8) -> Option<&'static str> {
             match (direction, code) {
-                $($(("InitiatingMessage", $code) => {
+                $($(($crate::Direction::Initiating, $code) => {
                     Some($crate::protocol::__type_name(stringify!($initiating_type)))
                 })?)*
-                $($(("SuccessfulOutcome", $code) => {
+                $($(($crate::Direction::Successful, $code) => {
                     Some($crate::protocol::__type_name(stringify!($successful_type)))
                 })?)*
-                $($(("UnsuccessfulOutcome", $code) => {
+                $($(($crate::Direction::Unsuccessful, $code) => {
                     Some($crate::protocol::__type_name(stringify!($unsuccessful_type)))
                 })?)*
                 _ => None,
@@ -163,9 +163,9 @@ macro_rules! __procedures {
                 $crate::encode(&message)
             }
             match (pdu.direction(), pdu.procedure_code()) {
-                $($(("InitiatingMessage", $code) => Some(rewritten::<$initiating_type>(pdu)),)?)*
-                $($(("SuccessfulOutcome", $code) => Some(rewritten::<$successful_type>(pdu)),)?)*
-                $($(("UnsuccessfulOutcome", $code) => {
+                $($(($crate::Direction::Initiating, $code) => Some(rewritten::<$initiating_type>(pdu)),)?)*
+                $($(($crate::Direction::Successful, $code) => Some(rewritten::<$successful_type>(pdu)),)?)*
+                $($(($crate::Direction::Unsuccessful, $code) => {
                     Some(rewritten::<$unsuccessful_type>(pdu))
                 })?)*
                 _ => None,
@@ -187,7 +187,7 @@ macro_rules! __procedures {
         /// IEs can have, in the order of the set.
         pub(crate) const OBJECT_SETS: &[$crate::protocol::ObjectSet<crate::$bindings::Criticality>] = &[
             $($($crate::protocol::ObjectSet {
-                direction: "InitiatingMessage",
+                direction: $crate::Direction::Initiating,
                 procedure_code: $code,
                 name: $initiating_name,
                 ies: $crate::__object_set!($bindings $([$(
@@ -195,7 +195,7 @@ macro_rules! __procedures {
                 ),*])?),
             },)?)*
             $($($crate::protocol::ObjectSet {
-                direction: "SuccessfulOutcome",
+                direction: $crate::Direction::Successful,
                 procedure_code: $code,
                 name: $successful_name,
                 ies: $crate::__object_set!($bindings $([$(
@@ -203,7 +203,7 @@ macro_rules! __procedures {
                 ),*])?),
             },)?)*
             $($($crate::protocol::ObjectSet {
-                direction: "UnsuccessfulOutcome",
+                direction: $crate::Direction::Unsuccessful,
                 procedure_code: $code,
                 name: $unsuccessful_name,
                 ies: $crate::__object_set!($bindings $([$(
@@ -212,8 +212,7 @@ macro_rules! __procedures {
             },)?)*
         ];
 
-        /// Where each message is in the object sets, by the rank of its direction and its
-        /// procedure code.
+        /// Where each message is in the object sets, by its direction and its procedure code.
         pub(crate) const OBJECT_SET_INDEX: [[u16; 256]; 3] =
             $crate::protocol::__object_set_index(OBJECT_SETS);
 
@@ -223,22 +222,22 @@ macro_rules! __procedures {
         #[cfg(feature = "inspect")]
         #[allow(clippy::type_complexity)]
         pub(crate) const MESSAGES: &[(
-            &str,
+            $crate::Direction,
             u8,
             &str,
             fn() -> $crate::inspect::Typed,
             &[(u16, bool)],
             &str,
         )] = &[
-            $($(("InitiatingMessage", $code, $initiating_name,
+            $($(($crate::Direction::Initiating, $code, $initiating_name,
                 || $crate::__typed!($initiating_type),
                 &[$($(($initiating_ie, $crate::__presence!($initiating_presence))),*)?],
                 stringify!($initiating_type)),)?)*
-            $($(("SuccessfulOutcome", $code, $successful_name,
+            $($(($crate::Direction::Successful, $code, $successful_name,
                 || $crate::__typed!($successful_type),
                 &[$($(($successful_ie, $crate::__presence!($successful_presence))),*)?],
                 stringify!($successful_type)),)?)*
-            $($(("UnsuccessfulOutcome", $code, $unsuccessful_name,
+            $($(($crate::Direction::Unsuccessful, $code, $unsuccessful_name,
                 || $crate::__typed!($unsuccessful_type),
                 &[$($(($unsuccessful_ie, $crate::__presence!($unsuccessful_presence))),*)?],
                 stringify!($unsuccessful_type)),)?)*
@@ -272,7 +271,7 @@ macro_rules! __procedures {
 // The registry of a protocol calls it in its crate, whose items `crate::` names.
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! __message {
-    ($protocol:path, $bindings:ident, $direction:literal, $code:literal, $type:ty) => {
+    ($protocol:path, $bindings:ident, $direction:ident, $code:literal, $type:ty) => {
         $crate::__message!(@traits $protocol, $bindings, $direction, $code, $type, false);
         impl<'a> $crate::protocol::Container<'a> for $type {
             const __OF_PROTOCOL_IES: bool = false;
@@ -284,13 +283,13 @@ macro_rules! __message {
             }
         }
     };
-    ($protocol:path, $bindings:ident, $direction:literal, $code:literal, $type:ty
+    ($protocol:path, $bindings:ident, $direction:ident, $code:literal, $type:ty
         [$($ie:literal),*]) => {
         $crate::__message!(@traits $protocol, $bindings, $direction, $code, $type, true);
         impl<'a> $crate::protocol::Container<'a> for $type {
             const __OF_PROTOCOL_IES: bool = true;
             fn __assigned(id: u16) -> Option<$crate::Criticality> {
-                $crate::protocol::__assigned::<$protocol>($direction, $code, id)
+                $crate::protocol::__assigned::<$protocol>($crate::Direction::$direction, $code, id)
             }
             #[inline]
             fn __fields<'s>(&'s self) -> &'s [crate::$bindings::ProtocolIEField<'s>] {
@@ -299,13 +298,13 @@ macro_rules! __message {
         }
         $crate::__readers!($protocol, "message", $type);
     };
-    (@traits $protocol:path, $bindings:ident, $direction:literal, $code:literal, $type:ty,
+    (@traits $protocol:path, $bindings:ident, $direction:ident, $code:literal, $type:ty,
         $of_protocol_ies:literal) => {
         impl<'a> $crate::protocol::InProtocol for $type {
             type Protocol = $protocol;
         }
         impl<'a> $crate::protocol::Message<'a> for $type {
-            const DIRECTION: &'static str = $direction;
+            const DIRECTION: $crate::Direction = $crate::Direction::$direction;
             const PROCEDURE_CODE: u8 = $code;
             // The class of an elementary procedure has `ignore` by default.
             const CRITICALITY: crate::$bindings::Criticality =
@@ -773,15 +772,15 @@ macro_rules! __protocol {
             }
 
             fn criticality_diagnostics(
-                triggering: Option<(u8, &str)>,
+                triggering: Option<(u8, $crate::Direction)>,
                 criticality: crate::$bindings::Criticality,
                 items: Option<Vec<crate::$bindings::CriticalityDiagnosticsIEItem>>,
             ) -> crate::$bindings::CriticalityDiagnostics {
                 use crate::$bindings::TriggeringMessage;
-                let message = |direction: &str| match direction {
-                    "SuccessfulOutcome" => TriggeringMessage::$successful,
-                    "UnsuccessfulOutcome" => TriggeringMessage::$unsuccessful,
-                    _ => TriggeringMessage::$initiating,
+                let message = |direction| match direction {
+                    $crate::Direction::Initiating => TriggeringMessage::$initiating,
+                    $crate::Direction::Successful => TriggeringMessage::$successful,
+                    $crate::Direction::Unsuccessful => TriggeringMessage::$unsuccessful,
                 };
                 crate::$bindings::CriticalityDiagnostics::new(
                     triggering.map(|(code, _)| crate::$bindings::ProcedureCode(code)),
@@ -851,7 +850,7 @@ macro_rules! __protocol {
 
         impl<'a> $crate::protocol::Pdu<'a> for crate::$bindings::$pdu<'a> {
             #[inline]
-            fn direction(&self) -> &'static str {
+            fn direction(&self) -> $crate::Direction {
                 Self::direction(self)
             }
             #[inline]
@@ -882,33 +881,34 @@ macro_rules! __protocol {
                 }
             }
             fn __of(
-                direction: &str,
+                direction: $crate::Direction,
                 procedure_code: u8,
                 criticality: crate::$bindings::Criticality,
                 value: $crate::Octets<'a>,
-            ) -> Option<Self> {
+            ) -> Self {
                 use crate::$bindings::{
                     InitiatingMessage, ProcedureCode, SuccessfulOutcome, UnsuccessfulOutcome,
                 };
                 let procedure_code = ProcedureCode(procedure_code);
-                Some(match direction {
-                    "InitiatingMessage" => Self::initiatingMessage(InitiatingMessage {
+                match direction {
+                    $crate::Direction::Initiating => Self::initiatingMessage(InitiatingMessage {
                         procedure_code,
                         criticality,
                         value,
                     }),
-                    "SuccessfulOutcome" => Self::successfulOutcome(SuccessfulOutcome {
+                    $crate::Direction::Successful => Self::successfulOutcome(SuccessfulOutcome {
                         procedure_code,
                         criticality,
                         value,
                     }),
-                    "UnsuccessfulOutcome" => Self::unsuccessfulOutcome(UnsuccessfulOutcome {
-                        procedure_code,
-                        criticality,
-                        value,
-                    }),
-                    _ => return None,
-                })
+                    $crate::Direction::Unsuccessful => {
+                        Self::unsuccessfulOutcome(UnsuccessfulOutcome {
+                            procedure_code,
+                            criticality,
+                            value,
+                        })
+                    }
+                }
             }
         }
 
@@ -966,7 +966,7 @@ macro_rules! __protocol {
                     let found = object_set::<super::$protocol>(message.direction, message.procedure_code);
                     assert_eq!(found.map(|found| found.name), Some(message.name));
                 }
-                assert!(object_set::<super::$protocol>("InitiatingMessage", 255).is_none());
+                assert!(object_set::<super::$protocol>($crate::Direction::Initiating, 255).is_none());
             }
 
             #[test]

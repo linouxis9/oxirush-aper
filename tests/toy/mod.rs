@@ -534,11 +534,11 @@ pub mod toy {
             oxirush_aper::encode(self)
         }
         /// The direction of the PDU.
-        pub fn direction(&self) -> &'static str {
+        pub fn direction(&self) -> oxirush_aper::Direction {
             match self {
-                Self::initiatingMessage(_) => "InitiatingMessage",
-                Self::successfulOutcome(_) => "SuccessfulOutcome",
-                Self::unsuccessfulOutcome(_) => "UnsuccessfulOutcome",
+                Self::initiatingMessage(_) => oxirush_aper::Direction::Initiating,
+                Self::successfulOutcome(_) => oxirush_aper::Direction::Successful,
+                Self::unsuccessfulOutcome(_) => oxirush_aper::Direction::Unsuccessful,
             }
         }
         /// The procedure code of the PDU.

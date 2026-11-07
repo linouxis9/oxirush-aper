@@ -21,7 +21,7 @@
 //! two IEs.
 
 use oxirush_aper::inspect::{self, Form, Kind, Member, Message, Protocol, Shape, Typed};
-use oxirush_aper::{Error, ErrorKind};
+use oxirush_aper::{Direction, Error, ErrorKind};
 use oxirush_utils::tree;
 use oxirush_utils::tree::Value;
 
@@ -65,7 +65,7 @@ fn typed() -> Typed {
 }
 
 const MESSAGES: &[Message] = &[(
-    "InitiatingMessage",
+    Direction::Initiating,
     1,
     "Release",
     typed,

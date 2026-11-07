@@ -137,6 +137,7 @@ pub use error::{Criticality, Error, ErrorIe, ErrorKind, in_field};
 pub use faults::{Fault, Faults, Noted};
 pub use octets::Octets;
 pub use oid::ObjectIdentifier;
+pub use protocol::Direction;
 pub use reader::{Additions, Reader};
 pub use writer::Writer;
 

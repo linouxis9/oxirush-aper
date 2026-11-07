@@ -154,16 +154,16 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     let of_ie = "crate::registry::KEY_IES.contains(&self.id.0)".to_string();
     let of_message = |direction: &str| {
         format!(
-            "oxirush_aper::protocol::holds_key::<crate::{marker}>(\"{direction}\", \
-             self.procedure_code.0)"
+            "oxirush_aper::protocol::holds_key::<crate::{marker}>(\
+             oxirush_aper::Direction::{direction}, self.procedure_code.0)"
         )
     };
     let holders = [
         ("ProtocolIEField", of_ie.clone()),
         ("ProtocolExtensionField", of_ie),
-        ("InitiatingMessage", of_message("InitiatingMessage")),
-        ("SuccessfulOutcome", of_message("SuccessfulOutcome")),
-        ("UnsuccessfulOutcome", of_message("UnsuccessfulOutcome")),
+        ("InitiatingMessage", of_message("Initiating")),
+        ("SuccessfulOutcome", of_message("Successful")),
+        ("UnsuccessfulOutcome", of_message("Unsuccessful")),
     ];
     let holders: Vec<(&str, &str)> = holders.iter().map(|(ty, of)| (*ty, of.as_str())).collect();
     let keys = Keys {
@@ -528,11 +528,11 @@ impl {PDU}<'static> {
     /// peer.
     ///
     /// ```
-    /// use {CRATE}::{ErrorKind, {MODULE}::{PDU_ALIAS}};
+    /// use {CRATE}::{Direction, ErrorKind, {MODULE}::{PDU_ALIAS}};
     ///
     /// let octets = hex::decode("{RELEASE_REQUEST}").unwrap();
     /// let pdu = {PDU_ALIAS}::decode(&octets)?;
-    /// assert_eq!((pdu.direction(), pdu.procedure_name()), ("InitiatingMessage", "UEContextReleaseRequest"));
+    /// assert_eq!((pdu.direction(), pdu.procedure_name()), (Direction::Initiating, "UEContextReleaseRequest"));
     ///
     /// // The octets of a PDU that end early
     /// let error = {PDU_ALIAS}::decode(&octets[..octets.len() - 1]).unwrap_err();
@@ -755,25 +755,14 @@ impl<'a> {PDU}<'a> {
             {PDU}::unsuccessfulOutcome(message) => message.procedure_code.0,
         }
     }
-    /// Return the PDU direction as a human-readable string.
-    pub fn direction(&self) -> &'static str {
+    /// The direction of this PDU: an initiating message, a successful outcome or an
+    /// unsuccessful outcome.
+    pub fn direction(&self) -> oxirush_aper::Direction {
         match self {
-            {PDU}::initiatingMessage(_) => "InitiatingMessage",
-            {PDU}::successfulOutcome(_) => "SuccessfulOutcome",
-            {PDU}::unsuccessfulOutcome(_) => "UnsuccessfulOutcome",
+            {PDU}::initiatingMessage(_) => oxirush_aper::Direction::Initiating,
+            {PDU}::successfulOutcome(_) => oxirush_aper::Direction::Successful,
+            {PDU}::unsuccessfulOutcome(_) => oxirush_aper::Direction::Unsuccessful,
         }
-    }
-    /// Returns `true` for an initiating message.
-    pub fn is_initiating(&self) -> bool {
-        matches!(self, {PDU}::initiatingMessage(_))
-    }
-    /// Returns `true` for a successful outcome.
-    pub fn is_successful(&self) -> bool {
-        matches!(self, {PDU}::successfulOutcome(_))
-    }
-    /// Returns `true` for an unsuccessful outcome.
-    pub fn is_unsuccessful(&self) -> bool {
-        matches!(self, {PDU}::unsuccessfulOutcome(_))
     }
 }
 /// The name of the message, its procedure code and its direction, then the identifiers of

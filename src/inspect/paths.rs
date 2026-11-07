@@ -30,7 +30,7 @@ use oxirush_utils::tree::{Map, Value};
 
 use super::views::LOSSY;
 use super::{Kind, Member, Protocol, Sent, Shape, foreign, registered, same_name, type_name};
-use crate::{Error, ErrorKind};
+use crate::{Direction, Error, ErrorKind};
 
 /// The member of a view that holds the message of the PDU.
 const MESSAGE: &str = "message";
@@ -158,9 +158,9 @@ impl Protocol {
     }
 
     /// The message of a direction and a procedure code, or of a name.
-    pub(crate) fn sent(&self, of: impl Fn(&'static str, u8, &'static str) -> bool) -> Option<Sent> {
+    pub(crate) fn sent(&self, of: impl Fn(Direction, u8, &'static str) -> bool) -> Option<Sent> {
         let mut messages = self.messages.iter();
-        let message = messages.find(|(direction, code, name, ..)| of(direction, *code, name));
+        let message = messages.find(|(direction, code, name, ..)| of(*direction, *code, name));
         message.map(|(_, _, name, _, ies, ty)| Sent {
             name,
             ty: type_name(ty),
@@ -173,6 +173,7 @@ impl Protocol {
     fn pdu(&self, view: &Value) -> Shape {
         let code = view.get("procedure_code").and_then(Value::as_u64);
         let direction = view.get("direction").and_then(Value::as_str);
+        let direction = direction.and_then(Direction::named);
         Shape::Pdu(
             self.sent(|of, procedure, _| {
                 Some(of) == direction && Some(u64::from(procedure)) == code
@@ -1849,7 +1850,7 @@ impl Protocol {
 
     /// The shape of the message of a direction and a procedure code in a view, where
     /// the tables have it.
-    pub fn message_shape(&self, direction: &str, code: u8) -> Shape {
+    pub fn message_shape(&self, direction: Direction, code: u8) -> Shape {
         let message = self.sent(|of, procedure, _| procedure == code && of == direction);
         message.map_or(Shape::AnyMessage, Shape::Message)
     }

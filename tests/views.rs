@@ -49,7 +49,7 @@
 //! its octets.
 
 use oxirush_aper::inspect::{self, Form, Kind, Member, Message, Protocol, Shape, Typed};
-use oxirush_aper::{Error, ErrorKind};
+use oxirush_aper::{Direction, Error, ErrorKind};
 use oxirush_utils::tree;
 use oxirush_utils::tree::{Map, Value};
 
@@ -140,7 +140,7 @@ const SETUP_IES: &[(u16, bool)] = &[
 
 const MESSAGES: &[Message] = &[
     (
-        "InitiatingMessage",
+        Direction::Initiating,
         1,
         "SetupRequest",
         ies_typed,
@@ -148,7 +148,7 @@ const MESSAGES: &[Message] = &[
         "crate::toy::SetupRequest<'a>",
     ),
     (
-        "SuccessfulOutcome",
+        Direction::Successful,
         1,
         "SetupResponse",
         ies_typed,
@@ -156,7 +156,7 @@ const MESSAGES: &[Message] = &[
         "crate::toy::Release<'a>",
     ),
     (
-        "InitiatingMessage",
+        Direction::Initiating,
         2,
         "Release",
         release_typed,
@@ -164,7 +164,7 @@ const MESSAGES: &[Message] = &[
         "crate::toy::Release<'a>",
     ),
     (
-        "InitiatingMessage",
+        Direction::Initiating,
         3,
         "PrivateMessage",
         private_typed,
@@ -660,7 +660,7 @@ fn setup_request() -> Vec<u8> {
 fn setup_view() -> Value {
     inspect::view(
         &TOY,
-        "InitiatingMessage",
+        Direction::Initiating,
         1,
         tree!("reject"),
         &setup_request(),
@@ -714,7 +714,7 @@ fn a_view_marks_what_its_values_have_no_place_for_and_keeps_what_did_not_decode(
         (21, 1, &[3, 1, 0, 9]),
         (16, 0, &[0, 3, 0, 1, 9]),
     ]);
-    let view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
     let listed = &view["message"]["protocolIEs"];
     assert_eq!(listed[0]["_lossy"], tree!(true));
     assert_eq!(listed[0]["value"], tree!({"radioNetwork": "unspecified"}));
@@ -724,11 +724,11 @@ fn a_view_marks_what_its_values_have_no_place_for_and_keeps_what_did_not_decode(
     // A message whose type has no place for what it was received with
     let mut lossy = vec![0x80];
     lossy.extend(ies(&[(15, 1, &[0, 0])]));
-    let view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &lossy).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &lossy).unwrap();
     assert_eq!(view["_lossy"], tree!(true));
     // Octets that are no value, and a value in another form than the canonical one
     let octets = ies(&[(15, 1, &[0xff]), (21, 1, &[2, 0xfe, 0]), (15, 1, &[0xfe])]);
-    let view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
     let listed = &view["message"]["protocolIEs"];
     assert_eq!(listed[0]["value"], tree!("ff"));
     assert_eq!(listed[0]["_decode_error"], tree!("no Cause"));
@@ -767,7 +767,7 @@ fn at_level(view: &Value, level: usize) -> &Value {
 #[test]
 fn an_ie_deeper_than_the_inspection_keeps_its_octets() {
     let octets = ies(&[(15, 1, &nested(40))]);
-    let view = inspect::view(&TOY, "InitiatingMessage", 2 - 1, tree!("reject"), &octets).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 2 - 1, tree!("reject"), &octets).unwrap();
     // The IE of level n is 2n deep: that of level 32 is 64 deep
     assert!(at_level(&view, 32).get("_decode_error").is_none());
     assert!(at_level(&view, 32)["value"].is_object());
@@ -812,7 +812,7 @@ fn a_view_that_was_not_edited_writes_the_octets_received() {
         (21, 1, &[3, 1, 0, 9]),
         (15, 1, &[0xff]),
     ]));
-    let view = inspect::view(&TOY, "SuccessfulOutcome", 1, tree!("ignore"), &lossy).unwrap();
+    let view = inspect::view(&TOY, Direction::Successful, 1, tree!("ignore"), &lossy).unwrap();
     let written = parts(&view).unwrap();
     assert_eq!(written.0, "SuccessfulOutcome");
     assert_eq!(written.3, lossy);
@@ -845,14 +845,14 @@ fn an_edit_is_encoded_in_what_it_changed() {
         ("/toy/Payload/nas", tree!("deregister")),
     ] {
         let mut view =
-            inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+            inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
         inspect::set(&TOY, &mut view, path, value).unwrap();
         let error = parts(&view).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Edit, "{path}: {error}");
     }
     let mut lossy = vec![0x80];
     lossy.extend(ies(&[(15, 1, &[0, 0])]));
-    let mut view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &lossy).unwrap();
+    let mut view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &lossy).unwrap();
     inspect::set(&TOY, &mut view, "/toy/Cause/nas", tree!("deregister")).unwrap();
     let error = parts(&view).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Edit);
@@ -864,7 +864,7 @@ fn an_edit_is_encoded_in_what_it_changed() {
     );
     // An IE that did not decode is its octets, which an edit may set as text alone
     let octets = ies(&[(15, 1, &[0xff])]);
-    let mut view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+    let mut view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
     view["message"]["protocolIEs"][0]["value"] = tree!("0101");
     assert_eq!(parts(&view).unwrap().3, ies(&[(15, 1, &[1, 1])]));
     view["message"]["protocolIEs"][0]["value"] = tree!({"nas": "deregister"});
@@ -956,7 +956,7 @@ fn a_view_deeper_than_256_is_not_written() {
     assert_eq!(parts(&deeper).unwrap_err().kind(), ErrorKind::Limit);
     // The view of 40 levels, 80 deep, is written back
     let octets = ies(&[(15, 1, &nested(40))]);
-    let view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
     assert_eq!(parts(&view).unwrap().3, octets);
 }
 
@@ -970,14 +970,14 @@ fn each_message_has_the_type_of_its_procedure() {
         message
     };
     let octets = release(ies(&[(15, 1, &[1, 0])]));
-    let view = inspect::view(&TOY, "InitiatingMessage", 2, tree!("ignore"), &octets).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 2, tree!("ignore"), &octets).unwrap();
     assert_eq!(
         view["message"]["protocolIEs"][0]["value"],
         tree!({"nas": "normal-release"})
     );
     assert_eq!(parts(&view).unwrap().3, octets);
     // Not in another direction or of another code
-    for (direction, code) in [("SuccessfulOutcome", 2), ("InitiatingMessage", 9)] {
+    for (direction, code) in [(Direction::Successful, 2), (Direction::Initiating, 9)] {
         let view = inspect::view(&TOY, direction, code, tree!("ignore"), &octets);
         assert_eq!(
             view.unwrap_err().kind(),
@@ -994,7 +994,7 @@ fn each_message_has_the_type_of_its_procedure() {
 fn a_tree_names_the_message_and_its_ies() {
     let tree = inspect::tree(
         &TOY,
-        "InitiatingMessage",
+        Direction::Initiating,
         1,
         tree!("reject"),
         &setup_request(),
@@ -1011,26 +1011,26 @@ fn a_tree_names_the_message_and_its_ies() {
     );
     let tree = inspect::tree(
         &TOY,
-        "InitiatingMessage",
+        Direction::Initiating,
         1,
         tree!("ignore"),
         &setup_request(),
     );
     assert_eq!(tree["criticality"], tree!("ignore"));
     let release = [b"R".as_slice(), &ies(&[(15, 1, &[1, 0])])].concat();
-    let tree = inspect::tree(&TOY, "InitiatingMessage", 2, tree!("ignore"), &release);
+    let tree = inspect::tree(&TOY, Direction::Initiating, 2, tree!("ignore"), &release);
     assert_eq!(
         tree,
         tree!({"message": "Release", "ies": [{"Cause": {"nas": "normal-release"}}]})
     );
     let response = ies(&[(15, 0, &[1, 0])]);
-    let tree = inspect::tree(&TOY, "SuccessfulOutcome", 1, tree!("reject"), &response);
+    let tree = inspect::tree(&TOY, Direction::Successful, 1, tree!("reject"), &response);
     assert_eq!(
         tree,
         tree!({"message": "SetupResponse", "ies": [{"Cause": {"nas": "normal-release"},
                "criticality": "reject"}]})
     );
-    let tree = inspect::tree(&TOY, "UnsuccessfulOutcome", 7, tree!("notify"), &response);
+    let tree = inspect::tree(&TOY, Direction::Unsuccessful, 7, tree!("notify"), &response);
     assert_eq!(
         tree,
         tree!({"procedure_code": 7, "direction": "UnsuccessfulOutcome", "ies":
@@ -1038,7 +1038,7 @@ fn a_tree_names_the_message_and_its_ies() {
                "criticality": "notify"})
     );
     let lossy = [&[0x80][..], &response].concat();
-    let tree = inspect::tree(&TOY, "SuccessfulOutcome", 1, tree!("ignore"), &lossy);
+    let tree = inspect::tree(&TOY, Direction::Successful, 1, tree!("ignore"), &lossy);
     assert_eq!(
         tree,
         tree!({"message": "SetupResponse", "octets": (hex(&lossy)), "criticality": "ignore"})
@@ -1052,7 +1052,7 @@ fn a_tree_names_the_message_and_its_ies() {
 fn the_parts_that_a_tree_writes() {
     let tree = inspect::tree(
         &TOY,
-        "InitiatingMessage",
+        Direction::Initiating,
         1,
         tree!("reject"),
         &setup_request(),
@@ -1060,7 +1060,7 @@ fn the_parts_that_a_tree_writes() {
     let parts = inspect::tree_parts(&TOY, &tree).unwrap();
     assert_eq!(
         (parts.direction, parts.code, parts.criticality),
-        ("InitiatingMessage", 1, tree!("reject"))
+        (Direction::Initiating, 1, tree!("reject"))
     );
     assert_eq!(parts.message, setup_request());
     let release = tree!({"message": "release", "ies": [{"Cause": {"nas": "deregister"}}]});
@@ -1077,7 +1077,7 @@ fn the_parts_that_a_tree_writes() {
     );
     let octets = tree!({"message": "SetupResponse", "octets": "000f01020100"});
     let parts = inspect::tree_parts(&TOY, &octets).unwrap();
-    assert_eq!(parts.direction, "SuccessfulOutcome");
+    assert_eq!(parts.direction, Direction::Successful);
     assert_eq!(parts.message, ies(&[(15, 1, &[1, 0])]));
     let unknown = tree!({"procedure_code": 7, "direction": "UnsuccessfulOutcome",
                          "criticality": "notify", "ies": [{"Cause": {"nas": "deregister"},
@@ -1085,7 +1085,7 @@ fn the_parts_that_a_tree_writes() {
     let parts = inspect::tree_parts(&TOY, &unknown).unwrap();
     assert_eq!(
         (parts.direction, parts.code, parts.criticality),
-        ("UnsuccessfulOutcome", 7, tree!("notify"))
+        (Direction::Unsuccessful, 7, tree!("notify"))
     );
     assert_eq!(parts.message, ies(&[(15, 1, &[1, 1])]));
     for refused in [
@@ -1104,7 +1104,7 @@ fn the_parts_that_a_tree_writes() {
 #[test]
 fn the_parts_that_a_view_writes() {
     let response = ies(&[(15, 0, &[1, 0])]);
-    let view = inspect::view(&TOY, "SuccessfulOutcome", 1, tree!("ignore"), &response).unwrap();
+    let view = inspect::view(&TOY, Direction::Successful, 1, tree!("ignore"), &response).unwrap();
     let written = parts(&view).unwrap();
     assert_eq!(written.0, "SuccessfulOutcome");
     for (member, value) in [
@@ -1143,10 +1143,10 @@ fn a_view_in_the_json_encoding_rules_is_read() {
 fn a_view_is_of_its_pdu() {
     let view = setup_view();
     assert_eq!(
-        inspect::of_the_pdu(&TOY, &view, "InitiatingMessage", 1),
+        inspect::of_the_pdu(&TOY, &view, Direction::Initiating, 1),
         Ok(())
     );
-    let error = inspect::of_the_pdu(&TOY, &view, "InitiatingMessage", 2).unwrap_err();
+    let error = inspect::of_the_pdu(&TOY, &view, Direction::Initiating, 2).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Form);
     assert!(
         error
@@ -1154,7 +1154,7 @@ fn a_view_is_of_its_pdu() {
             .starts_with("this view is of SetupRequest, and the PDU is Release"),
         "{error}"
     );
-    let error = inspect::of_the_pdu(&TOY, &view, "SuccessfulOutcome", 9).unwrap_err();
+    let error = inspect::of_the_pdu(&TOY, &view, Direction::Successful, 9).unwrap_err();
     assert!(
         error
             .to_string()
@@ -1169,7 +1169,7 @@ fn a_view_is_of_its_pdu() {
 fn the_entries_of_a_list_count_in_the_depth_of_the_inspection() {
     // The causes in the list of the Items: the IE of level n is 2n + 2 deep
     let octets = ies(&[(20, 0, &ies(&[(15, 1, &nested(40))]))]);
-    let view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
     let mut ie = &view["message"]["protocolIEs"][0]["value"][0];
     for _ in 1..31 {
         ie = &ie["value"]["choice-Extensions"];
@@ -1186,12 +1186,12 @@ fn the_entries_of_a_list_count_in_the_depth_of_the_inspection() {
 /// as they write them, and a tree has its octets.
 #[test]
 fn a_message_without_ies_has_the_members_of_its_type() {
-    let view = inspect::view(&TOY, "InitiatingMessage", 3, tree!("ignore"), &[0, 1, 2]).unwrap();
+    let view = inspect::view(&TOY, Direction::Initiating, 3, tree!("ignore"), &[0, 1, 2]).unwrap();
     assert_eq!(view["message"], tree!({"tac": 258}));
     let mut jer = view.clone();
     jer["message"]["tac"] = tree!("000102");
     assert_eq!(inspect::view_of_jer(&TOY, &jer).unwrap(), view);
-    let tree = inspect::tree(&TOY, "InitiatingMessage", 3, tree!("ignore"), &[0, 1, 2]);
+    let tree = inspect::tree(&TOY, Direction::Initiating, 3, tree!("ignore"), &[0, 1, 2]);
     assert_eq!(
         tree,
         tree!({"message": "PrivateMessage", "octets": "000102"})
@@ -1204,7 +1204,7 @@ fn a_message_without_ies_has_the_members_of_its_type() {
 fn opened_octets_have_the_type_that_they_carry() {
     let carried = [&[6, 6][..], &ies(&[(17, 1, &[1, 1])])].concat();
     let octets = ies(&[(18, 1, &carried)]);
-    let mut view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+    let mut view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
     inspect::open(&TOY, &mut view, "/toy/Container/LteBlob").unwrap();
     let opened = &view["message"]["protocolIEs"][0]["value"]["LteBlob"]["decoded"];
     let extension = &opened["iE-Extensions"][0];
@@ -1219,7 +1219,7 @@ fn a_transfer_of_a_holder_has_its_extensions() {
     let inner = [&[6, 6][..], &ies(&[(17, 1, &[1, 1])])].concat();
     let holder = [&[7, inner.len() as u8][..], &inner].concat();
     let octets = ies(&[(16, 0, &holder)]);
-    let mut view = inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &octets).unwrap();
+    let mut view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
     assert_eq!(parts(&view).unwrap().3, octets);
     let path = "/toy/Holder/inner/iE-Extensions/ExtendedCause/nas";
     assert_eq!(
@@ -2104,7 +2104,7 @@ mod another_protocol {
         let names = inspect::enumerated_at(&TOY, "SetupRequest", &mode).unwrap();
         assert_eq!(names, Some(&MODES[..]));
         let mut view =
-            inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &wrapped()).unwrap();
+            inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &wrapped()).unwrap();
         let speed = "/toy/Container/Wrapper/Speed";
         assert_eq!(
             inspect::select(&TOY, &view, speed).unwrap_err().kind(),
@@ -2156,7 +2156,7 @@ fn a_type_of_a_protocol_that_is_not_registered_is_refused_with_the_call_that_reg
     let error = inspect::check_path(&TOY, "SetupRequest", path).unwrap_err();
     assert!(error.to_string().contains(CALL), "{error}");
     let mut view =
-        inspect::view(&TOY, "InitiatingMessage", 1, tree!("reject"), &wrapped()).unwrap();
+        inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &wrapped()).unwrap();
     inspect::open(&TOY, &mut view, "/toy/Container/GhostBlob").unwrap();
     let error = inspect::select(&TOY, &view, path).unwrap_err();
     assert!(error.to_string().contains(CALL), "{error}");

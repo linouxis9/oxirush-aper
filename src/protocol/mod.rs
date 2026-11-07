@@ -74,6 +74,47 @@ use crate::{AsnType, Criticality, Decode, Encode, Error, Faults, Octets};
 /// The criticality of the bindings of the protocol `P`.
 pub type CriticalityOf<P> = <P as Diagnostics>::Criticality;
 
+/// The direction of a PDU, the alternative of the PDU that holds a message: the
+/// initiating message of a procedure, or its successful or unsuccessful outcome. Its
+/// `Display`, and the trees, name it as ASN.1 does, as `InitiatingMessage`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Direction {
+    /// The initiating message of a procedure.
+    Initiating,
+    /// The successful outcome of a procedure.
+    Successful,
+    /// The unsuccessful outcome of a procedure.
+    Unsuccessful,
+}
+
+impl Direction {
+    /// The three directions, in the order of the alternatives of a PDU.
+    pub const ALL: [Self; 3] = [Self::Initiating, Self::Successful, Self::Unsuccessful];
+
+    /// The name that ASN.1 gives the alternative of the PDU: `InitiatingMessage`,
+    /// `SuccessfulOutcome` or `UnsuccessfulOutcome`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Initiating => "InitiatingMessage",
+            Self::Successful => "SuccessfulOutcome",
+            Self::Unsuccessful => "UnsuccessfulOutcome",
+        }
+    }
+
+    /// The direction of a name, as [`name`](Self::name) gives it.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|direction| direction.name() == name)
+    }
+}
+
+impl core::fmt::Display for Direction {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 /// A protocol, as the marker type that its bindings give it: `oxirush_ngap::Ngap`,
 /// `oxirush_s1ap::S1ap`. Its registry implements it, with the tables that the readers of
 /// this module read.
@@ -87,8 +128,7 @@ pub trait Protocol: Diagnostics + Copy + core::fmt::Debug + 'static {
     /// The object set of each message.
     #[doc(hidden)]
     const __OBJECT_SETS: &'static [ObjectSet<CriticalityOf<Self>>];
-    /// Where each message is in the object sets, by the rank of its direction and its
-    /// procedure code.
+    /// Where each message is in the object sets, by its direction and its procedure code.
     #[doc(hidden)]
     const __OBJECT_SET_INDEX: &'static [[u16; 256]; 3];
     /// The identifier of each IE with the name that ASN.1 gives it after `id-`, in the
@@ -120,8 +160,8 @@ pub trait Protocol: Diagnostics + Copy + core::fmt::Debug + 'static {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct ObjectSet<C: 'static> {
-    /// The direction of its PDU, as `direction()` of a PDU says it.
-    pub direction: &'static str,
+    /// The direction of its PDU.
+    pub direction: Direction,
     /// The code of its procedure.
     pub procedure_code: u8,
     /// The name that ASN.1 gives the message.
@@ -134,37 +174,22 @@ pub struct ObjectSet<C: 'static> {
 /// specification has one.
 #[doc(hidden)]
 pub fn object_set<P: Protocol>(
-    direction: &str,
+    direction: Direction,
     code: u8,
 ) -> Option<&'static ObjectSet<CriticalityOf<P>>> {
-    // The index of the registry, by the rank of the direction and the procedure code.
-    let at = P::__OBJECT_SET_INDEX[usize::from(rank(direction)?)][usize::from(code)];
-    let set = P::__OBJECT_SETS.get(usize::from(at))?;
-    (set.direction == direction).then_some(set)
+    let at = P::__OBJECT_SET_INDEX[direction as usize][usize::from(code)];
+    P::__OBJECT_SETS.get(usize::from(at))
 }
 
-/// The rank of a direction among the three, as `direction()` of a PDU says it.
-#[inline]
-const fn rank(direction: &str) -> Option<u8> {
-    match direction.as_bytes() {
-        [b'I', ..] => Some(0),
-        [b'S', ..] => Some(1),
-        [b'U', ..] => Some(2),
-        _ => None,
-    }
-}
-
-/// For the registry of a protocol: where each message is in its object sets, by the rank
-/// of its direction and its procedure code; `u16::MAX` where the protocol has no message.
+/// For the registry of a protocol: where each message is in its object sets, by its
+/// direction and its procedure code; `u16::MAX` where the protocol has no message.
 #[doc(hidden)]
 pub const fn __object_set_index<C>(sets: &[ObjectSet<C>]) -> [[u16; 256]; 3] {
     let mut index = [[u16::MAX; 256]; 3];
     let mut at = 0;
     while at < sets.len() {
         let set = &sets[at];
-        if let Some(rank) = rank(set.direction) {
-            index[rank as usize][set.procedure_code as usize] = at as u16;
-        }
+        index[set.direction as usize][set.procedure_code as usize] = at as u16;
         at += 1;
     }
     index
@@ -188,7 +213,7 @@ pub trait InProtocol {
 /// The criticality that the object set of the message of a direction and a procedure code
 /// assigns to the IE `id`: `None` for an IE that the set does not have.
 #[doc(hidden)]
-pub fn __assigned<P: Protocol>(direction: &str, code: u8, id: u16) -> Option<Criticality> {
+pub fn __assigned<P: Protocol>(direction: Direction, code: u8, id: u16) -> Option<Criticality> {
     __assigned_in(object_set::<P>(direction, code)?.ies?, id)
 }
 
@@ -216,9 +241,8 @@ pub fn __type_name(path: &'static str) -> &'static str {
 /// criticality and its message in an open type. `'a` is how long the octets live that it
 /// borrows its message from.
 pub trait Pdu<'a>: Decode<'a> + Encode + InProtocol + Sized {
-    /// Its direction: `"InitiatingMessage"`, `"SuccessfulOutcome"` or
-    /// `"UnsuccessfulOutcome"`.
-    fn direction(&self) -> &'static str;
+    /// Its direction.
+    fn direction(&self) -> Direction;
     /// The code of its procedure.
     fn procedure_code(&self) -> u8;
     /// Its criticality.
@@ -228,15 +252,15 @@ pub trait Pdu<'a>: Decode<'a> + Encode + InProtocol + Sized {
     /// Make `value` the octets of its message.
     #[doc(hidden)]
     fn __set_value(&mut self, value: Octets<'a>);
-    /// The PDU of a direction, as `direction()` says it, with the code of its procedure,
-    /// its criticality and the octets of its message; `None` for what is no direction.
+    /// The PDU of a direction, with the code of its procedure, its criticality and the
+    /// octets of its message.
     #[doc(hidden)]
     fn __of(
-        direction: &str,
+        direction: Direction,
         procedure_code: u8,
         criticality: CriticalityOf<Self::Protocol>,
         value: Octets<'a>,
-    ) -> Option<Self>;
+    ) -> Self;
 }
 
 /// An IE of a container of protocol IEs, `ProtocolIEField` of the bindings: its
@@ -295,9 +319,8 @@ pub trait Container<'a>: Decode<'a> + Encode + AsnType + InProtocol {
             list of single containers is built without the name of a type"
 )]
 pub trait Message<'a>: Container<'a> {
-    /// The direction of the PDU that holds it, as `direction()` of a PDU says it:
-    /// `"InitiatingMessage"`, `"SuccessfulOutcome"` or `"UnsuccessfulOutcome"`.
-    const DIRECTION: &'static str;
+    /// The direction of the PDU that holds it.
+    const DIRECTION: Direction;
     /// The code of its procedure.
     const PROCEDURE_CODE: u8;
     /// The criticality that the specification assigns to its procedure, which the PDU

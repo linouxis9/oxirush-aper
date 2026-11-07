@@ -27,8 +27,8 @@ use oxirush_utils::tree::{Map, Value};
 
 use super::paths::{EDITED, extended, member_shape, of_a_transfer, written_ie};
 use super::{Protocol, Shape, Typed, foreign, same_name};
-use crate::Error;
 use crate::json::{self, hex};
+use crate::{Direction, Error};
 
 /// How deep in a view an IE or a transfer is still decoded.
 const NESTING: usize = 64;
@@ -149,7 +149,7 @@ impl Protocol {
     /// procedure that the specification does not have in that direction has no type of
     /// its own: its message is read and written as what every message of the protocol
     /// but the private one is, a container of protocol IEs and nothing else.
-    fn message_typed(&self, direction: &str, code: u8) -> Typed {
+    fn message_typed(&self, direction: Direction, code: u8) -> Typed {
         let mut messages = self.messages.iter();
         let message = messages.find(|(of, procedure, ..)| *procedure == code && *of == direction);
         message.map_or_else(self.any_message, |(_, _, _, typed, ..)| typed())
@@ -454,7 +454,7 @@ impl Protocol {
     }
 
     /// The name that ASN.1 gives the message of a direction and a procedure code.
-    fn message_name_of(&self, direction: &str, code: u8) -> Option<&'static str> {
+    fn message_name_of(&self, direction: Direction, code: u8) -> Option<&'static str> {
         let mut messages = self.messages.iter();
         let message = messages.find(|(of, procedure, ..)| *procedure == code && *of == direction);
         message.map(|(_, _, name, ..)| *name)
@@ -481,7 +481,7 @@ impl Protocol {
 /// The message does not decode.
 pub fn view(
     protocol: &'static Protocol,
-    direction: &'static str,
+    direction: Direction,
     code: u8,
     criticality: Value,
     raw: &[u8],
@@ -491,7 +491,7 @@ pub fn view(
     protocol.expand(&mut message, 0, protocol.message_shape(direction, code));
     let mut view = Map::new();
     view.insert("procedure_code".into(), code.into());
-    view.insert("direction".into(), direction.into());
+    view.insert("direction".into(), direction.name().into());
     view.insert("criticality".into(), criticality);
     view.insert("message".into(), message);
     view.insert("_raw_message".into(), hex(raw).into());
@@ -514,7 +514,7 @@ pub fn view(
 /// the place of its IEs. A PDU that decodes has a tree.
 pub fn tree(
     protocol: &'static Protocol,
-    direction: &'static str,
+    direction: Direction,
     code: u8,
     criticality: Value,
     raw: &[u8],
@@ -527,7 +527,7 @@ pub fn tree(
         }
         None => {
             tree.insert("procedure_code".into(), code.into());
-            tree.insert("direction".into(), direction.into());
+            tree.insert("direction".into(), direction.name().into());
         }
     }
     let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
@@ -553,8 +553,8 @@ pub fn tree(
 /// code, its criticality as JSON, which the protocol reads as its own type, and the
 /// octets of its message.
 pub struct Parts {
-    /// `InitiatingMessage`, `SuccessfulOutcome` or `UnsuccessfulOutcome`.
-    pub direction: &'static str,
+    /// The direction of the PDU.
+    pub direction: Direction,
     /// The procedure code.
     pub code: u8,
     /// The criticality of the PDU, as JSON.
@@ -565,14 +565,8 @@ pub struct Parts {
 }
 
 /// The direction that a view or a tree names, as one of the three.
-fn direction_of(direction: &str) -> Result<&'static str, Error> {
-    const DIRECTIONS: [&str; 3] = [
-        "InitiatingMessage",
-        "SuccessfulOutcome",
-        "UnsuccessfulOutcome",
-    ];
-    let known = DIRECTIONS.iter().find(|known| **known == direction);
-    known.copied().ok_or_else(no_direction)
+fn direction_of(direction: &str) -> Result<Direction, Error> {
+    Direction::named(direction).ok_or_else(no_direction)
 }
 
 /// The octets of the message of a direction and a procedure code of `protocol` that
@@ -581,7 +575,7 @@ fn direction_of(direction: &str) -> Result<&'static str, Error> {
 /// edited.
 fn message_octets(
     protocol: &'static Protocol,
-    direction: &str,
+    direction: Direction,
     code: u8,
     mut message: Value,
     received: Option<&Value>,
@@ -792,10 +786,11 @@ pub fn view_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, E
 pub fn of_the_pdu(
     protocol: &'static Protocol,
     view: &Value,
-    direction: &str,
+    direction: Direction,
     code: u8,
 ) -> Result<(), Error> {
-    let of = (view["direction"].as_str(), view["procedure_code"].as_u64());
+    let of = view["direction"].as_str().and_then(Direction::named);
+    let of = (of, view["procedure_code"].as_u64());
     // A view that does not say which message it is of is refused as any view is.
     let (Some(of), Some(procedure)) = of else {
         return Ok(());
@@ -803,7 +798,7 @@ pub fn of_the_pdu(
     if (of, procedure) == (direction, u64::from(code)) {
         return Ok(());
     }
-    let message = |direction: &str, code: u64| {
+    let message = |direction: Direction, code: u64| {
         let known = u8::try_from(code).ok();
         match known.and_then(|code| protocol.message_name_of(direction, code)) {
             Some(name) => name.to_string(),

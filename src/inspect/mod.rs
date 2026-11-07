@@ -71,7 +71,7 @@ pub struct Typed {
 /// with their identifiers and whether each is mandatory, and the path of its type in
 /// the bindings.
 pub type Message = (
-    &'static str,
+    crate::Direction,
     u8,
     &'static str,
     fn() -> Typed,

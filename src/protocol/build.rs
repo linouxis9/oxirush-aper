@@ -144,9 +144,12 @@ impl<P: Protocol> __Message<P> {
         };
         self.octets[1..3].copy_from_slice(&count.to_be_bytes());
         let value = Octets::owned(self.octets);
-        // The direction of a message is one of the three.
-        <P::Pdu<'static> as Pdu<'static>>::__of(M::DIRECTION, M::PROCEDURE_CODE, criticality, value)
-            .ok_or_else(|| Error::new(ErrorKind::Encode, "a message has no direction"))
+        Ok(<P::Pdu<'static> as Pdu<'static>>::__of(
+            M::DIRECTION,
+            M::PROCEDURE_CODE,
+            criticality,
+            value,
+        ))
     }
 }
 

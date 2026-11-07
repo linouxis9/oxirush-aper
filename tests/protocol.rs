@@ -22,7 +22,7 @@
 include!("toy/mod.rs");
 
 use oxirush_aper::check::Wrong;
-use oxirush_aper::{ErrorKind, Faults, Octets};
+use oxirush_aper::{Direction, ErrorKind, Faults, Octets};
 use toy::*;
 
 type Error = oxirush_aper::Error;
@@ -464,7 +464,7 @@ fn the_readers_read_what_the_codec_of_the_container_reads() -> Result<(), Error>
         // The structure that both read is the same.
         assert_eq!(pdu.check_structure()?.len(), {
             let mut found = Vec::new();
-            let set = &oxirush_aper::protocol::object_set::<Toy>("InitiatingMessage", 1)
+            let set = &oxirush_aper::protocol::object_set::<Toy>(Direction::Initiating, 1)
                 .unwrap()
                 .ies
                 .unwrap();
@@ -877,8 +877,8 @@ fn the_protocol_ies_of_a_pdu_are_read_and_set_as_they_are() -> Result<(), Error>
         "the SetupRequest of this PDU does not decode: there are no octets"
     );
     // The message of a SETUP REQUEST holds a key, its name; that of a NOTIFICATION none
-    assert!(holds_key::<Toy>("InitiatingMessage", 1));
-    assert!(!holds_key::<Toy>("InitiatingMessage", 2));
+    assert!(holds_key::<Toy>(Direction::Initiating, 1));
+    assert!(!holds_key::<Toy>(Direction::Initiating, 2));
     Ok(())
 }
 

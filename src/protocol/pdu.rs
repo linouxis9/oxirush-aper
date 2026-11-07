@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 use super::errors::__undecodable_ie;
 use super::read;
-use super::{CriticalityOf, Field, Message, Pdu, Protocol, Transfer, object_set};
+use super::{CriticalityOf, Direction, Field, Message, Pdu, Protocol, Transfer, object_set};
 use crate::check::{Deviation, Wrong, deviations, structure_deviations};
 use crate::{Decode, Error, ErrorKind, Faults, Octets, Reader, Writer};
 
@@ -190,20 +190,20 @@ pub fn of_message<'m, M: Message<'m>>(
     criticality: CriticalityOf<M::Protocol>,
 ) -> Result<<M::Protocol as Protocol>::Pdu<'static>, Error> {
     let octets = Octets::owned(crate::encode(message)?);
-    let pdu = <<M::Protocol as Protocol>::Pdu<'static> as Pdu<'static>>::__of(
-        M::DIRECTION,
-        M::PROCEDURE_CODE,
-        criticality,
-        octets,
-    );
-    // The direction of a message is one of the three.
-    pdu.ok_or_else(|| Error::new(ErrorKind::Encode, "a message has no direction"))
+    Ok(
+        <<M::Protocol as Protocol>::Pdu<'static> as Pdu<'static>>::__of(
+            M::DIRECTION,
+            M::PROCEDURE_CODE,
+            criticality,
+            octets,
+        ),
+    )
 }
 
 /// Whether the message of a direction and a procedure code may hold a key: its object set
 /// has an IE of a type that holds one. `Debug` of its PDU shows the length of the octets
 /// of the message, and not the octets.
-pub fn holds_key<P: Protocol>(direction: &str, code: u8) -> bool {
+pub fn holds_key<P: Protocol>(direction: Direction, code: u8) -> bool {
     let ies = object_set::<P>(direction, code).and_then(|set| set.ies);
     ies.is_some_and(|ies| ies.iter().any(|(id, ..)| P::__KEY_IES.contains(id)))
 }

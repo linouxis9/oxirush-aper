@@ -364,7 +364,12 @@ impl Error {
     /// A PDU of another message than the one that ASN.1 names `expected`: `held` is the
     /// name of the message of its `direction` and of the procedure `code`, when the
     /// specification has one.
-    pub fn wrong_message(expected: &str, held: Option<&str>, direction: &str, code: u8) -> Self {
+    pub fn wrong_message(
+        expected: &str,
+        held: Option<&str>,
+        direction: crate::Direction,
+        code: u8,
+    ) -> Self {
         let message = match held {
             Some(held) => format!(
                 "the message of this PDU is {held}, not {expected}: kind() says which \
@@ -388,7 +393,7 @@ impl Error {
 
     /// A PDU whose direction and procedure code the specification has no message for,
     /// and so no object set.
-    pub fn no_message_of(direction: &str, code: u8) -> Self {
+    pub fn no_message_of(direction: crate::Direction, code: u8) -> Self {
         let what = format!(
             "the specification has no {direction} of procedure {code}, and so no object set \
              for its IEs"
