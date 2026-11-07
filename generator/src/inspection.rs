@@ -522,4 +522,18 @@ mod tests {
         assert_eq!(shape_of(items, "Varying"), ("Varying".to_string(), false));
         assert_eq!(shape_of(items, "Pair"), ("_".to_string(), false));
     }
+
+    /// The list of the types has a type that wraps a bit string whose size varies, and
+    /// not one of a bit string of one size, which is written as its octets.
+    #[test]
+    fn the_list_of_the_types_has_bit_strings_whose_size_varies() {
+        let generated = r#"
+            #[rasn(delegate, size("256"))] pub struct Fixed(pub BitString);
+            #[rasn(delegate, size("1..=256"))] pub struct Varying(pub BitString);
+        "#;
+        let mut out = String::new();
+        generate_types(generated, &BTreeMap::new(), &mut out).unwrap();
+        assert!(!out.contains("Fixed"), "{out}");
+        assert!(out.contains("Varying = bits;"), "{out}");
+    }
 }

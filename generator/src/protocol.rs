@@ -833,3 +833,43 @@ pub fn decode_open_type<'a, T: Decode<'a>>(value: &'a [u8]) -> Result<T, crate::
     oxirush_aper::decode(value)
 }
 "####;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOY: Protocol = Protocol {
+        name: "Toy",
+        modules: "toy",
+        carried: &[],
+        keys: &[],
+        plmn: "",
+        aliases: &[],
+        ue_ids: UeIds {
+            ie: "",
+            choice: "",
+            pair: ("", "", ""),
+            first: "",
+        },
+        release_request: "",
+        release_display: "",
+        other_message: "",
+        no_message: "",
+        examples: &[],
+        correct: Ok,
+    };
+
+    /// The transfers of protocol IEs that the bindings have are those that the registry
+    /// reads from the ASN.1, beside the messages.
+    #[test]
+    fn the_transfers_of_the_bindings_are_those_of_the_asn1() {
+        let oracle = "pub enum TriggeringMessage { initiating_message = 0, }";
+        let registry = Registry::read("Toy", oracle, "", BTreeSet::new(), BTreeSet::new());
+        let registry = registry.unwrap();
+        let bindings = "pub struct Holder<'a> { pub protocol_ies: ProtocolIEContainer<'a>, }";
+        let error = transfers(&TOY, bindings, "", &registry).unwrap_err();
+        assert!(error.to_string().contains(r#"{"Holder"}"#), "{error}");
+        let list = r#""Holder" crate::toy::Holder<'a> [ ];"#;
+        assert!(transfers(&TOY, bindings, list, &registry).is_ok());
+    }
+}
