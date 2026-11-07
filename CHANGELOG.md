@@ -4,6 +4,43 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ## Unreleased
 
+### Changed
+
+- `Criticality` is the type of the bindings too: for the `Criticality` of the
+  ASN.1 of a protocol, the generator writes `pub use oxirush_aper::Criticality`,
+  and this crate gives it its codec, its tree and its serde. `Display` and
+  `name()` give `reject`, `ignore` and `notify`, as ASN.1 names them.
+- `Direction` is the direction of a PDU: `Pdu::direction()`,
+  `Message::DIRECTION`, the object sets, `Deviation::UnknownProcedure` and the
+  errors of a wrong message have it. `Display` and `name()` give
+  `InitiatingMessage` and the two others, which `named()` reads.
+- oxirush-utils 0.2.0, whose trees read a member of a `SEQUENCE` by its name.
+- The generator writes the codec of each member of a `SEQUENCE` in one line:
+  the bindings of NGAP are 4794 lines shorter, those of S1AP 2106.
+
+### Removed
+
+- `json::to_value(&x)`, which is `x.to_tree()`.
+- `protocol::CriticalityOf`, the associated type `check::Diagnostics::Criticality`,
+  the parameter of `protocol::ObjectSet` and the conversions between two
+  criticalities.
+- The `procedures` module of a registry, and the second decoding of each IE that
+  a build with debug assertions made in `check()`.
+- `check::deviations`, `check::structure_deviations` and `check::Wrong` are
+  hidden: only the checks of a PDU call them.
+
+### Migration from 0.1
+
+| 0.1 | 0.2 |
+|-----|-----|
+| `json::to_value(&x)` | `x.to_tree()` |
+| `Criticality::reject` (of the bindings) | `Criticality::Reject` |
+| `pdu.direction() == "InitiatingMessage"` | `pdu.direction() == Direction::Initiating` |
+| `Error::wrong_message(expected, held, "SuccessfulOutcome", code)` | `Error::wrong_message(expected, held, Direction::Successful, code)` |
+| `impl Diagnostics { type Criticality = ...; }` | no such type: the criticality is `Criticality` |
+
+### Added
+
 - The octets of an IE of one protocol may carry a type of another, as the
   transparent containers of a handover between 5GS and EPS do: S1AP's in
   NGAP, and NGAP's in S1AP (TS 38.413 clauses 9.3.1.20 and 9.3.1.21, TS
