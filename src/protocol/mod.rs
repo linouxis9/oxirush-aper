@@ -494,3 +494,53 @@ impl<T> __Field<T> for T {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Criticality, Direction};
+    use alloc::string::ToString;
+    use alloc::vec::Vec;
+
+    #[test]
+    fn a_criticality_and_a_direction_have_the_names_of_asn1() {
+        let names: Vec<_> = Criticality::ALL.iter().map(ToString::to_string).collect();
+        assert_eq!(names, Criticality::NAMES);
+        assert_eq!(names, ["reject", "ignore", "notify"]);
+        let names: Vec<_> = Direction::ALL.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            names,
+            [
+                "InitiatingMessage",
+                "SuccessfulOutcome",
+                "UnsuccessfulOutcome"
+            ]
+        );
+        for direction in Direction::ALL {
+            assert_eq!(Direction::named(direction.name()), Some(direction));
+        }
+        assert_eq!(Direction::named("initiatingMessage"), None);
+    }
+
+    #[test]
+    fn a_criticality_is_its_index_in_two_bits() {
+        for (index, criticality) in Criticality::ALL.into_iter().enumerate() {
+            let octets = crate::encode(&criticality).unwrap();
+            assert_eq!(octets, [(index as u8) << 6]);
+            assert_eq!(crate::decode::<Criticality>(&octets), Ok(criticality));
+        }
+        // The fourth value of the two bits is none.
+        assert!(crate::decode::<Criticality>(&[0xc0]).is_err());
+    }
+
+    #[cfg(feature = "inspect")]
+    #[test]
+    fn the_tree_of_a_criticality_is_its_name() {
+        use crate::json::{Tree, Value, from_value};
+        for criticality in Criticality::ALL {
+            let tree = criticality.to_tree();
+            assert_eq!(tree, Value::from(criticality.name()));
+            assert_eq!(from_value::<Criticality>(&tree).unwrap(), criticality);
+        }
+        assert!(from_value::<Criticality>(&Value::from("rejected")).is_err());
+    }
+}
