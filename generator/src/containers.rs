@@ -175,3 +175,37 @@ pub fn share(generated: &str, containers: &str) -> Result<String> {
     output.insert_str(end - "}\n".len(), SHARED);
     Ok(output)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::share;
+
+    /// A field whose identifier is that of the other kind of container, or whose `impl`
+    /// is of another type, is no field of a container.
+    #[test]
+    fn a_field_of_the_other_kind_of_identifier_is_refused() {
+        let field = |id: &str, value: &str, of: &str| {
+            format!(
+                "    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(automatic_tags)]
+    pub struct Field {{
+        pub id: {id},
+        pub criticality: Criticality,
+        pub {value}: Any,
+    }}
+    impl {of} {{
+        pub fn new() -> Self {{}}
+    }}
+"
+            )
+        };
+        for (id, value, of) in [
+            ("ProtocolExtensionID", "value", "Field"),
+            ("ProtocolIEID", "extension_value", "Field"),
+            ("ProtocolIEID", "value", "Other"),
+        ] {
+            let error = share(&field(id, value, of), "toy_containers").unwrap_err();
+            assert_eq!(error.to_string(), "unrecognized container field Field");
+        }
+    }
+}

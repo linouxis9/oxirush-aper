@@ -487,3 +487,40 @@ fn aligned_bits(length: usize, indent: &str) -> String {
     .map(|line| format!("{indent}{line}"))
     .join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::fix_long_inline_strings;
+
+    /// A string whose size spans 255 octets or more takes a sized type, in its field and
+    /// in the `new` of its type, wherever its range starts; one that spans fewer keeps its
+    /// own.
+    #[test]
+    fn a_string_whose_size_spans_255_octets_takes_a_sized_type() {
+        let generated = r#"    pub struct Holder {
+        #[rasn(size("200..=300"))]
+        pub mid: OctetString,
+        #[rasn(size("100..=355"))]
+        pub long: OctetString,
+    }
+    impl Holder {
+        pub fn new(
+            mid: OctetString,
+            long: OctetString,
+        ) -> Self {
+"#;
+        let fixed = fix_long_inline_strings(generated).unwrap();
+        let expected = r#"    pub struct Holder {
+        #[rasn(size("200..=300"))]
+        pub mid: OctetString,
+        pub long: crate::sized::SizedOctetString<100, 355>,
+    }
+    impl Holder {
+        pub fn new(
+            mid: OctetString,
+            long: crate::sized::SizedOctetString<100, 355>,
+        ) -> Self {
+"#;
+        assert_eq!(fixed, expected);
+    }
+}

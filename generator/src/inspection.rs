@@ -443,3 +443,83 @@ pub fn generate(
     generate_types(generated, &transfers, &mut out)?;
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// How the list of the types writes `ty` among the types of `items`.
+    fn shape_of(items: &str, ty: &str) -> (String, bool) {
+        let file = syn::parse_file(items).unwrap();
+        let mut declared = BTreeMap::new();
+        for item in &file.items {
+            match item {
+                syn::Item::Struct(declaration) => {
+                    declared.insert(declaration.ident.to_string(), item)
+                }
+                syn::Item::Enum(declaration) => {
+                    declared.insert(declaration.ident.to_string(), item)
+                }
+                _ => None,
+            };
+        }
+        shape(&syn::parse_str(ty).unwrap(), &declared, 0)
+    }
+
+    /// A member has a default value whether its attribute names one or not.
+    #[test]
+    fn a_member_has_a_default_value_by_its_attribute() {
+        for (attribute, default) in [
+            (
+                r#"#[rasn(value("0..=10"), default = "count_default")]"#,
+                true,
+            ),
+            ("#[rasn(default)]", true),
+            (r#"#[rasn(identifier = "count")]"#, false),
+        ] {
+            let item: syn::ItemStruct =
+                syn::parse_str(&format!("struct Holder {{ {attribute} count: u8 }}")).unwrap();
+            let field = item.fields.iter().next().unwrap();
+            assert_eq!(rasn_kind(&field.attrs).unwrap().2, default, "{attribute}");
+        }
+    }
+
+    /// A type is followed through 16 types that each wrap the next, an OPTIONAL or a box
+    /// among them, and no further: past them it has no members.
+    #[test]
+    fn a_type_is_followed_through_16_wrappers() {
+        let chain = |length: usize| {
+            let mut items = String::new();
+            for at in 0..length {
+                let next = match at + 1 == length {
+                    true => "BitString".to_string(),
+                    false => format!("W{}", at + 1),
+                };
+                items.push_str(&format!(
+                    "#[rasn(delegate)] pub struct W{at}(pub {next});\n"
+                ));
+            }
+            items
+        };
+        assert_eq!(shape_of(&chain(15), "W0"), ("W0".to_string(), false));
+        assert_eq!(shape_of(&chain(16), "W0"), ("_".to_string(), false));
+        assert_eq!(shape_of(&chain(14), "Option<W0>"), ("W0".to_string(), true));
+        assert_eq!(shape_of(&chain(15), "Option<W0>"), ("_".to_string(), true));
+        assert_eq!(shape_of(&chain(14), "Box<W0>"), ("W0".to_string(), false));
+        assert_eq!(shape_of(&chain(15), "Box<W0>"), ("_".to_string(), false));
+    }
+
+    /// A type that wraps a bit string of one size is written as its octets, and has no
+    /// members; one whose size varies has its length; one of two members has none.
+    #[test]
+    fn a_wrapper_of_a_bit_string_of_one_size_has_no_members() {
+        let items = r#"
+            #[rasn(delegate, size("256"))] pub struct Fixed(pub BitString);
+            #[rasn(delegate, size("1..=256"))] pub struct Varying(pub BitString);
+            pub struct Pair(pub BitString, pub u8);
+        "#;
+        assert_eq!(shape_of(items, "Fixed"), ("_".to_string(), false));
+        assert_eq!(shape_of(items, "Varying"), ("Varying".to_string(), false));
+        assert_eq!(shape_of(items, "Pair"), ("_".to_string(), false));
+    }
+}

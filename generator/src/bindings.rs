@@ -2362,4 +2362,216 @@ mod tests {
         );
         assert!(text.contains("pub const MINUS_ONE: i64 = -1;"), "{text}");
     }
+
+    /// The bindings of a description written by hand, in a module `toy`.
+    fn described(items: &str, keys: Keys<'_>) -> Result<Written> {
+        let description = format!("pub mod toy {{ use rasn::prelude::*; {items} }}");
+        bindings(&description, keys, &[], None, &[])
+    }
+
+    /// An INTEGER has the smallest native type that holds its range, and none past 64
+    /// bits.
+    #[test]
+    fn an_integer_has_the_smallest_native_type_that_holds_its_range() {
+        let native = |lower: i128, upper: i128| {
+            let range = Range {
+                lower: Some(lower),
+                upper: Some(upper),
+                extensible: false,
+            };
+            integer(range).map(|kind| match kind {
+                Kind::Integer { native, .. } => native,
+                _ => unreachable!(),
+            })
+        };
+        let (i8, i16, i32, i64) = (
+            i128::from(i8::MIN),
+            i128::from(i16::MIN),
+            i128::from(i32::MIN),
+            i128::from(i64::MIN),
+        );
+        for (lower, upper, expected) in [
+            (0, 255, "u8"),
+            (0, 256, "u16"),
+            (0, 65536, "u32"),
+            (0, i128::from(u64::MAX), "u64"),
+            (i8, 127, "i8"),
+            (i8 - 1, 0, "i16"),
+            (-1, 128, "i16"),
+            (i16, 32767, "i16"),
+            (i16 - 1, 0, "i32"),
+            (-1, 32768, "i32"),
+            (i32, i128::from(i32::MAX), "i32"),
+            (i32 - 1, 0, "i64"),
+            (-1, i128::from(i32::MAX) + 1, "i64"),
+            (i64, i128::from(i64::MAX), "i64"),
+        ] {
+            assert_eq!(native(lower, upper).unwrap(), expected, "{lower}..{upper}");
+        }
+        for (lower, upper) in [
+            (0, i128::from(u64::MAX) + 1),
+            (i64 - 1, 0),
+            (-1, i128::from(i64::MAX) + 1),
+        ] {
+            let error = native(lower, upper).unwrap_err();
+            assert!(error.to_string().contains("more than 64 bits"), "{error}");
+        }
+    }
+
+    /// An IA5String is read, written, shown and described as one.
+    #[test]
+    fn an_ia5_string_is_one() {
+        let text = text("Name ::= IA5String (SIZE (1..150))");
+        for expected in [
+            "/// `Name ::= IA5String (SIZE (1..150))`.",
+            "pub struct Name<'a>(pub Cow<'a, str>);",
+            "reader.ia5_string(1, 150)",
+            "writer.ia5_string(&self.0, 1, 150)",
+            "json::read_text(reading, value, json::Characters::Ia5)",
+        ] {
+            assert!(text.contains(expected), "{expected} in {text}");
+        }
+    }
+
+    /// An INTEGER with a lower bound alone is read and written as a semi-constrained
+    /// number, signed where that bound is negative.
+    #[test]
+    fn an_integer_with_a_lower_bound_alone_is_semi_constrained() {
+        let text = text("Offset ::= INTEGER (-5..MAX)\nCount ::= INTEGER (0..MAX)");
+        for expected in [
+            "pub struct Offset(pub i64);",
+            "reader.semi_constrained(-5)",
+            "writer.semi_constrained(self.0, -5)",
+            "pub struct Count(pub u64);",
+            "reader.semi_constrained_unsigned(0)",
+            "writer.semi_constrained_unsigned(self.0, 0)",
+        ] {
+            assert!(text.contains(expected), "{expected} in {text}");
+        }
+    }
+
+    /// An OCTET STRING of one size is an array, but for a size that PER writes with a
+    /// length: 64K and more.
+    #[test]
+    fn an_octet_string_of_one_size_is_an_array_below_64k() {
+        let text = text(
+            "Holder ::= SEQUENCE { big OCTET STRING (SIZE (65536)), \
+             edge OCTET STRING (SIZE (65535)) }",
+        );
+        for expected in [
+            "pub big: Octets<'a>,",
+            "reader.octet_string(65536, 65536)",
+            "pub edge: [u8; 65535],",
+            "reader.octet_array::<65535>()",
+        ] {
+            assert!(text.contains(expected), "{expected} in {text}");
+        }
+    }
+
+    /// A key shows its length alone, in octets or in bits; and a type whose open type may
+    /// hold one shows the length of its octets when it does, and has no optional one.
+    #[test]
+    fn a_key_shows_its_length_alone() {
+        let keys = Keys {
+            types: &["Key", "Mask"],
+            holders: &[],
+        };
+        let asn = "Key ::= OCTET STRING (SIZE (32))\nMask ::= BIT STRING (SIZE (256))";
+        let text = written(asn, keys).unwrap().text;
+        for expected in [
+            r#"write!(formatter, "Key({} octets)", self.0.len())"#,
+            r#"write!(formatter, "Mask({} bits)", self.0.len())"#,
+        ] {
+            assert!(text.contains(expected), "{expected} in {text}");
+        }
+        let field = |value: &str| {
+            format!(
+                "#[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)] \
+                 #[rasn(automatic_tags)] \
+                 pub struct Field {{ #[rasn(value(\"0..=65535\"))] pub id: u16, pub value: {value} }}"
+            )
+        };
+        let keys = Keys {
+            types: &[],
+            holders: &[("Field", "self.id == 7")],
+        };
+        let text = described(&field("Any"), keys).unwrap().text;
+        let expected = "match holds_key { true => shown.field(\"value\", \
+                        &format_args!(\"{} octets\", self.value.len()))";
+        assert!(text.contains(expected), "{expected} in {text}");
+        let error = described(&field("Option<Any>"), keys).err().unwrap();
+        let error = format!("{error:#}");
+        assert!(
+            error.contains("Field has an open type that is optional"),
+            "{error}"
+        );
+    }
+
+    /// A type that has a list of keys, or of what holds one, holds one too.
+    #[test]
+    fn a_list_of_keys_holds_keys() {
+        let keys = Keys {
+            types: &["Key"],
+            holders: &[],
+        };
+        let asn = "Key ::= OCTET STRING (SIZE (32))\n\
+                   Keys ::= SEQUENCE (SIZE (1..4)) OF Key\n\
+                   Holder ::= SEQUENCE { keys SEQUENCE (SIZE (1..4)) OF Key }\n\
+                   Other ::= SEQUENCE { count INTEGER (0..7) }";
+        let written = written(asn, keys).unwrap();
+        let held: Vec<&str> = written.keys.iter().map(String::as_str).collect();
+        assert_eq!(held, ["Holder", "Key", "Keys"]);
+    }
+
+    /// A CHOICE is read and written where it is used when its alternatives are plain
+    /// fields, or SEQUENCEs of them: a list is none, as a member or as a type of its own.
+    #[test]
+    fn a_choice_of_plain_fields_is_inlined_and_one_of_a_list_is_not() {
+        let inlined = |text: &str, name: &str| {
+            let at = text.find(&format!("Decode<'a> for {name} {{")).unwrap();
+            let to = at + text[at..].find("fn decode").unwrap();
+            text[at..to].contains("#[inline]")
+        };
+        let text = text(
+            "Plain ::= SEQUENCE { count INTEGER (0..7) }\n\
+             Listed ::= SEQUENCE { counts SEQUENCE (SIZE (1..4)) OF INTEGER (0..7) }\n\
+             Inlined ::= CHOICE { plain Plain, ... }\n\
+             Apart ::= CHOICE { listed Listed, ... }",
+        );
+        assert!(inlined(&text, "Inlined"), "{text}");
+        assert!(!inlined(&text, "Apart"), "{text}");
+        // A list as a member, which rasn-compiler writes as a type of its own
+        let derive = "#[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]";
+        let items = format!(
+            "{derive} #[rasn(automatic_tags)] \
+             pub struct Listed {{ #[rasn(size(\"1..=4\"))] pub counts: SequenceOf<u8> }} \
+             {derive} #[rasn(choice, automatic_tags)] #[non_exhaustive] \
+             pub enum Apart {{ listed(Listed) }}"
+        );
+        let text = described(&items, Keys::default()).unwrap().text;
+        assert!(!inlined(&text, "Apart"), "{text}");
+    }
+
+    /// An attribute that the description has and that the backend does not read stops it.
+    #[test]
+    fn an_attribute_that_the_backend_does_not_read_stops_it() {
+        let item = |attribute: &str| {
+            format!(
+                "#[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)] \
+                 #[rasn(delegate, value(\"0..=7\"))] {attribute} pub struct Count(pub u8);"
+            )
+        };
+        let text = described(&item("#[allow(dead_code)]"), Keys::default())
+            .unwrap()
+            .text;
+        assert!(text.contains("pub struct Count(pub u8);"), "{text}");
+        let error = described(&item("#[serde(transparent)]"), Keys::default())
+            .err()
+            .unwrap();
+        let error = format!("{error:#}");
+        assert!(
+            error.contains("an attribute that the backend does not read: # [serde (transparent)]"),
+            "{error}"
+        );
+    }
 }
