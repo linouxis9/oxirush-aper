@@ -237,7 +237,7 @@ pub fn bindings(
 // ── Reading the description ─────────────────────────────────────────────────
 
 fn entries(items: &[Item]) -> Result<Vec<Entry>> {
-    let named_number = regex::Regex::new(r"Integer :: from \((-?\d+)i128\)")?;
+    let named_number = regex::Regex::new(r"Integer::from\((-?\d+)i128\)")?;
     let converted = regex::Regex::new(r"Self :: (\w+) \(value\)")?;
     let mut entries: Vec<Entry> = Vec::new();
     for item in items {
@@ -253,7 +253,8 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
             // A value of an INTEGER that has a name: a constant of a native type.
             Item::Static(value) => {
                 let docs = attributes(&value.attrs)?.docs;
-                let written = tokens(&value.expr);
+                // The tokens of a negative number are its sign and its digits.
+                let written = tokens(&value.expr).replace(' ', "");
                 let number = named_number
                     .captures(&written)
                     .and_then(|captures| captures[1].parse::<i128>().ok())
@@ -2323,4 +2324,42 @@ fn readable_form(asn: &str, kind: &Kind) -> Result<Option<String>> {
         ("Number", _) => bail!("{asn}: a number of a size that the type does not give"),
         (form, _) => format!("json::Form::{form}"),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rasn_compiler::prelude::{Compiler, RasnBackend, RasnConfig};
+
+    /// The bindings of the definitions `asn`, in a module of their own, as the generator
+    /// of a protocol writes them.
+    fn written(asn: &str, keys: Keys<'_>) -> Result<Written> {
+        let config = RasnConfig {
+            opaque_open_types: true,
+            generate_from_impls: true,
+            ..RasnConfig::default()
+        };
+        let module = format!("Toy DEFINITIONS AUTOMATIC TAGS ::= BEGIN\n{asn}\nEND\n");
+        let resolved = Compiler::<RasnBackend, _>::new_with_config(config)
+            .add_asn_literal(module)
+            .compile_to_string()
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        bindings(&resolved.generated, keys, &[], None, &[])
+    }
+
+    fn text(asn: &str) -> String {
+        written(asn, Keys::default()).unwrap().text
+    }
+
+    /// A value of an INTEGER that has a name is a constant of the native type of its sign.
+    #[test]
+    fn a_named_number_is_a_constant_of_the_type_of_its_sign() {
+        let text = text("zero INTEGER ::= 0\nmaxnoofItems INTEGER ::= 16\nminusOne INTEGER ::= -1");
+        assert!(text.contains("pub const ZERO: u64 = 0;"), "{text}");
+        assert!(
+            text.contains("pub const MAXNOOF_ITEMS: u64 = 16;"),
+            "{text}"
+        );
+        assert!(text.contains("pub const MINUS_ONE: i64 = -1;"), "{text}");
+    }
 }
