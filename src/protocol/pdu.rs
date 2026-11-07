@@ -7,9 +7,9 @@ use alloc::vec::Vec;
 
 use super::errors::__undecodable_ie;
 use super::read;
-use super::{CriticalityOf, Direction, Field, Message, Pdu, Protocol, Transfer, object_set};
+use super::{Direction, Field, Message, Pdu, Protocol, Transfer, object_set};
 use crate::check::{Deviation, Wrong, deviations, structure_deviations};
-use crate::{Decode, Error, ErrorKind, Faults, Octets, Reader, Writer};
+use crate::{Criticality, Decode, Error, ErrorKind, Faults, Octets, Reader, Writer};
 
 /// The protocol IEs of a message, which the ASN.1 has as a SEQUENCE of one container of
 /// protocol IEs, which a later release may add to: the additions are skipped.
@@ -59,7 +59,7 @@ fn message_faults<P: Protocol>(octets: &[u8]) -> Faults {
 /// The identifier and the criticality of each IE of the octets of a message, in their
 /// order, without their values: the walk of the readers, which the codec of the
 /// container reads alike.
-fn listed_ies<P: Protocol>(octets: &[u8]) -> Result<Vec<(u16, CriticalityOf<P>)>, Error> {
+fn listed_ies<P: Protocol>(octets: &[u8]) -> Result<Vec<(u16, Criticality)>, Error> {
     let (extended, count) = read::head(octets)?;
     // No more IEs than the octets can hold, of four octets each at least.
     let mut listed = Vec::with_capacity(count.min(octets.len() / 4));
@@ -90,8 +90,7 @@ pub fn message_octets<'f, F: Field<'f>>(ies: &[F]) -> Result<Vec<u8>, Error> {
     octets.extend_from_slice(&count.to_be_bytes());
     for ie in ies {
         let [high, low] = ie.id().to_be_bytes();
-        let criticality: crate::Criticality = ie.criticality().into();
-        let criticality = (criticality as u8) << 6;
+        let criticality = (ie.criticality() as u8) << 6;
         let value: &[u8] = ie.value();
         // The length of the value in one octet or in two, as nearly every IE has it.
         match value.len() {
@@ -187,7 +186,7 @@ pub fn set_protocol_ies<'p, 'f, X: Pdu<'p>>(
 /// A message that does not encode: a value outside a constraint of its type.
 pub fn of_message<'m, M: Message<'m>>(
     message: &M,
-    criticality: CriticalityOf<M::Protocol>,
+    criticality: Criticality,
 ) -> Result<<M::Protocol as Protocol>::Pdu<'static>, Error> {
     let octets = Octets::owned(crate::encode(message)?);
     Ok(
@@ -361,7 +360,7 @@ fn transfer_checked<'a, T: Transfer<'a>>(
 /// `name`, with the value of each IE when `values` says so.
 fn container_deviations<P: Protocol>(
     name: &'static str,
-    set: &'static [(u16, CriticalityOf<P>, bool)],
+    set: &'static [(u16, Criticality, bool)],
     octets: &[u8],
     values: bool,
     found: &mut Vec<Deviation<P>>,

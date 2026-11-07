@@ -5,8 +5,8 @@ use alloc::borrow::Cow;
 use core::marker::PhantomData;
 
 use super::errors::{__undecodable_ie, __wrong_message};
-use super::{Container, CriticalityOf, Field, Ie, InProtocol, List, Message, Pdu, Protocol};
-use crate::{Decode, Error, Reader};
+use super::{Container, Field, Ie, InProtocol, List, Message, Pdu, Protocol};
+use crate::{Criticality, Decode, Error, Reader};
 
 /// What a container's IEs are read from: the octets of the message of a PDU, which are
 /// scanned as they are read, or the IEs of a message or of a transfer that is decoded.
@@ -167,8 +167,9 @@ impl<'s> Value<'s> {
 pub struct __Entry<'s, P: Protocol> {
     position: usize,
     id: u16,
-    criticality: CriticalityOf<P>,
+    criticality: Criticality,
     value: Value<'s>,
+    protocol: PhantomData<P>,
 }
 
 impl<'s, P: Protocol> __Entry<'s, P> {
@@ -235,9 +236,10 @@ pub enum __Walk<'s, P: Protocol> {
 pub(super) fn field<'s, P: Protocol>(
     octets: &'s [u8],
     at: usize,
-) -> Result<(u16, CriticalityOf<P>, Value<'s>, usize), Error> {
+) -> Result<(u16, Criticality, Value<'s>, usize), Error> {
     if let [high, low, criticality, rest @ ..] = &octets[at..]
-        && let Some(criticality) = criticality_of(*criticality >> 6)
+        // A criticality has three values in its two bits, and no extension marker.
+        && let Some(criticality) = Criticality::ALL.get(usize::from(*criticality >> 6))
     {
         let (length, header) = match rest {
             [length @ 0..=0x7f, ..] => (usize::from(*length), 4),
@@ -250,7 +252,7 @@ pub(super) fn field<'s, P: Protocol>(
         if header > 0 && length <= octets.len() - start {
             let id = u16::from_be_bytes([*high, *low]);
             let value = Value::Whole(&octets[start..start + length]);
-            return Ok((id, criticality.into(), value, start + length));
+            return Ok((id, *criticality, value, start + length));
         }
     }
     unusual::<P>(octets, at)
@@ -263,7 +265,7 @@ pub(super) fn field<'s, P: Protocol>(
 fn unusual<'s, P: Protocol>(
     octets: &'s [u8],
     at: usize,
-) -> Result<(u16, CriticalityOf<P>, Value<'s>, usize), Error> {
+) -> Result<(u16, Criticality, Value<'s>, usize), Error> {
     let mut reader = Reader::new(&octets[at..]);
     let field = P::Field::decode(&mut reader)?;
     // An open type ends on an octet.
@@ -295,18 +297,6 @@ fn skip(octets: &[u8], at: usize) -> Option<(u16, usize)> {
     };
     let next = at + header + length;
     (next <= octets.len()).then_some((u16::from_be_bytes([*high, *low]), next))
-}
-
-/// The criticality of an index, as `Criticality ::= ENUMERATED { reject, ignore, notify }`
-/// has it, without an extension marker: none for the fourth value of its two bits.
-#[inline]
-fn criticality_of(index: u8) -> Option<crate::Criticality> {
-    match index {
-        0 => Some(crate::Criticality::Reject),
-        1 => Some(crate::Criticality::Ignore),
-        2 => Some(crate::Criticality::Notify),
-        _ => None,
-    }
 }
 
 impl<'s, P: Protocol> __Walk<'s, P> {
@@ -382,6 +372,7 @@ impl<'s, P: Protocol> __Walk<'s, P> {
                     id: field.id(),
                     criticality: field.criticality(),
                     value: Value::Whole(field.value().as_slice()),
+                    protocol: PhantomData,
                 };
                 *position += 1;
                 Some(Ok(entry))
@@ -411,6 +402,7 @@ impl<'s, P: Protocol> __Walk<'s, P> {
                             id,
                             criticality,
                             value,
+                            protocol: PhantomData,
                         };
                         *at = next;
                         *left -= 1;
@@ -526,7 +518,7 @@ impl<'s, P: Protocol> Walking<'s, P> {
         &self,
         error: Error,
         id: u16,
-        criticality: CriticalityOf<P>,
+        criticality: Criticality,
         index: usize,
     ) -> Error {
         let list = super::ie_name::<P>(self.list.id);
@@ -754,6 +746,7 @@ impl<'s, P: Protocol> __Each<'s> for Source<'s, P> {
                         id: field.id(),
                         criticality: field.criticality(),
                         value: Value::Whole(field.value().as_slice()),
+                        protocol: PhantomData,
                     });
                 }
                 return Ok(());
@@ -774,6 +767,7 @@ impl<'s, P: Protocol> __Each<'s> for Source<'s, P> {
                 id,
                 criticality,
                 value,
+                protocol: PhantomData,
             });
         }
         tail(octets, at, extended).map_err(|error| error.of_message(Some(message)))

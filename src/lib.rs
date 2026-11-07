@@ -133,11 +133,11 @@ use alloc::vec::Vec;
 struct Readme;
 
 pub use bits::{BitString, Bits};
-pub use error::{Criticality, Error, ErrorIe, ErrorKind, in_field};
+pub use error::{Error, ErrorIe, ErrorKind, in_field};
 pub use faults::{Fault, Faults, Noted};
 pub use octets::Octets;
 pub use oid::ObjectIdentifier;
-pub use protocol::Direction;
+pub use protocol::{Criticality, Direction};
 pub use reader::{Additions, Reader};
 pub use writer::Writer;
 

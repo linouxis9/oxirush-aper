@@ -47,7 +47,7 @@ fn request(ies: Vec<ProtocolIEField<'static>>) -> TOY_PDU {
     let message = SetupRequest::new(ProtocolIEContainer(ies));
     TOYPDU::initiatingMessage(InitiatingMessage {
         procedure_code: ProcedureCode(1),
-        criticality: Criticality::reject,
+        criticality: Criticality::Reject,
         value: Octets::owned(oxirush_aper::encode(&message).unwrap()),
     })
 }
@@ -83,14 +83,14 @@ fn a_pdu_is_built_with_the_criticalities_that_the_object_set_assigns() -> Result
     assert_eq!(
         ies,
         [
-            (1, Criticality::reject),
-            (2, Criticality::ignore),
-            (3, Criticality::reject)
+            (1, Criticality::Reject),
+            (2, Criticality::Ignore),
+            (3, Criticality::Reject)
         ]
     );
     assert_eq!(
         <SetupRequest as oxirush_aper::protocol::Message>::CRITICALITY,
-        Criticality::reject
+        Criticality::Reject
     );
     assert!(pdu.check()?.is_empty());
     assert!(pdu.check_structure()?.is_empty());
@@ -107,8 +107,8 @@ fn a_transfer_has_the_criticalities_of_its_object_set_and_is_checked_against_it(
     // that of SETUP REQUEST assigns the reverse.
     let identity = build_toy_ie!(SetupTransfer, Identity(7u32))?;
     let name = build_toy_ie!(SetupTransfer, Name("toy"))?;
-    assert_eq!(identity.criticality, Criticality::ignore);
-    assert_eq!(name.criticality, Criticality::reject);
+    assert_eq!(identity.criticality, Criticality::Ignore);
+    assert_eq!(name.criticality, Criticality::Reject);
     let error = build_toy_ie!(SetupTransfer, Items(vec![build_toy_ie!(REJECT Item(1u8))?]));
     assert_eq!(
         error.unwrap_err().to_string(),
@@ -215,7 +215,7 @@ fn the_first_of_a_repeated_ie_is_read_and_changed_and_check_reports_the_second()
 #[test]
 fn an_ie_that_does_not_decode_is_an_error_of_the_readers_and_of_check_alone() -> Result<(), Error> {
     // An identity whose length, in its first two bits, is four octets, and that ends there.
-    let spoiled = field(1, Criticality::reject, &[0xc0]);
+    let spoiled = field(1, Criticality::Reject, &[0xc0]);
     let pdu = request(vec![spoiled, build_toy_ie!(SetupRequest, Name("toy"))?]);
     let error = read(&pdu).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::UndecodableIe);
@@ -349,8 +349,8 @@ fn the_items_of_a_list_are_walked_and_each_is_decoded() -> Result<(), Error> {
     assert_eq!(items, [Item(1), Item(2)]);
     // A single container of another IE is passed over, and an item that does not decode is
     // an error, after which the walk goes on.
-    let other = field(11, Criticality::ignore, &[0x05]);
-    let spoiled = field(10, Criticality::reject, &[]);
+    let other = field(11, Criticality::Ignore, &[0x05]);
+    let spoiled = field(10, Criticality::Reject, &[]);
     let good = build_toy_ie!(REJECT Item(3u8))?;
     let list = build_toy_ie!(SetupRequest, Items(vec![other, spoiled, good]))?;
     let pdu = request(vec![build_toy_ie!(SetupRequest, Identity(7u32))?, list]);
@@ -372,7 +372,7 @@ fn the_items_of_a_list_are_walked_and_each_is_decoded() -> Result<(), Error> {
 fn a_list_whose_count_is_outside_its_size_is_an_error_of_the_list() {
     // A count of 17 items, where the list has 16 at most: four bits of 16, the count less
     // one, which no item follows.
-    let list = field(3, Criticality::reject, &[0xf0]);
+    let list = field(3, Criticality::Reject, &[0xf0]);
     let pdu = request(vec![list]);
     let items: Vec<_> = pdu.items::<ie::Items>().collect();
     assert_eq!(items.len(), 1);
@@ -388,7 +388,7 @@ fn a_private_message_has_no_ies_to_read() -> Result<(), Error> {
     };
     let pdu = TOYPDU::initiatingMessage(InitiatingMessage {
         procedure_code: ProcedureCode(3),
-        criticality: Criticality::ignore,
+        criticality: Criticality::Ignore,
         value: Octets::owned(oxirush_aper::encode(&message)?),
     });
     let error = pdu.ie::<ie::Identity>().unwrap().unwrap_err();
@@ -441,7 +441,7 @@ fn the_readers_read_what_the_codec_of_the_container_reads() -> Result<(), Error>
             ies.push(match id {
                 2 => build_toy_ie!(SetupRequest, Name(name))?,
                 1 => build_toy_ie!(SetupRequest, Identity(next(1 << 32) as u32))?,
-                _ => field(id, Criticality::notify, &name),
+                _ => field(id, Criticality::Notify, &name),
             });
         }
         let octets = request(ies).encode()?;
@@ -494,10 +494,10 @@ mod deviations {
 
     fn set() -> Vec<(u16, Criticality, bool)> {
         vec![
-            (3, Criticality::reject, true),
-            (1, Criticality::ignore, false),
-            (2, Criticality::reject, true),
-            (4, Criticality::notify, false),
+            (3, Criticality::Reject, true),
+            (1, Criticality::Ignore, false),
+            (2, Criticality::Reject, true),
+            (4, Criticality::Notify, false),
         ]
     }
 
@@ -508,9 +508,9 @@ mod deviations {
         found
     }
 
-    const REJECT: Criticality = Criticality::reject;
-    const IGNORE: Criticality = Criticality::ignore;
-    const NOTIFY: Criticality = Criticality::notify;
+    const REJECT: Criticality = Criticality::Reject;
+    const IGNORE: Criticality = Criticality::Ignore;
+    const NOTIFY: Criticality = Criticality::Notify;
 
     #[test]
     fn a_message_as_its_object_set_has_it_deviates_in_nothing() {
@@ -662,9 +662,9 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
         id: 9,
         name: None,
         position: 1,
-        criticality: Criticality::reject,
+        criticality: Criticality::Reject,
     };
-    assert_eq!(unexpected.ie(), Some((9, Criticality::reject)));
+    assert_eq!(unexpected.ie(), Some((9, Criticality::Reject)));
     assert_eq!(
         unexpected.type_of_error(),
         Some(TypeOfError::not_understood)
@@ -672,7 +672,7 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
     assert_eq!(
         unexpected.diagnostics_item(),
         Some(CriticalityDiagnosticsIEItem {
-            ie_criticality: Criticality::reject,
+            ie_criticality: Criticality::Reject,
             ie_id: ProtocolIEID(9),
             type_of_error: TypeOfError::not_understood,
         })
@@ -689,7 +689,7 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
         "{missing:?}"
     );
     assert_eq!(missing.type_of_error(), Some(TypeOfError::missing));
-    let spoiled = field(1, Criticality::reject, &[0xc0]);
+    let spoiled = field(1, Criticality::Reject, &[0xc0]);
     let error = read(&request(vec![spoiled])).unwrap_err();
     let undecodable = Deviation::<Toy>::of(&error).unwrap();
     assert!(
@@ -713,10 +713,10 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
     );
     // The items of the Criticality Diagnostics, for the deviations that have one
     let deviations = [unexpected, missing];
-    let diagnostics = criticality_diagnostics_for_response::<Toy>(Criticality::reject, &deviations);
+    let diagnostics = criticality_diagnostics_for_response::<Toy>(Criticality::Reject, &deviations);
     let items = diagnostics.ies_criticality_diagnostics.unwrap().0;
     assert_eq!(items.len(), 2);
-    let none = criticality_diagnostics_for_response::<Toy>(Criticality::reject, &[]);
+    let none = criticality_diagnostics_for_response::<Toy>(Criticality::Reject, &[]);
     assert_eq!(none.ies_criticality_diagnostics, None);
     Ok(())
 }
@@ -729,7 +729,7 @@ fn an_error_of_the_readers_names_the_ie_its_message_and_its_position() -> Result
         error.to_string(),
         "this SetupRequest has no Identity, which the field `identity` requires"
     );
-    let spoiled = field(1, Criticality::reject, &[0xc0]);
+    let spoiled = field(1, Criticality::Reject, &[0xc0]);
     let pdu = request(vec![build_toy_ie!(SetupRequest, Name("toy"))?, spoiled]);
     let error = read(&pdu).unwrap_err();
     assert_eq!(
@@ -745,10 +745,10 @@ fn an_error_of_the_readers_names_the_ie_its_message_and_its_position() -> Result
     // After a name in fragments, which the walk reads whole, the identity is the second
     let long = field(
         2,
-        Criticality::ignore,
+        Criticality::Ignore,
         &oxirush_aper::encode(&Name(Octets::from(vec![0x61; 20_000])))?,
     );
-    let pdu = request(vec![long, field(1, Criticality::reject, &[0xc0])]);
+    let pdu = request(vec![long, field(1, Criticality::Reject, &[0xc0])]);
     let error = pdu.ie::<ie::Identity>().unwrap().unwrap_err();
     assert_eq!(
         error.ie().map(|ie| (ie.id, ie.position)),
@@ -817,21 +817,21 @@ fn the_items_of_a_list_are_read_around_values_in_fragments() -> Result<(), Error
     let items = |ies| {
         field(
             3,
-            Criticality::reject,
+            Criticality::Reject,
             &oxirush_aper::encode(&Items(ies)).unwrap(),
         )
     };
-    let item = |value: u8| field(10, Criticality::reject, &[value]);
+    let item = |value: u8| field(10, Criticality::Reject, &[value]);
     let identity = build_toy_ie!(SetupRequest, Identity(7u32))?;
     let name = field(
         2,
-        Criticality::ignore,
+        Criticality::Ignore,
         &oxirush_aper::encode(&Name(Octets::from(long.clone())))?,
     );
     let pdu = request(vec![identity.clone(), name, items(vec![item(1), item(2)])]);
     let read: Vec<_> = pdu.items::<ie::Items>().collect::<Result<_, _>>()?;
     assert_eq!(read, [Item(1), Item(2)]);
-    let other = field(99, Criticality::ignore, &long);
+    let other = field(99, Criticality::Ignore, &long);
     let pdu = request(vec![identity, items(vec![item(1), other, item(2)])]);
     let read: Vec<_> = pdu.items::<ie::Items>().collect::<Result<_, _>>()?;
     assert_eq!(read, [Item(1), Item(2)]);
@@ -848,15 +848,15 @@ fn the_protocol_ies_of_a_pdu_are_read_and_set_as_they_are() -> Result<(), Error>
     let ids: Vec<u16> = ies.iter().map(|ie| ie.id.0).collect();
     assert_eq!(ids, [1, 2, 3]);
     let mut changed = pdu.clone();
-    let long = field(2, Criticality::ignore, &[0x61; 200]);
-    let mine = vec![field(1, Criticality::reject, &[0x00, 0x09]), long];
+    let long = field(2, Criticality::Ignore, &[0x61; 200]);
+    let mine = vec![field(1, Criticality::Reject, &[0x00, 0x09]), long];
     set_protocol_ies(&mut changed, &mine)?;
     let expected = oxirush_aper::encode(&SetupRequest::new(ProtocolIEContainer(mine.clone())))?;
     assert_eq!(
         oxirush_aper::protocol::Pdu::value(&changed).as_slice(),
         &expected[..]
     );
-    let many = vec![field(1, Criticality::reject, &[0x00]); 65536];
+    let many = vec![field(1, Criticality::Reject, &[0x00]); 65536];
     let error = set_protocol_ies(&mut changed, &many).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Encode);
     let message = PrivateMessage {
@@ -864,7 +864,7 @@ fn the_protocol_ies_of_a_pdu_are_read_and_set_as_they_are() -> Result<(), Error>
     };
     let private = TOYPDU::initiatingMessage(InitiatingMessage {
         procedure_code: ProcedureCode(3),
-        criticality: Criticality::ignore,
+        criticality: Criticality::Ignore,
         value: Octets::owned(oxirush_aper::encode(&message)?),
     });
     assert_eq!(

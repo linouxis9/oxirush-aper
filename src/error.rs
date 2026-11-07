@@ -7,6 +7,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::Criticality;
+
 /// What went wrong: the part of an [`Error`] that a caller matches on.
 ///
 /// The codec of this crate gives `Decode` and `Encode`. The other kinds are those of
@@ -58,20 +60,6 @@ pub enum ErrorKind {
     /// Nesting or a number of occurrences over the limits of the inspection, or
     /// what it does not represent.
     Limit,
-}
-
-/// The criticality of an IE or of a procedure in the application protocols of 3GPP, as
-/// their ASN.1 has it (`Criticality ::= ENUMERATED { reject, ignore, notify }`): what a
-/// receiver does with what it does not comprehend. The bindings of a protocol have a
-/// type of their own for it, which converts to and from this one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Criticality {
-    /// The receiver rejects the procedure.
-    Reject,
-    /// The receiver ignores the IE.
-    Ignore,
-    /// The receiver ignores the IE, and notifies the sender.
-    Notify,
 }
 
 /// The IE of a message that an error is about: [`Error::ie`] of an error of the kind

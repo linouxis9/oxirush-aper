@@ -5,8 +5,8 @@ use alloc::format;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-use super::{Container, CriticalityOf, Field, Message, Pdu, Protocol};
-use crate::{Encode, Error, ErrorKind, Octets, Writer};
+use super::{Container, Field, Message, Pdu, Protocol};
+use crate::{Criticality, Encode, Error, ErrorKind, Octets, Writer};
 
 /// For the macro that builds an IE: one entry of the IEs of a message, which is the
 /// identifier of an IE, its criticality and its value in an open type, or why the value
@@ -14,7 +14,7 @@ use crate::{Encode, Error, ErrorKind, Octets, Writer};
 #[doc(hidden)]
 pub fn __ie<P: Protocol, T: Encode>(
     id: u16,
-    criticality: CriticalityOf<P>,
+    criticality: Criticality,
     value: &T,
 ) -> Result<P::Field<'static>, Error> {
     let octets = crate::encode(value).map(Octets::owned)?;
@@ -23,11 +23,8 @@ pub fn __ie<P: Protocol, T: Encode>(
 
 /// The criticality that the object set of `M` assigns to the IE `id`, which the macros
 /// name `name`: an error of the kind `Argument` for one that the set does not have.
-fn assigned<'a, M: Container<'a>>(
-    id: u16,
-    name: &str,
-) -> Result<CriticalityOf<M::Protocol>, Error> {
-    M::__assigned(id).map(Into::into).ok_or_else(|| {
+fn assigned<'a, M: Container<'a>>(id: u16, name: &str) -> Result<Criticality, Error> {
+    M::__assigned(id).ok_or_else(|| {
         let why = format!(
             "{name} is no IE of the object set of {}, which assigns it no criticality: write \
              its criticality",
@@ -82,12 +79,11 @@ impl<P: Protocol> __Message<P> {
     /// One more IE: its identifier, its criticality, and its value in an open type.
     #[doc(hidden)]
     #[inline]
-    pub fn ie<T: Encode>(&mut self, id: u16, criticality: CriticalityOf<P>, value: &T) {
+    pub fn ie<T: Encode>(&mut self, id: u16, criticality: Criticality, value: &T) {
         if self.error.is_some() {
             return;
         }
         let start = self.octets.len();
-        let criticality: crate::Criticality = criticality.into();
         let mut writer = Writer::new(&mut self.octets);
         writer.octets(&id.to_be_bytes());
         writer.index(criticality as u64, 3, false);
@@ -129,7 +125,7 @@ impl<P: Protocol> __Message<P> {
     #[doc(hidden)]
     pub fn pdu<'a, M: Message<'a, Protocol = P>>(
         mut self,
-        criticality: CriticalityOf<P>,
+        criticality: Criticality,
     ) -> Result<P::Pdu<'static>, Error> {
         if let Some(error) = self.error {
             return Err(error);

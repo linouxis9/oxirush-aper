@@ -175,9 +175,9 @@ macro_rules! __procedures {
         /// The criticality that ASN.1 assigns to the procedure of a code.
         pub(crate) const fn procedure_criticality(
             code: u8,
-        ) -> Option<crate::$bindings::Criticality> {
+        ) -> Option<$crate::Criticality> {
             match code {
-                $($($code => Some(crate::$bindings::Criticality::$criticality),)?)*
+                $($($code => Some($crate::__criticality!($criticality)),)?)*
                 _ => None,
             }
         }
@@ -185,7 +185,7 @@ macro_rules! __procedures {
         /// The object set of each message: the direction and the procedure code of its
         /// PDU, the name that ASN.1 gives it, and the IEs that its container of protocol
         /// IEs can have, in the order of the set.
-        pub(crate) const OBJECT_SETS: &[$crate::protocol::ObjectSet<crate::$bindings::Criticality>] = &[
+        pub(crate) const OBJECT_SETS: &[$crate::protocol::ObjectSet] = &[
             $($($crate::protocol::ObjectSet {
                 direction: $crate::Direction::Initiating,
                 procedure_code: $code,
@@ -307,10 +307,10 @@ macro_rules! __message {
             const DIRECTION: $crate::Direction = $crate::Direction::$direction;
             const PROCEDURE_CODE: u8 = $code;
             // The class of an elementary procedure has `ignore` by default.
-            const CRITICALITY: crate::$bindings::Criticality =
+            const CRITICALITY: $crate::Criticality =
                 match crate::registry::procedure_criticality($code) {
                     Some(criticality) => criticality,
-                    None => crate::$bindings::Criticality::ignore,
+                    None => $crate::Criticality::Ignore,
                 };
             fn __decode_owned(octets: &[u8]) -> Result<Self, $crate::Error> {
                 // The same type, of the octets that are read here.
@@ -410,9 +410,9 @@ macro_rules! __transfer_sets {
                 }
             }
             impl<'a> $crate::protocol::Transfer<'a> for crate::$bindings::$type<'a> {
-                const __OBJECT_SET: &'static [(u16, crate::$bindings::Criticality, bool)] = &[$((
+                const __OBJECT_SET: &'static [(u16, $crate::Criticality, bool)] = &[$((
                     $ie,
-                    crate::$bindings::Criticality::$criticality,
+                    $crate::__criticality!($criticality),
                     $crate::__presence!($presence),
                 )),*];
             }
@@ -480,7 +480,7 @@ macro_rules! __object_set {
     ($bindings:ident [$($id:literal $criticality:ident $presence:ident),*]) => {
         Some(&[$((
             $id,
-            crate::$bindings::Criticality::$criticality,
+            $crate::__criticality!($criticality),
             $crate::__presence!($presence),
         )),*])
     };
@@ -682,11 +682,10 @@ macro_rules! __protocol {
     (protocol $protocol:ident $protocol_name:literal, bindings $bindings:ident, pdu $pdu:ident,
         triggering $initiating:ident $successful:ident $unsuccessful:ident) => {
         #[doc = concat!(
-            $protocol_name, ", as the types that its deviations are told with: a [`Deviation`] \
-             has the criticality of the protocol, and its answer the `TypeOfError`, the \
-             `CauseProtocol`, the `CriticalityDiagnostics-IE-Item` and the \
-             `CriticalityDiagnostics` of the protocol. The traits of \
-             `oxirush_aper::protocol` name the protocol by it."
+            $protocol_name, ", as the types that its deviations are answered with: the \
+             answer to a [`Deviation`] has the `TypeOfError`, the `CauseProtocol`, the \
+             `CriticalityDiagnostics-IE-Item` and the `CriticalityDiagnostics` of the \
+             protocol. The traits of `oxirush_aper::protocol` name the protocol by it."
         )]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub struct $protocol;
@@ -703,7 +702,7 @@ macro_rules! __protocol {
             const NAME: &'static str = $protocol_name;
             type Pdu<'a> = crate::$bindings::$pdu<'a>;
             type Field<'a> = crate::$bindings::ProtocolIEField<'a>;
-            const __OBJECT_SETS: &'static [$crate::protocol::ObjectSet<crate::$bindings::Criticality>] =
+            const __OBJECT_SETS: &'static [$crate::protocol::ObjectSet] =
                 crate::registry::OBJECT_SETS;
             const __OBJECT_SET_INDEX: &'static [[u16; 256]; 3] = &crate::registry::OBJECT_SET_INDEX;
             const __IE_NAMES: &'static [(u16, &'static str)] = crate::registry::IE_NAMES;
@@ -716,13 +715,12 @@ macro_rules! __protocol {
                 crate::registry::decodes(id, octets)
             }
             #[inline]
-            fn __procedure_criticality(code: u8) -> Option<crate::$bindings::Criticality> {
+            fn __procedure_criticality(code: u8) -> Option<$crate::Criticality> {
                 crate::registry::procedure_criticality(code)
             }
         }
 
         impl $crate::check::Diagnostics for $protocol {
-            type Criticality = crate::$bindings::Criticality;
             type TypeOfError = crate::$bindings::TypeOfError;
             type Cause = crate::$bindings::CauseProtocol;
             type Item = crate::$bindings::CriticalityDiagnosticsIEItem;
@@ -759,7 +757,7 @@ macro_rules! __protocol {
             }
 
             fn item(
-                criticality: crate::$bindings::Criticality,
+                criticality: $crate::Criticality,
                 id: u16,
                 type_of_error: crate::$bindings::TypeOfError,
             ) -> crate::$bindings::CriticalityDiagnosticsIEItem {
@@ -773,7 +771,7 @@ macro_rules! __protocol {
 
             fn criticality_diagnostics(
                 triggering: Option<(u8, $crate::Direction)>,
-                criticality: crate::$bindings::Criticality,
+                criticality: $crate::Criticality,
                 items: Option<Vec<crate::$bindings::CriticalityDiagnosticsIEItem>>,
             ) -> crate::$bindings::CriticalityDiagnostics {
                 use crate::$bindings::TriggeringMessage;
@@ -792,27 +790,6 @@ macro_rules! __protocol {
             }
         }
 
-        /// The criticality of the bindings is that of oxirush-aper, which an error has.
-        impl From<crate::$bindings::Criticality> for $crate::Criticality {
-            fn from(criticality: crate::$bindings::Criticality) -> Self {
-                match criticality {
-                    crate::$bindings::Criticality::reject => Self::Reject,
-                    crate::$bindings::Criticality::ignore => Self::Ignore,
-                    crate::$bindings::Criticality::notify => Self::Notify,
-                }
-            }
-        }
-
-        impl From<$crate::Criticality> for crate::$bindings::Criticality {
-            fn from(criticality: $crate::Criticality) -> Self {
-                match criticality {
-                    $crate::Criticality::Reject => Self::reject,
-                    $crate::Criticality::Ignore => Self::ignore,
-                    $crate::Criticality::Notify => Self::notify,
-                }
-            }
-        }
-
         impl $crate::protocol::InProtocol for crate::$bindings::ProtocolIEField<'_> {
             type Protocol = $protocol;
         }
@@ -823,7 +800,7 @@ macro_rules! __protocol {
                 self.id.0
             }
             #[inline]
-            fn criticality(&self) -> crate::$bindings::Criticality {
+            fn criticality(&self) -> $crate::Criticality {
                 self.criticality
             }
             #[inline]
@@ -833,7 +810,7 @@ macro_rules! __protocol {
             #[inline]
             fn __new(
                 id: u16,
-                criticality: crate::$bindings::Criticality,
+                criticality: $crate::Criticality,
                 value: $crate::Octets<'a>,
             ) -> Self {
                 Self {
@@ -858,7 +835,7 @@ macro_rules! __protocol {
                 Self::procedure_code(self)
             }
             #[inline]
-            fn criticality(&self) -> crate::$bindings::Criticality {
+            fn criticality(&self) -> $crate::Criticality {
                 match self {
                     Self::initiatingMessage(message) => message.criticality,
                     Self::successfulOutcome(message) => message.criticality,
@@ -883,7 +860,7 @@ macro_rules! __protocol {
             fn __of(
                 direction: $crate::Direction,
                 procedure_code: u8,
-                criticality: crate::$bindings::Criticality,
+                criticality: $crate::Criticality,
                 value: $crate::Octets<'a>,
             ) -> Self {
                 use crate::$bindings::{
@@ -1198,17 +1175,17 @@ macro_rules! __build {
     ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, REJECT, $msg:ident
         $(, $($ies:tt)*)?) => {
         $crate::__build_pdu!($k, $bindings, $direction, $proc,
-            $k::$bindings::Criticality::reject, $msg, $($($ies)*)?)
+            $crate::Criticality::Reject, $msg, $($($ies)*)?)
     };
     ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, IGNORE, $msg:ident
         $(, $($ies:tt)*)?) => {
         $crate::__build_pdu!($k, $bindings, $direction, $proc,
-            $k::$bindings::Criticality::ignore, $msg, $($($ies)*)?)
+            $crate::Criticality::Ignore, $msg, $($($ies)*)?)
     };
     ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, NOTIFY, $msg:ident
         $(, $($ies:tt)*)?) => {
         $crate::__build_pdu!($k, $bindings, $direction, $proc,
-            $k::$bindings::Criticality::notify, $msg, $($($ies)*)?)
+            $crate::Criticality::Notify, $msg, $($($ies)*)?)
     };
     // The criticality of the PDU is that of its procedure.
     ($k:tt, $bindings:ident, $name:literal, $direction:ident, $proc:ident, $msg:ident
@@ -1260,7 +1237,7 @@ macro_rules! __build_ies {
         REJECT $ie_name:ident ($($ie_value:tt)+) $(, $($rest:tt)*)?) => {
         $message.ie(
             <$k::ie::$ie_name as $crate::protocol::Ie>::ID,
-            $k::$bindings::Criticality::reject,
+            $crate::Criticality::Reject,
             &<$k::ie::$ie_name as $crate::protocol::Ie>::value(($($ie_value)+)),
         );
         $crate::__build_ies!($k, $bindings, $message, $msg, $($($rest)*)?);
@@ -1269,7 +1246,7 @@ macro_rules! __build_ies {
         IGNORE $ie_name:ident ($($ie_value:tt)+) $(, $($rest:tt)*)?) => {
         $message.ie(
             <$k::ie::$ie_name as $crate::protocol::Ie>::ID,
-            $k::$bindings::Criticality::ignore,
+            $crate::Criticality::Ignore,
             &<$k::ie::$ie_name as $crate::protocol::Ie>::value(($($ie_value)+)),
         );
         $crate::__build_ies!($k, $bindings, $message, $msg, $($($rest)*)?);
@@ -1278,7 +1255,7 @@ macro_rules! __build_ies {
         NOTIFY $ie_name:ident ($($ie_value:tt)+) $(, $($rest:tt)*)?) => {
         $message.ie(
             <$k::ie::$ie_name as $crate::protocol::Ie>::ID,
-            $k::$bindings::Criticality::notify,
+            $crate::Criticality::Notify,
             &<$k::ie::$ie_name as $crate::protocol::Ie>::value(($($ie_value)+)),
         );
         $crate::__build_ies!($k, $bindings, $message, $msg, $($($rest)*)?);
@@ -1318,20 +1295,30 @@ macro_rules! __ie_syntax {
     };
 }
 
-/// The criticality that the macros take as `REJECT`, `IGNORE` or `NOTIFY`.
+/// The criticality that the macros take as `REJECT`, `IGNORE` or `NOTIFY`, and that the
+/// registry writes as ASN.1 names it.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __criticality {
-    ($k:tt, $bindings:ident, REJECT) => {
-        $k::$bindings::Criticality::reject
+    (REJECT) => {
+        $crate::Criticality::Reject
     };
-    ($k:tt, $bindings:ident, IGNORE) => {
-        $k::$bindings::Criticality::ignore
+    (IGNORE) => {
+        $crate::Criticality::Ignore
     };
-    ($k:tt, $bindings:ident, NOTIFY) => {
-        $k::$bindings::Criticality::notify
+    (NOTIFY) => {
+        $crate::Criticality::Notify
     };
-    ($k:tt, $bindings:ident, $other:tt) => {
+    (reject) => {
+        $crate::Criticality::Reject
+    };
+    (ignore) => {
+        $crate::Criticality::Ignore
+    };
+    (notify) => {
+        $crate::Criticality::Notify
+    };
+    ($other:tt) => {
         compile_error!(concat!(
             "`",
             stringify!($other),
@@ -1364,7 +1351,7 @@ macro_rules! __build_ie {
     ($k:tt, $bindings:ident, $name:literal, $criticality:ident $ie_name:ident ($($value:tt)+)) => {
         $crate::protocol::__ie::<<$k::ie::$ie_name as $crate::protocol::Ie>::Protocol, _>(
             <$k::ie::$ie_name as $crate::protocol::Ie>::ID,
-            $crate::__criticality!($k, $bindings, $criticality),
+            $crate::__criticality!($criticality),
             &<$k::ie::$ie_name as $crate::protocol::Ie>::value(($($value)+)),
         )
     };

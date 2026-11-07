@@ -81,14 +81,12 @@ exclude_re = [
     # The readers of the protocol crates read an IE in the usual layout themselves, and leave
     # what is otherwise to the codec of the IE, which reads the same IE: a mutant that leaves
     # more to the codec reads the same. The lengths of one octet and of two, and the octets
-    # that they are within; the walk that skips to an IE, which then reads each one; the
-    # criticality of the usual layout; and the head of a container of three octets at least.
+    # that they are within; the walk that skips to an IE, which then reads each one; and the
+    # head of a container of three octets at least.
     'src/protocol/read\.rs:.*: delete match arm \[(length|first) @.* in field$',
     'src/protocol/read\.rs:.*: replace > with (<|==|>=) in field$',
     'src/protocol/read\.rs:.*: replace skip -> Option<\(u16, usize\)> with None$',
     'src/protocol/read\.rs:.*: delete match arm \[(length|first) @.* in skip$',
-    'src/protocol/read\.rs:.*: replace criticality_of -> Option<crate::Criticality> with None$',
-    'src/protocol/read\.rs:.*: delete match arm [012] in criticality_of$',
     'src/protocol/read\.rs:.*: replace > with < in __Walk<.s, P>::next_of$',
     'src/protocol/read\.rs:.*: delete match arm \[first, high, low, \.\.\] in head$',
     # The writer of a message of protocol IEs writes a length of one octet or two itself,

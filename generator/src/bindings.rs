@@ -1062,6 +1062,20 @@ impl Bindings {
 
     fn definition(&self, out: &mut String, definition: &Definition) -> Result<()> {
         let name = &definition.name;
+        // The criticality of the application protocols is the one of oxirush-aper, which
+        // its errors and its checks have: the bindings have no type of their own for it.
+        if name == "Criticality" {
+            let values: Vec<&str> = match &definition.shape {
+                Shape::Enumerated(members) => members.iter().map(|m| m.asn.as_str()).collect(),
+                _ => Vec::new(),
+            };
+            ensure!(
+                values == ["reject", "ignore", "notify"] && !definition.extensible,
+                "Criticality is not ENUMERATED {{ reject, ignore, notify }}"
+            );
+            writeln!(out, "pub use oxirush_aper::Criticality;")?;
+            return Ok(());
+        }
         let borrows = self.borrowing.contains(name);
         // `Name<'a>` where the type is declared, `Name<'_>` where it is named.
         let (declared, named, life) = match borrows {

@@ -4,8 +4,8 @@
 use alloc::format;
 use alloc::string::{String, ToString};
 
-use super::{Container, CriticalityOf, Direction, Protocol, name, object_set};
-use crate::{Error, ErrorIe};
+use super::{Container, Direction, Protocol, name, object_set};
+use crate::{Criticality, Error, ErrorIe};
 
 /// The IE of an identifier, as an error names it: the name that ASN.1 gives it after
 /// `id-`, or its number for one that the protocol does not have.
@@ -45,10 +45,10 @@ pub fn __undecodable_ie<P: Protocol>(
     error: Error,
     message: &str,
     id: u16,
-    criticality: CriticalityOf<P>,
+    criticality: Criticality,
     position: usize,
 ) -> Error {
-    let about = ErrorIe::new(id, criticality.into(), Some(position));
+    let about = ErrorIe::new(id, criticality, Some(position));
     error
         .undecodable_ie(message, &ie_name::<P>(id))
         .about_ie(about)

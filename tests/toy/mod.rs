@@ -88,32 +88,8 @@ pub mod toy {
         };
     }
 
-    /// `Criticality ::= ENUMERATED { reject, ignore, notify }`.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub enum Criticality {
-        reject,
-        ignore,
-        notify,
-    }
-    impl AsnType for Criticality {
-        const NAME: &'static str = "Criticality";
-    }
-    impl<'a> Decode<'a> for Criticality {
-        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            const VALUES: [Criticality; 3] = [
-                Criticality::reject,
-                Criticality::ignore,
-                Criticality::notify,
-            ];
-            Ok(VALUES[reader.enumerated(3, 0, false)? as usize])
-        }
-    }
-    impl Encode for Criticality {
-        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.index(*self as u64, 3, false);
-            Ok(())
-        }
-    }
+    /// `Criticality ::= ENUMERATED { reject, ignore, notify }`: the one of oxirush-aper.
+    pub use oxirush_aper::Criticality;
 
     /// `ProtocolIE-ID ::= INTEGER (0..65535)`.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

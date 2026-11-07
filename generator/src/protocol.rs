@@ -601,7 +601,7 @@ impl<'a> {PDU}<'a> {
         if alternative & 0x80 != 0 || alternative >> 5 > 2 {
             return None;
         }
-        let criticality = *Criticality::VALUES.get(usize::from(criticality >> 6))?;
+        let criticality = *Criticality::ALL.get(usize::from(criticality >> 6))?;
         // The length of the message in one octet or in two, and no fragment.
         let message = match *rest {
             [length @ 1..=0x7f, ref message @ ..] if message.len() == usize::from(length) => {

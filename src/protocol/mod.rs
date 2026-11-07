@@ -69,10 +69,79 @@ pub use read::{
 };
 
 use crate::check::Diagnostics;
-use crate::{AsnType, Criticality, Decode, Encode, Error, Faults, Octets};
+use crate::{AsnType, Decode, Encode, Error, Faults, Octets, Reader, Writer};
 
-/// The criticality of the bindings of the protocol `P`.
-pub type CriticalityOf<P> = <P as Diagnostics>::Criticality;
+/// The criticality of an IE or of a procedure in the application protocols of 3GPP, as
+/// their ASN.1 has it (`Criticality ::= ENUMERATED { reject, ignore, notify }`): what a
+/// receiver does with what it does not comprehend. The bindings of each protocol take
+/// this type for theirs. Its `Display`, and the trees, name it as ASN.1 does, as
+/// `reject`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Criticality {
+    /// The receiver rejects the procedure.
+    Reject,
+    /// The receiver ignores the IE.
+    Ignore,
+    /// The receiver ignores the IE, and notifies the sender.
+    Notify,
+}
+
+impl Criticality {
+    /// The three, in the order of their indexes in PER.
+    pub const ALL: [Self; 3] = [Self::Reject, Self::Ignore, Self::Notify];
+    /// The names that ASN.1 gives them, in the same order.
+    pub const NAMES: [&'static str; 3] = ["reject", "ignore", "notify"];
+
+    /// The name that ASN.1 gives it: `reject`, `ignore` or `notify`.
+    pub const fn name(self) -> &'static str {
+        Self::NAMES[self as usize]
+    }
+}
+
+impl core::fmt::Display for Criticality {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+impl AsnType for Criticality {
+    const NAME: &'static str = "Criticality";
+}
+
+impl<'a> Decode<'a> for Criticality {
+    #[inline]
+    fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+        Ok(Self::ALL[reader.enumerated(3, 0, false)? as usize])
+    }
+}
+
+impl Encode for Criticality {
+    #[inline]
+    fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+        writer.index(*self as u64, 3, false);
+        Ok(())
+    }
+}
+
+/// The tree of a criticality is its name, as ASN.1 gives it.
+#[cfg(feature = "inspect")]
+impl crate::json::Tree for Criticality {
+    const NAME: &'static str = "Criticality";
+
+    fn to_tree(&self) -> crate::json::Value {
+        crate::json::text(self.name())
+    }
+
+    fn from_tree(
+        value: &crate::json::Value,
+        reading: &mut crate::json::Reading,
+    ) -> Result<Self, crate::json::Refused> {
+        Ok(Self::ALL[reading.named(value, &Self::NAMES)?])
+    }
+}
+
+#[cfg(feature = "inspect")]
+oxirush_utils::impl_serde!(Criticality);
 
 /// The direction of a PDU, the alternative of the PDU that holds a message: the
 /// initiating message of a procedure, or its successful or unsuccessful outcome. Its
@@ -127,7 +196,7 @@ pub trait Protocol: Diagnostics + Copy + core::fmt::Debug + 'static {
     type Field<'a>: Field<'a, Protocol = Self>;
     /// The object set of each message.
     #[doc(hidden)]
-    const __OBJECT_SETS: &'static [ObjectSet<CriticalityOf<Self>>];
+    const __OBJECT_SETS: &'static [ObjectSet];
     /// Where each message is in the object sets, by its direction and its procedure code.
     #[doc(hidden)]
     const __OBJECT_SET_INDEX: &'static [[u16; 256]; 3];
@@ -149,7 +218,7 @@ pub trait Protocol: Diagnostics + Copy + core::fmt::Debug + 'static {
     fn __decodes(id: u16, octets: &[u8]) -> Option<Result<(Option<Error>, Faults), Error>>;
     /// The criticality that ASN.1 assigns to the procedure of a code.
     #[doc(hidden)]
-    fn __procedure_criticality(code: u8) -> Option<CriticalityOf<Self>>;
+    fn __procedure_criticality(code: u8) -> Option<Criticality>;
 }
 
 /// What the registry has of a message: the direction and the procedure code of its PDU,
@@ -159,7 +228,7 @@ pub trait Protocol: Diagnostics + Copy + core::fmt::Debug + 'static {
 /// message, has no object set.
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct ObjectSet<C: 'static> {
+pub struct ObjectSet {
     /// The direction of its PDU.
     pub direction: Direction,
     /// The code of its procedure.
@@ -167,16 +236,13 @@ pub struct ObjectSet<C: 'static> {
     /// The name that ASN.1 gives the message.
     pub name: &'static str,
     /// The IEs of its object set.
-    pub ies: Option<&'static [(u16, C, bool)]>,
+    pub ies: Option<&'static [(u16, Criticality, bool)]>,
 }
 
 /// The object set of the message of a direction and a procedure code, when the
 /// specification has one.
 #[doc(hidden)]
-pub fn object_set<P: Protocol>(
-    direction: Direction,
-    code: u8,
-) -> Option<&'static ObjectSet<CriticalityOf<P>>> {
+pub fn object_set<P: Protocol>(direction: Direction, code: u8) -> Option<&'static ObjectSet> {
     let at = P::__OBJECT_SET_INDEX[direction as usize][usize::from(code)];
     P::__OBJECT_SETS.get(usize::from(at))
 }
@@ -184,7 +250,7 @@ pub fn object_set<P: Protocol>(
 /// For the registry of a protocol: where each message is in its object sets, by its
 /// direction and its procedure code; `u16::MAX` where the protocol has no message.
 #[doc(hidden)]
-pub const fn __object_set_index<C>(sets: &[ObjectSet<C>]) -> [[u16; 256]; 3] {
+pub const fn __object_set_index(sets: &[ObjectSet]) -> [[u16; 256]; 3] {
     let mut index = [[u16::MAX; 256]; 3];
     let mut at = 0;
     while at < sets.len() {
@@ -221,12 +287,9 @@ pub fn __assigned<P: Protocol>(direction: Direction, code: u8, id: u16) -> Optio
 /// that the set does not have.
 #[doc(hidden)]
 #[inline]
-pub fn __assigned_in<C: Copy + Into<Criticality>>(
-    ies: &[(u16, C, bool)],
-    id: u16,
-) -> Option<Criticality> {
+pub fn __assigned_in(ies: &[(u16, Criticality, bool)], id: u16) -> Option<Criticality> {
     let found = ies.iter().find(|(known, ..)| *known == id);
-    found.map(|(_, assigned, _)| (*assigned).into())
+    found.map(|(_, assigned, _)| *assigned)
 }
 
 /// The name of a type of the bindings, of its path as the registry writes it: without the
@@ -246,7 +309,7 @@ pub trait Pdu<'a>: Decode<'a> + Encode + InProtocol + Sized {
     /// The code of its procedure.
     fn procedure_code(&self) -> u8;
     /// Its criticality.
-    fn criticality(&self) -> CriticalityOf<Self::Protocol>;
+    fn criticality(&self) -> Criticality;
     /// The octets of the open type that holds its message.
     fn value(&self) -> &Octets<'a>;
     /// Make `value` the octets of its message.
@@ -258,7 +321,7 @@ pub trait Pdu<'a>: Decode<'a> + Encode + InProtocol + Sized {
     fn __of(
         direction: Direction,
         procedure_code: u8,
-        criticality: CriticalityOf<Self::Protocol>,
+        criticality: Criticality,
         value: Octets<'a>,
     ) -> Self;
 }
@@ -269,12 +332,12 @@ pub trait Field<'a>: Decode<'a> + Encode + InProtocol + Clone {
     /// Its identifier.
     fn id(&self) -> u16;
     /// Its criticality.
-    fn criticality(&self) -> CriticalityOf<Self::Protocol>;
+    fn criticality(&self) -> Criticality;
     /// The octets of its value.
     fn value(&self) -> &Octets<'a>;
     /// The IE of an identifier, a criticality and the octets of a value.
     #[doc(hidden)]
-    fn __new(id: u16, criticality: CriticalityOf<Self::Protocol>, value: Octets<'a>) -> Self;
+    fn __new(id: u16, criticality: Criticality, value: Octets<'a>) -> Self;
 }
 
 /// A type whose value is a container of protocol IEs, whose IEs the readers and the
@@ -326,7 +389,7 @@ pub trait Message<'a>: Container<'a> {
     /// The criticality that the specification assigns to its procedure, which the PDU
     /// that holds it has: what `of_message` is given for it, and what the macro that
     /// builds a PDU gives one whose criticality it is not given.
-    const CRITICALITY: CriticalityOf<Self::Protocol>;
+    const CRITICALITY: Criticality;
     /// The message that `octets` hold, which borrows nothing from them: what it holds of
     /// octets is copied.
     #[doc(hidden)]
@@ -349,7 +412,7 @@ pub trait Transfer<'a>: Container<'a> {
     /// The IEs of its object set, in the order of the set, each as its identifier, the
     /// criticality that the set assigns it and whether its presence is mandatory.
     #[doc(hidden)]
-    const __OBJECT_SET: &'static [(u16, CriticalityOf<Self::Protocol>, bool)];
+    const __OBJECT_SET: &'static [(u16, Criticality, bool)];
 }
 
 /// An IE of a protocol, as a marker type: `oxirush_ngap::ie::AMF_UE_NGAP_ID`. The

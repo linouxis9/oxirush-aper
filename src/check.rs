@@ -28,11 +28,9 @@ use core::fmt;
 use crate::{Criticality, Direction, Error, ErrorKind, Fault, Faults};
 
 /// What the bindings of a protocol give the deviations of their PDUs: their own types for
-/// the criticality, the type of an error and the protocol cause of an answer and the
-/// item of its Criticality Diagnostics, and the names of their IEs.
+/// the type of an error and the protocol cause of an answer and the item of its
+/// Criticality Diagnostics, and the names of their IEs.
 pub trait Diagnostics {
-    /// The criticality of the protocol, which converts to and from that of the crate.
-    type Criticality: Copy + Eq + fmt::Debug + Into<Criticality> + From<Criticality>;
     /// The `TypeOfError` of the Criticality Diagnostics of the protocol.
     type TypeOfError;
     /// The `CauseProtocol` of the protocol.
@@ -54,11 +52,7 @@ pub trait Diagnostics {
 
     /// The item of the Criticality Diagnostics of the IE `id`, of a criticality and a
     /// type of error.
-    fn item(
-        criticality: Self::Criticality,
-        id: u16,
-        type_of_error: Self::TypeOfError,
-    ) -> Self::Item;
+    fn item(criticality: Criticality, id: u16, type_of_error: Self::TypeOfError) -> Self::Item;
 
     /// The Criticality Diagnostics of a message of a criticality, with `items` for its
     /// IEs, or none, and with the procedure code and the direction of the message that
@@ -66,7 +60,7 @@ pub trait Diagnostics {
     /// of the message has not.
     fn criticality_diagnostics(
         triggering: Option<(u8, Direction)>,
-        criticality: Self::Criticality,
+        criticality: Criticality,
         items: Option<Vec<Self::Item>>,
     ) -> Self::CriticalityDiagnostics;
 }
@@ -114,9 +108,9 @@ pub enum Deviation<P: Diagnostics> {
     /// procedure.
     PduCriticality {
         /// The criticality that the PDU has.
-        criticality: P::Criticality,
+        criticality: Criticality,
         /// The criticality of the procedure.
-        assigned: P::Criticality,
+        assigned: Criticality,
     },
     /// An IE that the message cannot have: the object set of the message does not have
     /// its identifier.
@@ -128,7 +122,7 @@ pub enum Deviation<P: Diagnostics> {
         /// Its position in the message.
         position: usize,
         /// The criticality that the IE has.
-        criticality: P::Criticality,
+        criticality: Criticality,
     },
     /// An IE that the message has already: an IE is in a message once.
     RepeatedIe {
@@ -166,9 +160,9 @@ pub enum Deviation<P: Diagnostics> {
         /// Its position in the message.
         position: usize,
         /// The criticality that the IE has.
-        criticality: P::Criticality,
+        criticality: Criticality,
         /// The criticality that the object set assigns it.
-        assigned: P::Criticality,
+        assigned: Criticality,
     },
     /// An IE whose presence is mandatory, and that the message does not have.
     MissingIe {
@@ -177,7 +171,7 @@ pub enum Deviation<P: Diagnostics> {
         /// Its name.
         name: &'static str,
         /// The criticality that the object set assigns it.
-        criticality: P::Criticality,
+        criticality: Criticality,
     },
     /// An IE whose value is one of a later version of its type: a number or a size
     /// outside the root of a constraint that has an extension marker, as a name of no
@@ -192,7 +186,7 @@ pub enum Deviation<P: Diagnostics> {
         /// Its position in the message.
         position: usize,
         /// The criticality that the IE has.
-        criticality: P::Criticality,
+        criticality: Criticality,
         /// What is outside its root: the error of an encoding that refuses it.
         error: Error,
     },
@@ -206,7 +200,7 @@ pub enum Deviation<P: Diagnostics> {
         /// Its position in the message.
         position: usize,
         /// The criticality that the IE has.
-        criticality: P::Criticality,
+        criticality: Criticality,
         /// Why its value does not decode: the error that the macro which extracts
         /// the IE returns.
         error: Error,
@@ -238,8 +232,12 @@ pub enum Deviation<P: Diagnostics> {
         /// The direction of the PDU.
         direction: Direction,
         /// The criticality of the PDU.
-        criticality: P::Criticality,
+        criticality: Criticality,
     },
+    /// Never made: the protocol whose types the answers to a deviation are, as
+    /// [`diagnostics_item`](Self::diagnostics_item) gives them.
+    #[doc(hidden)]
+    __Protocol(core::convert::Infallible, core::marker::PhantomData<P>),
 }
 
 impl<P: Diagnostics> Deviation<P> {
@@ -248,7 +246,7 @@ impl<P: Diagnostics> Deviation<P> {
     /// the one that the object set assigns it, when it is missing. `None` for the
     /// criticality of the PDU, and for an IE that is there twice or in a wrong order:
     /// the receiver rejects the procedure for it, whatever its criticality.
-    pub fn ie(&self) -> Option<(u16, P::Criticality)> {
+    pub fn ie(&self) -> Option<(u16, Criticality)> {
         match self {
             Self::PduCriticality { .. } => None,
             Self::UnexpectedIe {
@@ -270,6 +268,7 @@ impl<P: Diagnostics> Deviation<P> {
             | Self::OutOfOrder { .. }
             | Self::NotCanonical { .. }
             | Self::UnknownProcedure { .. } => None,
+            Self::__Protocol(never, _) => match *never {},
         }
     }
 
@@ -299,7 +298,7 @@ impl<P: Diagnostics> Deviation<P> {
     /// item is never `ignore` (TS 38.413 clause 9.3.1.3, TS 36.413 clause 9.2.1.21).
     pub fn diagnostics_item(&self) -> Option<P::Item> {
         let (id, criticality) = self.ie()?;
-        if matches!(criticality.into(), Criticality::Ignore) {
+        if criticality == Criticality::Ignore {
             return None;
         }
         let type_of_error = self.type_of_error()?;
@@ -330,7 +329,7 @@ impl<P: Diagnostics> Deviation<P> {
     /// specifications has its receiver handle it locally, and send no ERROR INDICATION
     /// back. The cause is then what the receiver notes.
     pub fn cause(&self) -> Option<P::Cause> {
-        let by_criticality = |criticality: &P::Criticality| match (*criticality).into() {
+        let by_criticality = |criticality: &Criticality| match criticality {
             Criticality::Reject => Some(ProtocolCause::AbstractSyntaxErrorReject),
             Criticality::Notify => Some(ProtocolCause::AbstractSyntaxErrorIgnoreAndNotify),
             Criticality::Ignore => None,
@@ -347,6 +346,7 @@ impl<P: Diagnostics> Deviation<P> {
             Self::PduCriticality { .. }
             | Self::IeCriticality { .. }
             | Self::NotCanonical { .. } => None,
+            Self::__Protocol(never, _) => match *never {},
         };
         cause.map(P::cause)
     }
@@ -357,7 +357,7 @@ impl<P: Diagnostics> Deviation<P> {
     /// that is about no IE.
     pub fn of(error: &Error) -> Option<Self> {
         let ie = error.ie()?;
-        let (id, criticality) = (ie.id, P::Criticality::from(ie.criticality));
+        let (id, criticality) = (ie.id, ie.criticality);
         let name = P::name(id).unwrap_or_default();
         match (error.kind(), ie.position) {
             (ErrorKind::MissingIe, None) => Some(Self::MissingIe {
@@ -385,8 +385,8 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
                 assigned,
             } => write!(
                 formatter,
-                "the criticality of the PDU is {criticality:?}, and that of its procedure \
-                 is {assigned:?}"
+                "the criticality of the PDU is {criticality}, and that of its procedure \
+                 is {assigned}"
             ),
             Self::UnexpectedIe {
                 id, name, position, ..
@@ -431,7 +431,7 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
             } => write!(
                 formatter,
                 "the criticality of {name} (IE {id}), at position {position}, is \
-                 {criticality:?}, and the message assigns it {assigned:?}"
+                 {criticality}, and the message assigns it {assigned}"
             ),
             Self::MissingIe { id, name, .. } => write!(
                 formatter,
@@ -484,8 +484,9 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
             } => write!(
                 formatter,
                 "the {direction} of procedure {procedure_code} is no message of the \
-                 specification, and the criticality of the PDU is {criticality:?}"
+                 specification, and the criticality of the PDU is {criticality}"
             ),
+            Self::__Protocol(never, _) => match *never {},
         }
     }
 }
@@ -500,7 +501,7 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
 pub fn criticality_diagnostics<P: Diagnostics>(
     procedure_code: u8,
     direction: Direction,
-    criticality: P::Criticality,
+    criticality: Criticality,
     deviations: &[Deviation<P>],
 ) -> P::CriticalityDiagnostics {
     let items = items(deviations);
@@ -513,7 +514,7 @@ pub fn criticality_diagnostics<P: Diagnostics>(
 /// and the triggering message, which TS 38.413 clause 9.3.1.3 and TS 36.413 clause
 /// 9.2.1.21 keep for an ERROR INDICATION.
 pub fn criticality_diagnostics_for_response<P: Diagnostics>(
-    criticality: P::Criticality,
+    criticality: Criticality,
     deviations: &[Deviation<P>],
 ) -> P::CriticalityDiagnostics {
     P::criticality_diagnostics(None, criticality, items(deviations))
@@ -535,6 +536,7 @@ fn items<P: Diagnostics>(deviations: &[Deviation<P>]) -> Option<Vec<P::Item>> {
 /// What is wrong with the value of an IE, against the type that the bindings give it.
 ///
 /// More variants may come with a later version: a `match` leaves the others to `_`.
+#[doc(hidden)]
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Wrong {
@@ -552,9 +554,10 @@ pub enum Wrong {
 /// mandatory IEs that are missing in the order of the set. `value` says what is wrong
 /// with the value of the IE at a position, for an IE of the set whose value is not one
 /// of its type, and what of its encoding is in another form than the one of X.691.
+#[doc(hidden)]
 pub fn deviations<P: Diagnostics>(
-    set: &[(u16, P::Criticality, bool)],
-    ies: &[(u16, P::Criticality)],
+    set: &[(u16, Criticality, bool)],
+    ies: &[(u16, Criticality)],
     value: &dyn Fn(usize) -> (Option<Wrong>, Faults),
     found: &mut Vec<Deviation<P>>,
 ) {
@@ -564,9 +567,10 @@ pub fn deviations<P: Diagnostics>(
 /// Add to `found` how `ies`, the IEs of a message in their order, each as its identifier
 /// and its criticality, deviate from `set` in the container alone: what [`deviations`]
 /// adds, but for what it says of the values.
+#[doc(hidden)]
 pub fn structure_deviations<P: Diagnostics>(
-    set: &[(u16, P::Criticality, bool)],
-    ies: &[(u16, P::Criticality)],
+    set: &[(u16, Criticality, bool)],
+    ies: &[(u16, Criticality)],
     found: &mut Vec<Deviation<P>>,
 ) {
     compared(set, ies, None, found)
@@ -575,8 +579,8 @@ pub fn structure_deviations<P: Diagnostics>(
 /// What [`deviations`] and [`structure_deviations`] add: with what is wrong with each
 /// value, when `value` says it, and without otherwise.
 fn compared<P: Diagnostics>(
-    set: &[(u16, P::Criticality, bool)],
-    ies: &[(u16, P::Criticality)],
+    set: &[(u16, Criticality, bool)],
+    ies: &[(u16, Criticality)],
     value: Option<&dyn Fn(usize) -> (Option<Wrong>, Faults)>,
     found: &mut Vec<Deviation<P>>,
 ) {
