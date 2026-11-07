@@ -127,7 +127,7 @@ jobs:
     timeout-minutes: ${{ fromJSON(needs.plan.outputs.timeout) }}
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 7
       # The targets of the protocols that read octets take the dictionary that seed.sh
       # writes: the header of each message and each IE of each message. Those that build
       # their input with `arbitrary` try inputs of any length from the start.
