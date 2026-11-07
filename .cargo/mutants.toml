@@ -64,19 +64,19 @@ exclude_re = [
     'src/inspect/paths\.rs:677:9: delete match arm Shape::List\(Shape::Extension',
     # - a member that is not there gives no place to an edit that goes deeper, nor to a
     #   removal or an insertion, which the engine makes at what is there alone;
-    'src/inspect/paths\.rs:1081:29: replace && with \|\| in Views<._>::object$',
+    'src/inspect/paths\.rs:1097:29: replace && with \|\| in Views<._>::object$',
     # - what a view does not have is read without an edit, and the one segment that such a
     #   reading refuses, an identifier that is no number, is refused before it;
-    'src/inspect/paths\.rs:(1229|1277):25: delete match arm tree::ErrorKind::Refused ',
+    'src/inspect/paths\.rs:(1245|1293):25: delete match arm tree::ErrorKind::Refused ',
     # - the arm of a value without members and the arm after it say the same;
-    'src/inspect/paths\.rs:1301:13: delete match arm Shape::Plain in Views<._>::scalar$',
+    'src/inspect/paths\.rs:1317:13: delete match arm Shape::Plain in Views<._>::scalar$',
     # - the protocolIEs of a view are a list: an object there, of nothing but the octets
     #   that it was received as, is no view's;
-    'src/inspect/paths\.rs:1546:25: replace match guard value\.is_some_and\(Value::is_array\) with true ',
+    'src/inspect/paths\.rs:1562:25: replace match guard value\.is_some_and\(Value::is_array\) with true ',
     # - a type whose one member is a list of IEs, a message, has members of the same shapes
     #   listed or made: `members` gives the list the object set of the transfer of that
     #   name, which a message has none of.
-    'src/inspect/paths\.rs:1757:66: replace && with \|\| in Protocol::member_shapes$',
+    'src/inspect/paths\.rs:1773:66: replace && with \|\| in Protocol::member_shapes$',
     # The readers of the protocol crates read an IE in the usual layout themselves, and leave
     # what is otherwise to the codec of the IE, which reads the same IE: a mutant that leaves
     # more to the codec reads the same. The lengths of one octet and of two, and the octets
