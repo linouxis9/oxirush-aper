@@ -158,9 +158,10 @@ jobs:
           path: mutants.out
 
 
-  # The generator, a package of its own whose test is the bindings that it writes: each
-  # mutant of it writes those of oxirush-ngap and oxirush-s1ap, beside this repository,
-  # which are compared with those that it writes unchanged (.github/mutants-generator.py).
+  # The generator, a package of its own whose tests are its own and the bindings that it
+  # writes: each mutant of it runs those tests, and writes the bindings of oxirush-ngap
+  # and oxirush-s1ap, beside this repository, which are compared with those that it
+  # writes unchanged (.github/mutants-generator.py).
   # The ASN.1 is taken out of the archives of 3GPP, as the Reproduce workflow of each
   # crate does.
   generator:

@@ -1,13 +1,14 @@
-"""The mutants of generator/ against the bindings that it writes: a mutant is caught
-when the bindings of oxirush-ngap or of oxirush-s1ap that it writes, formatted, or the
-names of their fields in build/fields.tsv, differ from those that the generator writes
-unchanged, or when it fails to write them; missed when they are the same, and unviable
-when it does not build. A mutant that makes the generator run past 10 minutes, or take
-more than 8 GiB of address space, fails to write them, and is caught: without the
-limits it took the runner down. The protocol crates are
-beside this repository, each with the ASN.1 of build/asn1.sha256 taken out of its
-specification. The missed ones are written to `generator-missed.txt`, and the program
-exits with 1 when there is one.
+"""The mutants of generator/ against its own tests and the bindings that it writes: a
+mutant is caught when a test of generator/ fails, or when the bindings of oxirush-ngap or
+of oxirush-s1ap that it writes, formatted, or the names of their fields in
+build/fields.tsv, differ from those that the generator writes unchanged, or when it fails
+to write them; missed when the tests pass and the bindings are the same, and unviable
+when it does not build. The tests check what those two protocols do not have. A mutant
+that makes the tests or the generator run past 10 minutes, or take more than 8 GiB of
+address space, fails, and is caught: without the limits it took the runner down. The
+protocol crates are beside this repository, each with the ASN.1 of build/asn1.sha256
+taken out of its specification. The missed ones are written to `generator-missed.txt`,
+and the program exits with 1 when there is one.
 
     python3 oxirush-aper/.github/mutants-generator.py MUTANTS.json SHARD SHARDS
 
@@ -56,6 +57,15 @@ def written(protocol):
     ]
 
 
+def tested():
+    """Whether the tests of generator/ pass, or "unviable" when they do not build."""
+    manifest = ["--manifest-path", str(APER / "generator" / "Cargo.toml")]
+    quiet = {"cwd": APER, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if subprocess.run(["cargo", "test", "--no-run", *manifest], **quiet).returncode != 0:
+        return "unviable"
+    return ran([*LIMIT, "cargo", "test", *manifest], **quiet)
+
+
 def generate(protocol):
     """The digest of the formatted bindings of `protocol`, None when the generator
     fails, or "unviable" when it does not build. The crate is left as it was."""
@@ -79,8 +89,24 @@ def generate(protocol):
         subprocess.run(["git", "checkout", "--quiet", "--", *written(protocol)], cwd=crate, check=True)
 
 
+def judged(baseline):
+    """What the mutant that is applied is: caught, missed or unviable."""
+    own = tested()
+    if own is not True:
+        return "caught" if own is False else own
+    for protocol in PROTOCOLS:
+        digest = generate(protocol)
+        if digest == "unviable":
+            return "unviable"
+        if digest != baseline[protocol]:
+            return "caught"
+    return "missed"
+
+
 def main():
     mutants, shard, shards = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+    if tested() is not True:
+        sys.exit("the tests of the generator do not pass unchanged")
     baseline = {protocol: generate(protocol) for protocol in PROTOCOLS}
     if any(digest in (None, "unviable") for digest in baseline.values()):
         sys.exit(f"the generator does not write the bindings unchanged: {baseline}")
@@ -91,15 +117,7 @@ def main():
         file = APER / "generator" / mutant["file"]
         subprocess.run(["patch", "--quiet", str(file)], input=diff, check=True)
         try:
-            outcome = "missed"
-            for protocol in PROTOCOLS:
-                digest = generate(protocol)
-                if digest == "unviable":
-                    outcome = "unviable"
-                    break
-                if digest != baseline[protocol]:
-                    outcome = "caught"
-                    break
+            outcome = judged(baseline)
         finally:
             subprocess.run(["patch", "--quiet", "--reverse", str(file)], input=diff, check=True)
         counts[outcome] += 1
