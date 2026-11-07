@@ -541,7 +541,10 @@ names the clauses where rasn 0.29 reads or writes otherwise. `fuzz/` has two
 [cargo-fuzz](https://crates.io/crates/cargo-fuzz) targets: `fields` reads
 fields and constraints that the octets choose and writes them back, and
 `value` reads a value of one type with this crate and with rasn, which must
-read the same value and write the same octets, or both refuse it.
+read the same value and write the same octets, or both refuse it. The Fuzz
+workflow runs them, and the six targets of oxirush-ngap and oxirush-s1ap,
+which edit and build PDUs through the views of this crate too, an hour each
+night and four hours on Sunday.
 
 ```sh
 cargo test --all-features

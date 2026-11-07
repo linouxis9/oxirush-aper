@@ -15,8 +15,8 @@
    limitations under the License.
 */
 
-//! What the fuzz targets do with the octets that they are given: the three programs
-//! of `fuzz_targets/` call these functions.
+//! What the fuzz targets do with what they are given: the programs of `fuzz_targets/`
+//! call these functions.
 //!
 //! A target does not only look for a panic. It gives the same octets to the crate and
 //! to the oracle of its tests, which has the same types with the codec of rasn, another
@@ -34,7 +34,9 @@
 
 use codec::hooks::{self, BorrowedPdu as Borrowed, PDU_TYPE, Pdu, ROOT};
 use codec::tree::Value;
-use codec::{Error, ErrorKind, aper, inspect};
+use codec::{Deviation, Error, ErrorKind, aper, inspect};
+use libfuzzer_sys::arbitrary::{self, Arbitrary};
+use std::sync::LazyLock;
 
 /// A message that is a container of protocol IEs, as every message but the private one
 /// is, and which both protocols have: the codec of rasn reads the protocol IEs of any of
@@ -301,4 +303,573 @@ pub fn paths(octets: &[u8]) {
 fn counted(octets: &[u8]) -> Option<(&[u8], &[u8])> {
     let (length, rest) = octets.split_first()?;
     rest.split_at_checked(usize::from(*length))
+}
+
+/// Whether `view` has a member `name`, at any depth.
+fn has_member(value: &Value, name: &str) -> bool {
+    match value {
+        Value::Object(members) => {
+            members.contains_key(name) || members.values().any(|value| has_member(value, name))
+        }
+        Value::Array(entries) => entries.iter().any(|value| has_member(value, name)),
+        _ => false,
+    }
+}
+
+/// What `check` says of a PDU, against what the other ways of reading it say.
+///
+/// `check_structure` says what `check` says, but for the values that it does not decode:
+/// no `UndecodableIe`, `OutsideRoot` or `NotCanonical`. Each deviation tells its IE,
+/// its cause and the item of its Criticality Diagnostics, and the Criticality
+/// Diagnostics of all of them, for an ERROR INDICATION and for a response, are values
+/// that encode and decode as themselves.
+///
+/// A PDU of protocol IEs of which `check` finds nothing to say is written as X.691
+/// writes it, octet for octet: the codec of the type of its message writes the octets of
+/// its message, and,
+/// when its view read every value and transfer with its type, the PDU that the values of
+/// its view write alone is the PDU.
+fn checked(pdu: &Pdu) {
+    let (deviations, structure) = match (pdu.check(), pdu.check_structure()) {
+        (Ok(deviations), Ok(structure)) => (deviations, structure),
+        (Err(all), Err(structure)) => {
+            assert_eq!(all, structure, "{pdu:?}");
+            return;
+        }
+        (all, structure) => panic!("check: {all:?}, check_structure: {structure:?}, of {pdu:?}"),
+    };
+    let of_the_structure = |deviation: &&Deviation| {
+        !matches!(
+            deviation,
+            Deviation::UndecodableIe { .. }
+                | Deviation::OutsideRoot { .. }
+                | Deviation::NotCanonical { .. }
+        )
+    };
+    let expected: Vec<Deviation> = deviations
+        .iter()
+        .filter(of_the_structure)
+        .cloned()
+        .collect();
+    assert_eq!(structure, expected, "{pdu:?}");
+    for deviation in &deviations {
+        let _ = (deviation.to_string(), deviation.ie(), deviation.cause());
+        let _ = (deviation.type_of_error(), deviation.diagnostics_item());
+    }
+    for diagnostics in [
+        pdu.criticality_diagnostics(&deviations),
+        pdu.criticality_diagnostics_for_response(&deviations),
+    ] {
+        let octets = match hooks::bindings::encode_open_type(&diagnostics) {
+            Ok(octets) => octets,
+            Err(error) => {
+                panic!("Criticality Diagnostics that do not encode: {error}: {diagnostics:?}")
+            }
+        };
+        let read =
+            hooks::bindings::decode_open_type::<hooks::bindings::CriticalityDiagnostics>(&octets);
+        assert_eq!(read.as_ref(), Ok(&diagnostics), "{octets:02x?}");
+    }
+
+    // The private message has no protocol IEs, and its octets are not looked at
+    if !deviations.is_empty() || pdu.protocol_ies().is_err() {
+        return;
+    }
+    if let Some((name, written)) = hooks::message_read_and_written(pdu) {
+        match written {
+            Ok(written) => assert_eq!(written, message(pdu), "{name} of {pdu:?}"),
+            Err(error) => panic!("check finds nothing, and {name} does not decode: {error}"),
+        }
+    }
+    let Ok(view) = pdu.to_view() else {
+        return;
+    };
+    if !has_member(&view, "_decode_error") && !has_member(&view, "_lossy") {
+        let alone = Pdu::from_view(&written(&view));
+        assert_eq!(alone.as_ref(), Ok(pdu), "{view}");
+    }
+}
+
+/// The octets of a PDU, what `check` says of it and how the crate writes it again.
+///
+/// A PDU that decodes encodes to the octets that it was decoded from, unless its reader
+/// notes a form that X.691 does not give around its message, and only then; the
+/// protocol IEs of its message, put back, are the octets of its message unless `check`
+/// finds such a form around their values, or does not know its procedure. What `check` says agrees with the other
+/// readings ([`checked`]).
+pub fn exact(octets: &[u8]) {
+    let Ok(pdu) = Pdu::decode(octets) else {
+        return;
+    };
+    let written = match pdu.encode() {
+        Ok(written) => written,
+        Err(error) => panic!("a PDU that was decoded does not encode: {error}: {pdu:?}"),
+    };
+    // The PDU keeps its message as its octets, and writes again what is around it: the
+    // same octets where the reader of the PDU notes no form that X.691 does not give
+    let faults = match aper::decode_with_faults::<Borrowed>(octets) {
+        Ok((_, faults)) => faults,
+        Err(error) => panic!("decode reads what decode_with_faults refuses: {error}"),
+    };
+    assert_eq!(
+        written == octets,
+        faults.is_empty(),
+        "{faults:?} of {pdu:?}"
+    );
+    let deviations = pdu.check();
+    // `check` looks at the container of the message of a procedure that it knows
+    let around = deviations.as_ref().is_ok_and(|deviations| {
+        deviations.iter().any(|deviation| {
+            matches!(
+                deviation,
+                Deviation::NotCanonical { ie: None, .. } | Deviation::UnknownProcedure { .. }
+            )
+        })
+    });
+    if let Ok(ies) = pdu.protocol_ies() {
+        let mut again = pdu.clone();
+        again.set_protocol_ies(ies.into_owned()).unwrap();
+        if deviations.is_ok() && !around {
+            assert_eq!(message(&again), message(&pdu), "{pdu:?}");
+        }
+    }
+    checked(&pdu);
+}
+
+/// The PDUs of the fixtures of the protocol, which the targets that build their input
+/// with `arbitrary` start from, and what their trees and views hold.
+struct Pool {
+    pdus: Vec<Pdu>,
+    /// Each IE of the trees, as a tree has it: its name with its value
+    ies: Vec<Value>,
+    /// The values of the views, by the last segment of their paths
+    values: std::collections::BTreeMap<String, Vec<Value>>,
+    /// Each text of the views: the names of values above all
+    names: Vec<String>,
+}
+
+/// The vectors of the protocol, the PDUs of other implementations and those of a later
+/// version, of the repository whose fuzz package this is.
+const FIXTURES: [&str; 4] = [
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/messages.tsv"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/vectors.tsv"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/later.tsv"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/fixtures/captured.tsv"
+    )),
+];
+
+static POOL: LazyLock<Pool> = LazyLock::new(|| {
+    let unhex = |text: &str| -> Vec<u8> {
+        let digit = |c: u8| (c as char).to_digit(16).unwrap_or(0) as u8;
+        (text.as_bytes().chunks(2))
+            .map(|pair| digit(pair[0]) << 4 | pair.get(1).map_or(0, |low| digit(*low)))
+            .collect()
+    };
+    let rows = FIXTURES.iter().flat_map(|text| text.lines());
+    let pdus: Vec<Pdu> = rows
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| line.split('\t').nth(1))
+        .filter_map(|octets| Pdu::decode(&unhex(octets)).ok())
+        .collect();
+    let mut ies = Vec::new();
+    let mut values = std::collections::BTreeMap::<String, Vec<Value>>::new();
+    let mut names = Vec::new();
+    for pdu in &pdus {
+        if let Some(Value::Array(entries)) = pdu.to_tree().get("ies") {
+            ies.extend(entries.iter().cloned());
+        }
+        let Ok(view) = pdu.to_view() else { continue };
+        for (path, value) in inspect::paths(&view) {
+            let last = path.rsplit('/').next().unwrap_or_default().to_owned();
+            if let Value::String(text) = &value {
+                names.push(text.clone());
+            }
+            let seen = values.entry(last).or_default();
+            if seen.len() < 64 && !seen.contains(&value) {
+                seen.push(value);
+            }
+        }
+    }
+    ies.dedup();
+    names.sort();
+    names.dedup();
+    Pool {
+        pdus,
+        ies,
+        values,
+        names,
+    }
+});
+
+/// A value that the fuzzer writes in the place of another.
+#[derive(Arbitrary, Debug)]
+pub enum Leaf {
+    Unsigned(u64),
+    Signed(i64),
+    Small(u8),
+    Text(String),
+    Hex(Vec<u8>),
+    Bool(bool),
+    Null,
+    /// A text of a view of the fixtures: the name of a value above all
+    Name(u16),
+}
+
+impl Leaf {
+    fn value(&self) -> Value {
+        match self {
+            Leaf::Unsigned(number) => Value::from(*number),
+            Leaf::Signed(number) => Value::from(*number),
+            Leaf::Small(number) => Value::from(*number),
+            Leaf::Text(text) => Value::from(text.as_str()),
+            Leaf::Hex(octets) => Value::from(hex(octets)),
+            Leaf::Bool(flag) => Value::from(*flag),
+            Leaf::Null => Value::Null,
+            Leaf::Name(number) => {
+                let names = &POOL.names;
+                match names.get(usize::from(*number) % names.len().max(1)) {
+                    Some(name) => Value::from(name.as_str()),
+                    None => Value::Null,
+                }
+            }
+        }
+    }
+}
+
+fn hex(octets: &[u8]) -> String {
+    octets.iter().map(|octet| format!("{octet:02x}")).collect()
+}
+
+/// Replace the leaf of `value` that `walk` goes to, a member or an entry by its place
+/// at each step, with `leaf`.
+fn change(value: &mut Value, walk: &[u16], leaf: Value) {
+    let Some((&step, rest)) = walk.split_first() else {
+        *value = leaf;
+        return;
+    };
+    match value {
+        Value::Array(entries) if !entries.is_empty() => {
+            let at = usize::from(step) % entries.len();
+            change(&mut entries[at], rest, leaf);
+        }
+        Value::Object(members) if !members.is_empty() => {
+            let at = usize::from(step) % members.len();
+            if let Some(member) = members.values_mut().nth(at) {
+                change(member, rest, leaf);
+            }
+        }
+        _ => *value = leaf,
+    }
+}
+
+/// What holds of a PDU that the crate wrote, from a view or a tree: it encodes, its
+/// octets decode to it, its tree writes it again, and what `check` says of it agrees
+/// with the other readings ([`checked`]).
+fn written_pdu(pdu: &Pdu) {
+    let octets = match pdu.encode() {
+        Ok(octets) => octets,
+        Err(error) => panic!("a PDU that the crate wrote does not encode: {error}: {pdu:?}"),
+    };
+    assert_eq!(Pdu::decode(&octets).as_ref(), Ok(pdu), "{octets:02x?}");
+    let tree = pdu.to_tree();
+    assert_eq!(Pdu::from_tree(&tree).as_ref(), Ok(pdu), "{tree}");
+    checked(pdu);
+}
+
+/// A PDU of the fixtures and what is done to its view.
+#[derive(Arbitrary, Debug)]
+pub struct Edits {
+    base: u16,
+    edits: Vec<Edit>,
+}
+
+/// One edit of a view. A path is one of those of `inspect::paths`, which the number
+/// picks.
+#[derive(Arbitrary, Debug)]
+enum Edit {
+    /// A value at the path
+    Set { path: u16, to: Leaf },
+    /// The value of another path of the view
+    Copy { path: u16, from: u16 },
+    /// A value that a path of a view of the fixtures that ends as this one has, with
+    /// one of its leaves changed or not
+    Seen {
+        path: u16,
+        value: u16,
+        walk: Vec<u16>,
+        to: Option<Leaf>,
+    },
+    /// What the path is in: a member, an entry of a list or an IE
+    Remove { path: u16 },
+    /// A copy of the entry of a list that the path is in, before it
+    Insert { path: u16 },
+}
+
+/// The IE of the message that a path of a view is under: the position of the IE in a
+/// path of `/message/protocolIEs`, or its name in a path of the root of the protocol.
+fn ie_of(path: &str) -> Option<String> {
+    let mut segments = path.split('/').skip(1);
+    match (segments.next(), segments.next(), segments.next()) {
+        (Some("message"), Some("protocolIEs"), Some(position)) => Some(position.to_owned()),
+        (Some(root), Some(name), _) if ROOT.ends_with(root) => Some(name.to_owned()),
+        _ => None,
+    }
+}
+
+/// The path of the entry of a list that `path` is in, the deepest one.
+fn entry_of(path: &str) -> Option<String> {
+    let segments: Vec<&str> = path.split('/').collect();
+    let last = segments.iter().rposition(|segment| {
+        !segment.is_empty() && segment.bytes().all(|octet| octet.is_ascii_digit())
+    })?;
+    Some(segments[..=last].join("/"))
+}
+
+/// A PDU of the fixtures, edited through its view by the paths that `inspect::paths`
+/// lists, with values that views of the fixtures have, values of the view itself and
+/// values of the fuzzer, as a user edits one.
+///
+/// An edit that the view or the PDU refuses is an error, never a panic. The PDU that
+/// `with_view` writes is the one that `from_view` writes of the same view, and one that
+/// the crate wrote ([`written_pdu`]). Only what was edited changes: each IE of the
+/// message that no path of an edit was under has the entry that it had in the view.
+pub fn edit(input: Edits) {
+    let pool = &*POOL;
+    let Some(pdu) = pool
+        .pdus
+        .get(usize::from(input.base) % pool.pdus.len().max(1))
+    else {
+        return;
+    };
+    let Ok(before) = pdu.to_view() else {
+        return;
+    };
+    let paths = inspect::paths(&before);
+    if paths.is_empty() {
+        return;
+    }
+    let pick = |number: u16| paths[usize::from(number) % paths.len()].clone();
+    let mut view = before.clone();
+    let mut edited = Vec::new();
+    for edit in input.edits.iter().take(8) {
+        let (path, done) = match edit {
+            Edit::Set { path, to } => {
+                let (path, _) = pick(*path);
+                let done = inspect::set(&mut view, &path, to.value()).is_ok();
+                (path, done)
+            }
+            Edit::Copy { path, from } => {
+                let ((path, _), (_, value)) = (pick(*path), pick(*from));
+                let done = inspect::set(&mut view, &path, value).is_ok();
+                (path, done)
+            }
+            Edit::Seen {
+                path,
+                value,
+                walk,
+                to,
+            } => {
+                let (path, _) = pick(*path);
+                let last = path.rsplit('/').next().unwrap_or_default();
+                let Some(seen) = pool.values.get(last).filter(|seen| !seen.is_empty()) else {
+                    continue;
+                };
+                let mut value = seen[usize::from(*value) % seen.len()].clone();
+                if let Some(to) = to {
+                    change(&mut value, walk, to.value());
+                }
+                let done = inspect::set(&mut view, &path, value).is_ok();
+                (path, done)
+            }
+            Edit::Remove { path } => {
+                let (path, _) = pick(*path);
+                let parent = path[..path.rfind('/').unwrap_or(0)].to_owned();
+                let done = inspect::remove(&mut view, &parent).is_ok();
+                (parent, done)
+            }
+            Edit::Insert { path } => {
+                let (path, _) = pick(*path);
+                let Some(entry) = entry_of(&path) else {
+                    continue;
+                };
+                let Some(copy) = inspect::select(&view, &entry)
+                    .ok()
+                    .and_then(|selected| selected.first().map(|value| (*value).clone()))
+                else {
+                    continue;
+                };
+                let done = inspect::insert(&mut view, &entry, copy).is_ok();
+                (entry, done)
+            }
+        };
+        if done {
+            edited.push(path);
+        }
+    }
+
+    let Ok(changed) = pdu.with_view(&view) else {
+        return;
+    };
+    assert_eq!(Pdu::from_view(&view).as_ref(), Ok(&changed), "{view}");
+    written_pdu(&changed);
+
+    // Only what was edited changes, IE by IE, where the edits kept every IE where it was
+    let Some(touched) = edited
+        .iter()
+        .map(|path| ie_of(path))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return;
+    };
+    let (Some(Value::Array(was)), Ok(after)) =
+        (before.pointer("/message/protocolIEs"), changed.to_view())
+    else {
+        return;
+    };
+    let Some(Value::Array(is)) = after.pointer("/message/protocolIEs") else {
+        return;
+    };
+    if was.len() != is.len() {
+        return;
+    }
+    for (position, (was, is)) in was.iter().zip(is).enumerate() {
+        let name = was
+            .get("_ie_name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if touched
+            .iter()
+            .any(|ie| *ie == position.to_string() || ie == name)
+        {
+            continue;
+        }
+        assert_eq!(
+            was, is,
+            "IE {position} changed with the edits of {edited:?}"
+        );
+    }
+}
+
+/// A PDU of the fixtures and what is done to the IEs of its tree.
+#[derive(Arbitrary, Debug)]
+pub struct Build {
+    base: u16,
+    ies: Vec<Change>,
+}
+
+/// What is done to the list of IEs of a tree. A position is one of the list, which the
+/// number picks.
+#[derive(Arbitrary, Debug)]
+enum Change {
+    /// The IE at a position is taken out
+    Remove(u16),
+    /// An IE of a tree of the fixtures, with one of its leaves changed or not, at a
+    /// position, in the place of the IE there or before it
+    Seen {
+        at: u16,
+        ie: u16,
+        walk: Vec<u16>,
+        to: Option<Leaf>,
+        replace: bool,
+    },
+    /// The value of the IE at a position, with one of its leaves changed
+    Change { at: u16, walk: Vec<u16>, to: Leaf },
+    /// The IE at a position as octets, which the tree writes as they are
+    Octets { at: u16, octets: Vec<u8> },
+    /// The IE at a position again, after it
+    Repeat(u16),
+    /// Two IEs swap their places
+    Swap(u16, u16),
+}
+
+/// A PDU written from a tree, as `from_tree` writes one, whose IEs the fuzzer chooses
+/// among those of the fixtures, with their values deep in each IE, and adds, removes,
+/// repeats and puts in another order: the PDUs of every message, which a receiver
+/// checks, and not only octets that a decoder refuses at the header.
+///
+/// A tree that the message or a value refuses is an error, never a panic, and a PDU
+/// that `from_tree` writes is one that the crate wrote ([`written_pdu`]).
+pub fn tree(input: Build) {
+    let pool = &*POOL;
+    let Some(pdu) = pool
+        .pdus
+        .get(usize::from(input.base) % pool.pdus.len().max(1))
+    else {
+        return;
+    };
+    let mut tree = pdu.to_tree();
+    let Some(Value::Array(ies)) = tree.get_mut("ies") else {
+        return;
+    };
+    for step in input.ies.iter().take(16) {
+        let at = |number: u16, length: usize| usize::from(number) % length.max(1);
+        match step {
+            Change::Remove(position) if !ies.is_empty() => {
+                ies.remove(at(*position, ies.len()));
+            }
+            Change::Seen {
+                at: position,
+                ie,
+                walk,
+                to,
+                replace,
+            } if !pool.ies.is_empty() => {
+                let mut ie = pool.ies[usize::from(*ie) % pool.ies.len()].clone();
+                if let Some(to) = to {
+                    change(&mut ie, walk, to.value());
+                }
+                let position = at(*position, ies.len() + 1);
+                match (*replace, position < ies.len()) {
+                    (true, true) => ies[position] = ie,
+                    _ => ies.insert(position, ie),
+                }
+            }
+            Change::Change {
+                at: position,
+                walk,
+                to,
+            } if !ies.is_empty() => {
+                let position = at(*position, ies.len());
+                change(&mut ies[position], walk, to.value());
+            }
+            Change::Octets {
+                at: position,
+                octets,
+            } if !ies.is_empty() => {
+                let position = at(*position, ies.len());
+                if let Some(Value::Object(members)) = ies.get_mut(position)
+                    && let Some((_, value)) =
+                        members.iter_mut().find(|(name, _)| *name != "criticality")
+                {
+                    let mut entry = codec::tree::Map::new();
+                    entry.insert("octets".into(), Value::from(hex(octets)));
+                    *value = Value::Object(entry);
+                }
+            }
+            Change::Repeat(position) if !ies.is_empty() => {
+                let position = at(*position, ies.len());
+                let again = ies[position].clone();
+                ies.insert(position + 1, again);
+            }
+            Change::Swap(first, second) if !ies.is_empty() => {
+                let (first, second) = (at(*first, ies.len()), at(*second, ies.len()));
+                ies.swap(first, second);
+            }
+            _ => {}
+        }
+    }
+    if let Ok(written) = Pdu::from_tree(&tree) {
+        written_pdu(&written);
+    }
 }

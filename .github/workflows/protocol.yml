@@ -224,7 +224,7 @@ jobs:
   # Each target gives its octets to the crate and to its oracle, the codec of rasn,
   # and compares what the two read and write.
   fuzz:
-    name: Fuzz the codec and the JSON forms against the oracle (3 minutes)
+    name: Fuzz the codec and the JSON forms against the oracle (6 minutes)
     needs: revisions
     runs-on: ubuntu-24.04
     defaults:
@@ -253,9 +253,14 @@ jobs:
       # candidate found under an unknown procedure (tests/fixtures/null_paths.tsv), which
       # 30 minutes from the PDUs alone did not show, shows in 9 seconds from them.
       - run: ../oxirush-aper/protocols/fuzz/seed.sh
-      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096
-      - run: cargo fuzz run view -- -max_total_time=60 -max_len=4096
+      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
+      - run: cargo fuzz run view -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
       - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096
+      - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
+      # These two take the PDUs of tests/fixtures themselves, and edit them or write them
+      # from their trees.
+      - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0
 
   # The files that the tools of `protocols/` write, as they write them: the revisions
   # of build/revisions wherever the repository names one, and the test of the README.
