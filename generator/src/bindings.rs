@@ -2574,4 +2574,28 @@ mod tests {
             "{error}"
         );
     }
+
+    /// What rasn-compiler writes in an `impl` is of the type that it names, wherever that
+    /// type is: its `new` takes what converts into a member's type.
+    #[test]
+    fn an_impl_is_of_the_type_that_it_names() {
+        let derive = "#[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]";
+        let items = format!(
+            "{derive} #[rasn(delegate, value(\"0..=7\"))] pub struct Count(pub u8); \
+             {derive} #[rasn(automatic_tags)] pub struct First {{ pub count: Count }} \
+             {derive} #[rasn(automatic_tags)] pub struct Second {{ pub count: Count }} \
+             impl First {{ pub fn new(count: impl Into<Count>) -> Self {{ \
+             Self {{ count: count.into() }} }} }}"
+        );
+        let text = described(&items, Keys::default()).unwrap().text;
+        let new = |of: &str| {
+            let at = text.find(&format!("impl {of} {{\npub fn new(")).unwrap();
+            text[at..].lines().nth(1).unwrap().to_string()
+        };
+        assert_eq!(
+            new("First"),
+            "pub fn new(count: impl Into<Count>) -> Self { Self {"
+        );
+        assert_eq!(new("Second"), "pub fn new(count: Count) -> Self { Self {");
+    }
 }
