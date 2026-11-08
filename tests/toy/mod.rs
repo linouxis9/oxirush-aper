@@ -99,12 +99,12 @@ pub mod toy {
     }
     impl<'a> Decode<'a> for ProtocolIEID {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self(reader.unsigned(0, 65535)? as u16))
+            Ok(Self(reader.unsigned(0, 65535, false)? as u16))
         }
     }
     impl Encode for ProtocolIEID {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.unsigned(u64::from(self.0), 0, 65535)
+            writer.unsigned(u64::from(self.0), 0, 65535, false)
         }
     }
 
@@ -219,7 +219,7 @@ pub mod toy {
     impl<'a> Decode<'a> for PrivateMessage<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
             let extended = reader.bit()?;
-            let private_ies = reader.octet_string(0, UNBOUNDED)?;
+            let private_ies = reader.octet_string(0, UNBOUNDED, false)?;
             if extended {
                 reader.skip_additions()?;
             }
@@ -229,7 +229,7 @@ pub mod toy {
     impl Encode for PrivateMessage<'_> {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.bit(false);
-            writer.octet_string(&self.private_ies, 0, UNBOUNDED)
+            writer.octet_string(&self.private_ies, 0, UNBOUNDED, false)
         }
     }
 
@@ -241,12 +241,12 @@ pub mod toy {
     }
     impl<'a> Decode<'a> for Identity {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self(reader.unsigned(0, 4294967295)? as u32))
+            Ok(Self(reader.unsigned(0, 4294967295, false)? as u32))
         }
     }
     impl Encode for Identity {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.unsigned(u64::from(self.0), 0, 4294967295)
+            writer.unsigned(u64::from(self.0), 0, 4294967295, false)
         }
     }
     impl From<u32> for Identity {
@@ -273,12 +273,12 @@ pub mod toy {
     }
     impl<'a> Decode<'a> for Name<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self(reader.octet_string(0, UNBOUNDED)?))
+            Ok(Self(reader.octet_string(0, UNBOUNDED, false)?))
         }
     }
     impl Encode for Name<'_> {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.octet_string(&self.0, 0, UNBOUNDED)
+            writer.octet_string(&self.0, 0, UNBOUNDED, false)
         }
     }
     impl From<&'static str> for Name<'static> {
@@ -338,12 +338,12 @@ pub mod toy {
     }
     impl<'a> Decode<'a> for Item {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self(reader.unsigned(0, 255)? as u8))
+            Ok(Self(reader.unsigned(0, 255, false)? as u8))
         }
     }
     impl Encode for Item {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.unsigned(u64::from(self.0), 0, 255)
+            writer.unsigned(u64::from(self.0), 0, 255, false)
         }
     }
     impl From<u8> for Item {
@@ -462,8 +462,8 @@ pub mod toy {
     }
     impl<'a> Decode<'a> for TOYPDU<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            let alternative = reader.choice(3, 0, true)?;
-            let procedure_code = ProcedureCode(reader.unsigned(0, 255)? as u8);
+            let alternative = reader.index(3, 0, true)?;
+            let procedure_code = ProcedureCode(reader.unsigned(0, 255, false)? as u8);
             let criticality = Criticality::decode(reader)?;
             let value = reader.open_type()?;
             Ok(match alternative {
@@ -494,7 +494,7 @@ pub mod toy {
             };
             writer.bit(false);
             writer.index(alternative, 3, false);
-            writer.unsigned(u64::from(code.0), 0, 255)?;
+            writer.unsigned(u64::from(code.0), 0, 255, false)?;
             criticality.encode(writer)?;
             writer.open_type(value);
             Ok(())

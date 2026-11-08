@@ -54,7 +54,7 @@ fn the_writer_writes_each_form_of_a_length_and_the_fragments_of_a_value() {
     let value: Vec<u8> = (0..20000).map(|index| index as u8).collect();
     let mut octets = Vec::new();
     Writer::new(&mut octets)
-        .octet_string(&value, 0, UNBOUNDED)
+        .octet_string(&value, 0, UNBOUNDED, false)
         .unwrap();
     let mut expected = vec![0xc1];
     expected.extend_from_slice(&value[..16384]);
@@ -67,7 +67,7 @@ fn the_writer_writes_each_form_of_a_length_and_the_fragments_of_a_value() {
     let bits = BitString::new(value.as_slice(), 20000).unwrap();
     let mut octets = Vec::new();
     Writer::new(&mut octets)
-        .bit_string(&bits, 0, UNBOUNDED)
+        .bit_string(&bits, 0, UNBOUNDED, false)
         .unwrap();
     let mut expected = vec![0xc1];
     expected.extend_from_slice(&value[..2048]);

@@ -35,111 +35,127 @@ fn a_constrained_whole_number_has_the_four_forms_of_11_5_7() {
         (254, 8),
     ] {
         let octets = written(|w| {
-            w.unsigned(upper, 0, upper).unwrap();
+            w.unsigned(upper, 0, upper, false).unwrap();
             // A bit after it shows where the field ends.
             w.bit(true);
         });
         let mut reader = Reader::new(&octets);
-        assert_eq!(reader.unsigned(0, upper).unwrap(), upper);
+        assert_eq!(reader.unsigned(0, upper, false).unwrap(), upper);
         assert_eq!(reader.position(), bits, "a range of {}", upper + 1);
         assert!(reader.bit().unwrap());
     }
     // One value: no bit (§11.5.4).
-    assert!(written(|w| w.unsigned(5, 5, 5).unwrap()).is_empty());
-    assert_eq!(Reader::new(&[]).unsigned(5, 5).unwrap(), 5);
+    assert!(written(|w| w.unsigned(5, 5, 5, false).unwrap()).is_empty());
+    assert_eq!(Reader::new(&[]).unsigned(5, 5, false).unwrap(), 5);
 
     // The one-octet case (§11.5.7.2) and the two-octet case (§11.5.7.3) are
     // octet-aligned.
     let octets = written(|w| {
         w.bit(true);
-        w.unsigned(256, 1, 256).unwrap();
+        w.unsigned(256, 1, 256, false).unwrap();
         w.bit(true);
-        w.unsigned(0x1234, 0, 65535).unwrap();
+        w.unsigned(0x1234, 0, 65535, false).unwrap();
         w.bit(true);
-        w.unsigned(257, 1, 257).unwrap();
+        w.unsigned(257, 1, 257, false).unwrap();
     });
     assert_eq!(octets, [0x80, 0xff, 0x80, 0x12, 0x34, 0x80, 0x01, 0x00]);
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.unsigned(1, 256).unwrap(), 256);
+    assert_eq!(reader.unsigned(1, 256, false).unwrap(), 256);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.unsigned(0, 65535).unwrap(), 0x1234);
+    assert_eq!(reader.unsigned(0, 65535, false).unwrap(), 0x1234);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.unsigned(1, 257).unwrap(), 257);
+    assert_eq!(reader.unsigned(1, 257, false).unwrap(), 257);
 
     // The indefinite length case (§11.5.7.4), with the length of §13.2.6 a). The note
     // of that clause: `INTEGER (256..1234567) ::= 256` is 00xxxxxx 00000000.
     assert_eq!(
-        written(|w| w.unsigned(256, 256, 1234567).unwrap()),
+        written(|w| w.unsigned(256, 256, 1234567, false).unwrap()),
         [0x00, 0x00]
     );
     assert_eq!(
-        Reader::new(&[0x00, 0x00]).unsigned(256, 1234567).unwrap(),
+        Reader::new(&[0x00, 0x00])
+            .unsigned(256, 1234567, false)
+            .unwrap(),
         256
     );
     // When the length starts with the two last bits of an octet: 00 00000000.
     let octets = written(|w| {
         w.bits(0b111111, 6);
-        w.unsigned(256, 256, 1234567).unwrap();
+        w.unsigned(256, 256, 1234567, false).unwrap();
     });
     assert_eq!(octets, [0b1111_1100, 0x00]);
     // The range of (256..1234567) takes three octets: the length is in two bits.
     assert_eq!(
-        written(|w| w.unsigned(1234567, 256, 1234567).unwrap()),
+        written(|w| w.unsigned(1234567, 256, 1234567, false).unwrap()),
         [0b1000_0000, 0x12, 0xd5, 0x87]
     );
     // Five octets for (0..1099511627775): the length is in three bits.
     assert_eq!(
-        written(|w| w.unsigned(1099511627775, 0, 1099511627775).unwrap()),
+        written(|w| w.unsigned(1099511627775, 0, 1099511627775, false).unwrap()),
         [0b1000_0000, 0xff, 0xff, 0xff, 0xff, 0xff]
     );
     assert_eq!(
-        written(|w| w.unsigned(1, 0, 1099511627775).unwrap()),
+        written(|w| w.unsigned(1, 0, 1099511627775, false).unwrap()),
         [0x00, 0x01]
     );
     // Eight octets for every number of 64 bits.
     assert_eq!(
-        written(|w| w.unsigned(u64::MAX, 0, u64::MAX).unwrap()),
+        written(|w| w.unsigned(u64::MAX, 0, u64::MAX, false).unwrap()),
         [0b1110_0000, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
     );
     assert_eq!(
         Reader::new(&[0b1110_0000, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
-            .unsigned(0, u64::MAX)
+            .unsigned(0, u64::MAX, false)
             .unwrap(),
         u64::MAX
     );
 
     // Bounds that are negative.
-    assert_eq!(written(|w| w.signed(-127, -127, 127).unwrap()), [0x00]);
-    assert_eq!(written(|w| w.signed(127, -127, 127).unwrap()), [0xfe]);
-    assert_eq!(Reader::new(&[0xfe]).signed(-127, 127).unwrap(), 127);
+    assert_eq!(
+        written(|w| w.signed(-127, -127, 127, false).unwrap()),
+        [0x00]
+    );
+    assert_eq!(
+        written(|w| w.signed(127, -127, 127, false).unwrap()),
+        [0xfe]
+    );
+    assert_eq!(Reader::new(&[0xfe]).signed(-127, 127, false).unwrap(), 127);
     assert_eq!(
         Reader::new(&[0x00, 0x00])
-            .signed(i64::MIN, i64::MAX)
+            .signed(i64::MIN, i64::MAX, false)
             .unwrap(),
         i64::MIN
     );
     assert_eq!(
-        written(|w| w.signed(i64::MAX, i64::MIN, i64::MAX).unwrap()),
+        written(|w| w.signed(i64::MAX, i64::MIN, i64::MAX, false).unwrap()),
         [0b1110_0000, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
     );
 
     // A number outside its constraint is not written, and a field that holds one is
     // not read: three bits hold 0 to 7 for (0..4).
     let mut octets = Vec::new();
-    let error = Writer::new(&mut octets).unsigned(5, 0, 4).unwrap_err();
+    let error = Writer::new(&mut octets)
+        .unsigned(5, 0, 4, false)
+        .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Encode);
     assert_eq!(
         error.to_string(),
         "the value does not encode: 5 is outside its constraint (0..4)"
     );
-    let error = Reader::new(&[0b1010_0000]).unsigned(0, 4).unwrap_err();
+    let error = Reader::new(&[0b1010_0000])
+        .unsigned(0, 4, false)
+        .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
     assert_eq!(
         error.to_string(),
         "the octets do not decode: 5 is outside its constraint (0..4)"
     );
-    assert!(Writer::new(&mut octets).signed(-128, -127, 127).is_err());
+    assert!(
+        Writer::new(&mut octets)
+            .signed(-128, -127, 127, false)
+            .is_err()
+    );
     assert!(octets.is_empty());
 }
 
@@ -148,25 +164,25 @@ fn an_integer_with_an_extension_marker_has_a_bit_before_it() {
     // §13.1: within the root, as without the marker.
     // The one octet of (0..255) is octet-aligned after the bit.
     assert_eq!(
-        written(|w| w.unsigned_extensible(255, 0, 255).unwrap()),
+        written(|w| w.unsigned(255, 0, 255, true).unwrap()),
         [0x00, 0xff]
     );
     assert_eq!(
-        written(|w| w.unsigned_extensible(5, 0, 7).unwrap()),
+        written(|w| w.unsigned(5, 0, 7, true).unwrap()),
         [0b0101_0000]
     );
     // Outside it, an unconstrained whole number: its length, then its octets in
     // two's complement (§11.8, §11.4).
     assert_eq!(
-        written(|w| w.unsigned_extensible(256, 0, 255).unwrap()),
+        written(|w| w.unsigned(256, 0, 255, true).unwrap()),
         [0x80, 0x02, 0x01, 0x00]
     );
     assert_eq!(
-        written(|w| w.signed_extensible(-1, 0, 255).unwrap()),
+        written(|w| w.signed(-1, 0, 255, true).unwrap()),
         [0x80, 0x01, 0xff]
     );
     assert_eq!(
-        written(|w| w.signed_extensible(128, 0, 100).unwrap()),
+        written(|w| w.signed(128, 0, 100, true).unwrap()),
         [0x80, 0x02, 0x00, 0x80]
     );
     for (value, octets) in [
@@ -180,43 +196,47 @@ fn an_integer_with_an_extension_marker_has_a_bit_before_it() {
         ),
     ] {
         assert_eq!(
-            written(|w| w.unsigned_extensible(value, 0, 255).unwrap()),
+            written(|w| w.unsigned(value, 0, 255, true).unwrap()),
             octets
         );
-        assert_eq!(
-            Reader::new(&octets).unsigned_extensible(0, 255).unwrap(),
-            value
-        );
+        assert_eq!(Reader::new(&octets).unsigned(0, 255, true).unwrap(), value);
     }
     // What the bindings do not hold: a negative number where the root has none, and
     // more than 64 bits.
-    let negative = Reader::new(&[0x80, 0x01, 0xff]).unsigned_extensible(0, 255);
+    let negative = Reader::new(&[0x80, 0x01, 0xff]).unsigned(0, 255, true);
     assert_eq!(
         negative.unwrap_err().to_string(),
         "the octets do not decode: the number does not fit in 64 bits"
     );
     let large = [0x80, 0x09, 0x01, 0, 0, 0, 0, 0, 0, 0, 0];
-    assert!(Reader::new(&large).unsigned_extensible(0, 255).is_err());
-    assert!(Reader::new(&large).signed_extensible(0, 255).is_err());
+    assert!(Reader::new(&large).unsigned(0, 255, true).is_err());
+    assert!(Reader::new(&large).signed(0, 255, true).is_err());
     // The largest number of 64 bits has a zero octet first in two's complement: nine
     // octets, and one more is refused.
     let largest = [
         0x80, 0x09, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     ];
     assert_eq!(
-        Reader::new(&largest).unsigned_extensible(0, 255).unwrap(),
+        Reader::new(&largest).unsigned(0, 255, true).unwrap(),
         u64::MAX
     );
     let padded = [
         0x80, 0x0a, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     ];
-    assert!(Reader::new(&padded).unsigned_extensible(0, 255).is_err());
+    assert!(Reader::new(&padded).unsigned(0, 255, true).is_err());
 }
 
 #[test]
 fn a_whole_number_without_an_upper_bound_has_its_length_before_it() {
-    // An unconstrained whole number (§11.8) is in two's complement, as few octets as
-    // hold it (§11.4.6).
+    // A number outside the root of an extensible constraint is an unconstrained whole
+    // number (§13.1, §11.8) after the extension bit, which pads to the length: in two's
+    // complement, as few octets as hold it (§11.4.6). None is in the root (0..0) but 0,
+    // and none in (1..1) but 1.
+    let outside = |value: i64| match value {
+        0 => written(|w| w.signed(value, 1, 1, true).unwrap()),
+        _ => written(|w| w.signed(value, 0, 0, true).unwrap()),
+    };
+    let read = |octets: &[u8]| Reader::new(&[&[0x80][..], octets].concat()).signed(0, 0, true);
     for (value, octets) in [
         (0i64, vec![0x01, 0x00]),
         (127, vec![0x01, 0x7f]),
@@ -230,46 +250,15 @@ fn a_whole_number_without_an_upper_bound_has_its_length_before_it() {
         ),
         (i64::MIN, vec![0x08, 0x80, 0, 0, 0, 0, 0, 0, 0]),
     ] {
-        assert_eq!(written(|w| w.unconstrained(value)), octets, "{value}");
-        assert_eq!(Reader::new(&octets).unconstrained().unwrap(), value);
+        assert_eq!(outside(value), [&[0x80][..], &octets].concat(), "{value}");
+        assert_eq!(read(&octets).unwrap(), value);
     }
     // No octet is no number.
-    assert!(Reader::new(&[0x00]).unconstrained().is_err());
-    assert!(Reader::new(&[0x00]).semi_constrained(0).is_err());
-    assert!(
-        Reader::new(&[0x80, 0x00])
-            .unsigned_extensible(0, 255)
-            .is_err()
-    );
-    // A semi-constrained whole number (§11.7) is what it has above its lower bound.
-    for (value, lower, octets) in [
-        (0i64, 0i64, vec![0x01, 0x00]),
-        (255, 0, vec![0x01, 0xff]),
-        (256, 0, vec![0x02, 0x01, 0x00]),
-        (4096, 4096, vec![0x01, 0x00]),
-        (5, -5, vec![0x01, 0x0a]),
-    ] {
-        assert_eq!(
-            written(|w| w.semi_constrained(value, lower).unwrap()),
-            octets
-        );
-        assert_eq!(Reader::new(&octets).semi_constrained(lower).unwrap(), value);
-    }
-    assert_eq!(
-        written(|w| w.semi_constrained_unsigned(u64::MAX, 0).unwrap()),
-        [0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
-    );
-    assert_eq!(
-        Reader::new(&[0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
-            .semi_constrained_unsigned(0)
-            .unwrap(),
-        u64::MAX
-    );
-    let mut octets = Vec::new();
-    assert!(Writer::new(&mut octets).semi_constrained(3, 4).is_err());
+    assert!(read(&[0x00]).is_err());
+    assert!(Reader::new(&[0x80, 0x00]).unsigned(0, 255, true).is_err());
 
     // A normally small non-negative whole number (§11.6): six bits after a zero bit up
-    // to 63, and a semi-constrained number after a one bit above.
+    // to 63, and a semi-constrained number (§11.7) after a one bit above.
     assert_eq!(written(|w| w.small(0)), [0b0000_0000]);
     assert_eq!(written(|w| w.small(63)), [0b0111_1110]);
     assert_eq!(written(|w| w.small(64)), [0b1000_0000, 0x01, 0x40]);
@@ -277,32 +266,30 @@ fn a_whole_number_without_an_upper_bound_has_its_length_before_it() {
         let octets = written(|w| w.small(value));
         assert_eq!(Reader::new(&octets).small().unwrap(), value);
     }
+    let largest = [0x80, 0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    assert_eq!(Reader::new(&largest).small().unwrap(), u64::MAX);
 
     // A writer gives a number its least octets (§11.3.6, §11.4.6). A reader takes
     // octets that only extend the sign before them, up to the octets that a number of
     // 64 bits may have: eight, and nine in two's complement.
-    assert_eq!(Reader::new(&[0x02, 0x00, 0x05]).unconstrained().unwrap(), 5);
-    assert_eq!(
-        Reader::new(&[0x02, 0xff, 0xfb]).unconstrained().unwrap(),
-        -5
-    );
+    assert_eq!(read(&[0x02, 0x00, 0x05]).unwrap(), 5);
+    assert_eq!(read(&[0x02, 0xff, 0xfb]).unwrap(), -5);
     let mut padded = [0x00; 10];
     padded[0] = 0x09;
     padded[9] = 0x05;
-    assert_eq!(Reader::new(&padded).unconstrained().unwrap(), 5);
-    padded[0] = 0x08;
-    let eight = Reader::new(&padded[..9]).semi_constrained_unsigned(0);
-    assert_eq!(eight.unwrap(), 0);
+    assert_eq!(read(&padded).unwrap(), 5);
+    let eight = [0x80, 0x08, 0, 0, 0, 0, 0, 0, 0, 0];
+    assert_eq!(Reader::new(&eight).small().unwrap(), 0);
     // More octets are refused whatever they hold: zero in ten octets of two's
     // complement, and in nine octets of a number without a sign.
     let ten = [0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let nine = [0x09, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let nine = [0x80, 0x09, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     for error in [
-        Reader::new(&ten).unconstrained().unwrap_err(),
-        Reader::new(&nine).semi_constrained_unsigned(0).unwrap_err(),
+        read(&ten).unwrap_err(),
+        Reader::new(&nine).small().unwrap_err(),
         // The index of an addition, after its two bits.
         Reader::new(&[0xc0, 0x09, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-            .enumerated(3, 2, true)
+            .index(3, 2, true)
             .unwrap_err(),
     ] {
         assert_eq!(
@@ -311,7 +298,7 @@ fn a_whole_number_without_an_upper_bound_has_its_length_before_it() {
         );
     }
     let eight = [0xc0, 0x08, 0, 0, 0, 0, 0, 0, 0, 1];
-    assert_eq!(Reader::new(&eight).enumerated(3, 2, true).unwrap(), 4);
+    assert_eq!(Reader::new(&eight).index(3, 2, true).unwrap(), 4);
 }
 
 #[test]
@@ -429,43 +416,32 @@ fn a_length_determinant_has_the_forms_of_11_9() {
 fn an_enumerated_and_a_choice_are_an_index() {
     // §14.2: three values are a constrained whole number of (0..2).
     assert_eq!(written(|w| w.index(2, 3, false)), [0b1000_0000]);
-    assert_eq!(
-        Reader::new(&[0b1000_0000]).enumerated(3, 0, false).unwrap(),
-        2
-    );
+    assert_eq!(Reader::new(&[0b1000_0000]).index(3, 0, false).unwrap(), 2);
     // Two bits hold an index that no value has.
-    let error = Reader::new(&[0b1100_0000])
-        .enumerated(3, 0, false)
-        .unwrap_err();
+    let error = Reader::new(&[0b1100_0000]).index(3, 0, false).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "the octets do not decode: 3 is no value of the ENUMERATED"
+        "the octets do not decode: the type has no index 3"
     );
     // §14.3: with an extension marker a bit comes first, and an addition is a
     // normally small number.
     assert_eq!(written(|w| w.index(2, 3, true)), [0b0100_0000]);
     assert_eq!(written(|w| w.index(3, 3, true)), [0b1000_0000]);
     assert_eq!(written(|w| w.index(5, 3, true)), [0b1000_0010]);
-    assert_eq!(
-        Reader::new(&[0b1000_0010]).enumerated(3, 4, true).unwrap(),
-        5
-    );
+    assert_eq!(Reader::new(&[0b1000_0010]).index(3, 4, true).unwrap(), 5);
     // An addition that this version does not have.
-    let error = Reader::new(&[0b1000_0010])
-        .enumerated(3, 2, true)
-        .unwrap_err();
+    let error = Reader::new(&[0b1000_0010]).index(3, 2, true).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "the octets do not decode: 2 is no value of the ENUMERATED among those after its \
-         extension marker"
+        "the octets do not decode: the type has no index 2 after its extension marker"
     );
     // §23.4: a CHOICE of one alternative has no index.
     assert!(written(|w| w.index(0, 1, false)).is_empty());
-    assert_eq!(Reader::new(&[]).choice(1, 0, false).unwrap(), 0);
-    let error = Reader::new(&[0b1100_0000]).choice(3, 0, false).unwrap_err();
+    assert_eq!(Reader::new(&[]).index(1, 0, false).unwrap(), 0);
+    let error = Reader::new(&[0b1100_0000]).index(3, 0, false).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "the octets do not decode: 3 is no alternative of the CHOICE"
+        "the octets do not decode: the type has no index 3"
     );
 }
 
@@ -492,66 +468,68 @@ fn an_octet_string_is_aligned_unless_it_has_two_octets_at_most() {
     // The same through the strings whose size is an argument.
     let octets = written(|w| {
         w.bit(true);
-        w.octet_string(&[0xab, 0xcd], 2, 2).unwrap();
-        w.octet_string(&[1, 2, 3], 3, 3).unwrap();
-        w.octet_string(&[], 0, 0).unwrap();
+        w.octet_string(&[0xab, 0xcd], 2, 2, false).unwrap();
+        w.octet_string(&[1, 2, 3], 3, 3, false).unwrap();
+        w.octet_string(&[], 0, 0, false).unwrap();
     });
     assert_eq!(octets, [0b1101_0101, 0b1110_0110, 0b1000_0000, 1, 2, 3]);
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.octet_string(2, 2).unwrap(), [0xab, 0xcd]);
-    assert_eq!(reader.octet_string(3, 3).unwrap(), [1, 2, 3]);
-    assert_eq!(reader.octet_string(0, 0).unwrap(), []);
+    assert_eq!(reader.octet_string(2, 2, false).unwrap(), [0xab, 0xcd]);
+    assert_eq!(reader.octet_string(3, 3, false).unwrap(), [1, 2, 3]);
+    assert_eq!(reader.octet_string(0, 0, false).unwrap(), []);
 
     // §17.8: a size that varies is a length, then the octets, octet-aligned. No octet
     // is nothing, and no padding (§11.9.3.3, note 2).
     let octets = written(|w| {
         w.bit(true);
-        w.octet_string(&[0xaa], 0, 3).unwrap();
+        w.octet_string(&[0xaa], 0, 3, false).unwrap();
         w.bit(true);
-        w.octet_string(&[], 0, 3).unwrap();
+        w.octet_string(&[], 0, 3, false).unwrap();
         w.bit(true);
     });
     assert_eq!(octets, [0b1010_0000, 0xaa, 0b1001_0000]);
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.octet_string(0, 3).unwrap(), [0xaa]);
+    assert_eq!(reader.octet_string(0, 3, false).unwrap(), [0xaa]);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.octet_string(0, 3).unwrap(), []);
+    assert_eq!(reader.octet_string(0, 3, false).unwrap(), []);
     assert!(reader.bit().unwrap());
 
     // A range of 256 sizes or more: the length is octet-aligned, in one octet or two
     // (§11.5.7.2, §11.5.7.3).
     let octets = written(|w| {
         w.bit(true);
-        w.octet_string(&[0x11, 0x22, 0x33], 1, 1000).unwrap();
+        w.octet_string(&[0x11, 0x22, 0x33], 1, 1000, false).unwrap();
     });
     assert_eq!(octets, [0x80, 0x00, 0x02, 0x11, 0x22, 0x33]);
     let octets = written(|w| {
         w.bit(true);
-        w.octet_string(&[0x11], 1, 256).unwrap();
+        w.octet_string(&[0x11], 1, 256, false).unwrap();
     });
     assert_eq!(octets, [0x80, 0x00, 0x11]);
 
     // No upper bound: an unconstrained length, in fragments from 16K octets.
     assert_eq!(
-        written(|w| w.octet_string(&[7, 8], 0, UNBOUNDED).unwrap()),
+        written(|w| w.octet_string(&[7, 8], 0, UNBOUNDED, false).unwrap()),
         [2, 7, 8]
     );
     let long = vec![0x5a; 40000];
-    let octets = written(|w| w.octet_string(&long, 0, UNBOUNDED).unwrap());
+    let octets = written(|w| w.octet_string(&long, 0, UNBOUNDED, false).unwrap());
     assert_eq!(octets.len(), 1 + 32768 + 2 + 7232);
     assert_eq!(
         (octets[0], octets[32769], octets[32770]),
         (0xc2, 0x9c, 0x40)
     );
-    let read = Reader::new(&octets).octet_string(0, UNBOUNDED).unwrap();
+    let read = Reader::new(&octets)
+        .octet_string(0, UNBOUNDED, false)
+        .unwrap();
     assert_eq!(read, long);
     assert!(!read.is_borrowed());
     // In one piece, the octets are borrowed.
     assert!(
         Reader::new(&[2, 7, 8])
-            .octet_string(0, UNBOUNDED)
+            .octet_string(0, UNBOUNDED, false)
             .unwrap()
             .is_borrowed()
     );
@@ -559,16 +537,16 @@ fn an_octet_string_is_aligned_unless_it_has_two_octets_at_most() {
     // §17.3: with an extension marker a bit comes first, and a string outside the
     // root has an unconstrained length.
     assert_eq!(
-        written(|w| w.octet_string_extensible(&[1, 2, 3], 3, 3).unwrap()),
+        written(|w| w.octet_string(&[1, 2, 3], 3, 3, true).unwrap()),
         [0x00, 1, 2, 3]
     );
     assert_eq!(
-        written(|w| w.octet_string_extensible(&[1, 2], 3, 3).unwrap()),
+        written(|w| w.octet_string(&[1, 2], 3, 3, true).unwrap()),
         [0x80, 2, 1, 2]
     );
     assert_eq!(
         Reader::new(&[0x80, 2, 1, 2])
-            .octet_string_extensible(3, 3)
+            .octet_string(3, 3, true)
             .unwrap(),
         [1, 2]
     );
@@ -614,7 +592,7 @@ fn a_bit_string_is_aligned_unless_it_has_one_size_of_sixteen_bits_at_most() {
     // The same as a long string: the bit after it is not one of its bits.
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    let read = reader.bit_string(20, 20).unwrap();
+    let read = reader.bit_string(20, 20, false).unwrap();
     assert_eq!(read, BitString::new(vec![0xab, 0xcd, 0xe0], 20).unwrap());
     assert!(reader.bit().unwrap());
 
@@ -636,31 +614,31 @@ fn a_bit_string_is_aligned_unless_it_has_one_size_of_sixteen_bits_at_most() {
     let key = BitString::from([0x5a; 32]);
     let octets = written(|w| {
         w.bit(true);
-        w.bit_string(&key, 256, 256).unwrap();
+        w.bit_string(&key, 256, 256, false).unwrap();
     });
     assert_eq!(octets.len(), 33);
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.bit_string(256, 256).unwrap(), key);
+    assert_eq!(reader.bit_string(256, 256, false).unwrap(), key);
 
     // §16.6: with an extension marker a bit comes first.
     let sixteen = BitString::from([0xe0, 0x00]);
     assert_eq!(
-        written(|w| w.bit_string_extensible(&sixteen, 16, 16).unwrap()),
+        written(|w| w.bit_string(&sixteen, 16, 16, true).unwrap()),
         [0b0111_0000, 0b0000_0000, 0b0000_0000]
     );
     let read = Reader::new(&[0b0111_0000, 0, 0])
-        .bit_string_extensible(16, 16)
+        .bit_string(16, 16, true)
         .unwrap();
     assert_eq!(read, sixteen);
     let eight = BitString::from([0xe0]);
     assert_eq!(
-        written(|w| w.bit_string_extensible(&eight, 16, 16).unwrap()),
+        written(|w| w.bit_string(&eight, 16, 16, true).unwrap()),
         [0x80, 0x08, 0xe0]
     );
     assert_eq!(
         Reader::new(&[0x80, 0x08, 0xe0])
-            .bit_string_extensible(16, 16)
+            .bit_string(16, 16, true)
             .unwrap(),
         eight
     );
@@ -672,43 +650,48 @@ fn a_bit_string_is_aligned_unless_it_has_one_size_of_sixteen_bits_at_most() {
     let mut long = vec![0xff; 2501];
     long[2500] = 0x80;
     let bits = BitString::new(long, 20001).unwrap();
-    let octets = written(|w| w.bit_string(&bits, 0, UNBOUNDED).unwrap());
+    let octets = written(|w| w.bit_string(&bits, 0, UNBOUNDED, false).unwrap());
     assert_eq!(octets.len(), 1 + 2048 + 2 + 453);
     assert_eq!(octets[0], 0xc1);
-    assert_eq!(Reader::new(&octets).bit_string(0, UNBOUNDED).unwrap(), bits);
+    assert_eq!(
+        Reader::new(&octets)
+            .bit_string(0, UNBOUNDED, false)
+            .unwrap(),
+        bits
+    );
 }
 
 #[test]
 fn a_character_string_is_its_characters_in_eight_bits() {
     // §30.5: a PrintableString of (SIZE (1..150, ...)), as the name of a node.
-    let octets = written(|w| w.printable_string_extensible("amf1", 1, 150).unwrap());
+    let octets = written(|w| w.printable_string("amf1", 1, 150, true).unwrap());
     assert_eq!(octets, [0b0000_0001, 0b1000_0000, b'a', b'm', b'f', b'1']);
-    let read = Reader::new(&octets)
-        .printable_string_extensible(1, 150)
-        .unwrap();
+    let read = Reader::new(&octets).printable_string(1, 150, true).unwrap();
     assert_eq!(read, "amf1");
     assert!(matches!(read, std::borrow::Cow::Borrowed(_)));
     // A character that the type has not.
     let mut unwritten = Vec::new();
     let error = Writer::new(&mut unwritten)
-        .printable_string_extensible("amf_1", 1, 150)
+        .printable_string("amf_1", 1, 150, true)
         .unwrap_err();
     assert_eq!(
         error.to_string(),
         "the value does not encode: '_' is no character of PrintableString"
     );
     let error = Reader::new(&[0x00, 0x00, b'_'])
-        .printable_string_extensible(1, 150)
+        .printable_string(1, 150, true)
         .unwrap_err();
     assert_eq!(
         error.to_string(),
         "the octets do not decode: a character string is no PrintableString"
     );
     // A VisibleString has it.
-    let octets = written(|w| w.visible_string("amf_1", 0, UNBOUNDED).unwrap());
+    let octets = written(|w| w.visible_string("amf_1", 0, UNBOUNDED, false).unwrap());
     assert_eq!(octets, [5, b'a', b'm', b'f', b'_', b'1']);
     assert_eq!(
-        Reader::new(&octets).visible_string(0, UNBOUNDED).unwrap(),
+        Reader::new(&octets)
+            .visible_string(0, UNBOUNDED, false)
+            .unwrap(),
         "amf_1"
     );
 
@@ -716,20 +699,20 @@ fn a_character_string_is_its_characters_in_eight_bits() {
     // varies up to two characters is octet-aligned.
     let octets = written(|w| {
         w.bit(true);
-        w.ia5_string("ab", 2, 2).unwrap();
+        w.visible_string("ab", 2, 2, false).unwrap();
     });
     assert_eq!(octets, [0b1011_0000, 0b1011_0001, 0b0000_0000]);
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.ia5_string(2, 2).unwrap(), "ab");
+    assert_eq!(reader.visible_string(2, 2, false).unwrap(), "ab");
     let octets = written(|w| {
         w.bit(true);
-        w.ia5_string("ab", 1, 2).unwrap();
+        w.visible_string("ab", 1, 2, false).unwrap();
     });
     assert_eq!(octets, [0b1100_0000, b'a', b'b']);
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.ia5_string(1, 2).unwrap(), "ab");
+    assert_eq!(reader.visible_string(1, 2, false).unwrap(), "ab");
 
     // §30.6: a UTF8String is its octets after their length, whatever its size
     // constraint.
@@ -903,7 +886,7 @@ fn a_reader_stops_at_the_end_of_the_octets() {
     );
     assert_eq!(
         Reader::new(&[0x12])
-            .unsigned(0, 65535)
+            .unsigned(0, 65535, false)
             .unwrap_err()
             .to_string(),
         ended
@@ -922,15 +905,15 @@ fn a_reader_stops_at_the_end_of_the_octets() {
     );
     assert!(Reader::new(&[1, 2]).octet_array::<3>().is_err());
     assert!(Reader::new(&[0xff]).bits_sized(10, 10).is_err());
-    assert!(Reader::new(&[0xff; 31]).bit_string(256, 256).is_err());
     assert!(
-        Reader::new(&[0x80, 0x10])
-            .bit_string_extensible(16, 16)
+        Reader::new(&[0xff; 31])
+            .bit_string(256, 256, false)
             .is_err()
     );
+    assert!(Reader::new(&[0x80, 0x10]).bit_string(16, 16, true).is_err());
     assert!(
         Reader::new(&[0x00, 0x80])
-            .printable_string_extensible(1, 150)
+            .printable_string(1, 150, true)
             .is_err()
     );
     assert!(Reader::new(&[5, 1]).utf8_string().is_err());
@@ -1018,32 +1001,32 @@ fn a_strict_writer_refuses_what_is_outside_the_root_of_an_extensible_constraint(
         error.reason()
     };
     assert_eq!(
-        refused(&|w| w.unsigned_extensible(256, 0, 255)),
+        refused(&|w| w.unsigned(256, 0, 255, true)),
         "256 is outside the root of its constraint (0..255, ...)"
     );
     assert_eq!(
-        refused(&|w| w.signed_extensible(-1, 0, 255)),
+        refused(&|w| w.signed(-1, 0, 255, true)),
         "-1 is outside the root of its constraint (0..255, ...)"
     );
     assert_eq!(
-        refused(&|w| w.octet_string_extensible(&[1, 2], 3, 3)),
+        refused(&|w| w.octet_string(&[1, 2], 3, 3, true)),
         "a size of 2 is outside the root of its constraint (3, ...)"
     );
     let eight = BitString::from_octets(vec![0xab]);
     assert_eq!(
-        refused(&|w| w.bit_string_extensible(&eight, 16, 32)),
+        refused(&|w| w.bit_string(&eight, 16, 32, true)),
         "a size of 8 is outside the root of its constraint (16..32, ...)"
     );
     assert_eq!(
-        refused(&|w| w.printable_string_extensible("", 1, 150)),
+        refused(&|w| w.printable_string("", 1, 150, true)),
         "a size of 0 is outside the root of its constraint (1..150, ...)"
     );
     assert_eq!(
-        refused(&|w| w.visible_string_extensible("", 1, 150)),
+        refused(&|w| w.visible_string("", 1, 150, true)),
         "a size of 0 is outside the root of its constraint (1..150, ...)"
     );
     assert_eq!(
-        refused(&|w| w.ia5_string_extensible("ab", 1, 1)),
+        refused(&|w| w.printable_string("ab", 1, 1, true)),
         "a size of 2 is outside the root of its constraint (1, ...)"
     );
 
@@ -1056,12 +1039,9 @@ fn a_strict_writer_refuses_what_is_outside_the_root_of_an_extensible_constraint(
         any
     };
     // The extension bit, then the one octet of a number of 256 values, aligned.
-    assert_eq!(both(&|w| w.unsigned_extensible(255, 0, 255)), [0x00, 0xff]);
-    assert_eq!(
-        both(&|w| w.octet_string_extensible(&[1, 2, 3], 3, 3)).len(),
-        4
-    );
-    assert!(!both(&|w| w.printable_string_extensible("amf", 1, 150)).is_empty());
+    assert_eq!(both(&|w| w.unsigned(255, 0, 255, true)), [0x00, 0xff]);
+    assert_eq!(both(&|w| w.octet_string(&[1, 2, 3], 3, 3, true)).len(), 4);
+    assert!(!both(&|w| w.printable_string("amf", 1, 150, true)).is_empty());
 }
 
 /// TS 38.413 clause 9.3.3.21: an AMF name is a PrintableString (SIZE (1..150, ...)).
@@ -1074,7 +1054,7 @@ fn encode_strict_refuses_a_value_that_is_none_of_this_version_of_its_type() {
     }
     impl Encode for Name {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.printable_string_extensible(self.0, 1, 150)
+            writer.printable_string(self.0, 1, 150, true)
         }
     }
     assert_eq!(encode(&Name("")).unwrap(), [0x80, 0x00]);
@@ -1122,10 +1102,12 @@ fn a_size_after_an_unconstrained_length_is_within_its_constraint() {
 #[test]
 fn a_number_of_a_range_with_a_negative_bound_is_its_offset_from_the_bound() {
     // -2..=3 has six values, in three bits: 0b111 is the offset 7, the number 5
-    let octets = written(|w| w.signed(-1, -2, 3).unwrap());
+    let octets = written(|w| w.signed(-1, -2, 3, false).unwrap());
     assert_eq!(octets, [0b0010_0000]);
-    assert_eq!(Reader::new(&octets).signed(-2, 3).unwrap(), -1);
-    let error = Reader::new(&[0b1110_0000]).signed(-2, 3).unwrap_err();
+    assert_eq!(Reader::new(&octets).signed(-2, 3, false).unwrap(), -1);
+    let error = Reader::new(&[0b1110_0000])
+        .signed(-2, 3, false)
+        .unwrap_err();
     assert!(
         error
             .to_string()
@@ -1134,14 +1116,14 @@ fn a_number_of_a_range_with_a_negative_bound_is_its_offset_from_the_bound() {
     );
 }
 
-/// An IA5String whose size constraint has an extension marker: a bit, then the string
+/// A VisibleString whose size constraint has an extension marker: a bit, then the string
 /// within the root, or a string of any size after its length.
 #[test]
-fn an_extensible_ia5_string_has_its_bit_and_its_string() {
+fn an_extensible_visible_string_has_its_bit_and_its_string() {
     for text in ["ab", "abcdef"] {
-        let octets = written(|w| w.ia5_string_extensible(text, 1, 4).unwrap());
+        let octets = written(|w| w.visible_string(text, 1, 4, true).unwrap());
         assert_eq!(
-            Reader::new(&octets).ia5_string_extensible(1, 4).unwrap(),
+            Reader::new(&octets).visible_string(1, 4, true).unwrap(),
             text
         );
         // The bit says whether the size is outside the root
@@ -1166,19 +1148,11 @@ fn a_writer_counts_its_octets() {
 }
 
 /// A constrained whole number with an extension marker within its root is its distance
-/// from the lower bound, in the bits of its range (§13.2.6 b)); a semi-constrained one is
-/// its distance from the lower bound in octets (§11.7).
+/// from the lower bound, in the bits of its range (§13.2.6 b)).
 #[test]
 fn a_whole_number_is_written_as_its_distance_from_its_lower_bound() {
     // The bit of the root, then 5 - 3 in the 3 bits of a range of 8
-    assert_eq!(
-        written(|w| w.unsigned_extensible(5, 3, 10).unwrap()),
-        [0x20]
-    );
-    assert_eq!(
-        written(|w| w.semi_constrained_unsigned(10, 3).unwrap()),
-        [0x01, 0x07]
-    );
+    assert_eq!(written(|w| w.unsigned(5, 3, 10, true).unwrap()), [0x20]);
 }
 
 /// A bit string of a size above 16 bits is octet-aligned, and the field after it starts in
@@ -1189,7 +1163,7 @@ fn the_field_after_an_aligned_bit_string_starts_in_its_last_octet() {
     octets.push(0xfc);
     let bits = BitString::new(octets, 70).unwrap();
     let written = written(|w| {
-        w.bit_string(&bits, 70, 70).unwrap();
+        w.bit_string(&bits, 70, 70, false).unwrap();
         w.bit(true);
     });
     let mut expected = vec![0xff; 8];
@@ -1198,7 +1172,7 @@ fn the_field_after_an_aligned_bit_string_starts_in_its_last_octet() {
     let short = BitString::new(vec![0xa0], 4).unwrap();
     let octets = self::written(|w| {
         w.bit(true);
-        w.bit_string(&short, 4, 4).unwrap();
+        w.bit_string(&short, 4, 4, false).unwrap();
     });
     assert_eq!(octets, [0b1101_0000]);
 }
@@ -1209,12 +1183,12 @@ fn the_field_after_an_aligned_bit_string_starts_in_its_last_octet() {
 fn a_string_of_one_size_above_two_characters_is_aligned() {
     let octets = written(|w| {
         w.bit(true);
-        w.ia5_string("abc", 3, 3).unwrap();
+        w.visible_string("abc", 3, 3, false).unwrap();
     });
     assert_eq!(octets, [0x80, b'a', b'b', b'c']);
     let mut reader = Reader::new(&octets);
     assert!(reader.bit().unwrap());
-    assert_eq!(reader.ia5_string(3, 3).unwrap(), "abc");
+    assert_eq!(reader.visible_string(3, 3, false).unwrap(), "abc");
 }
 
 /// A bit string whose padding bits are zero is read where it is, without a copy; one whose
@@ -1224,10 +1198,10 @@ fn a_bit_string_is_read_in_place_when_its_padding_is_zero() {
     // 70 bits, the last one set, then two bits of padding
     let mut octets = vec![0xff; 8];
     octets.push(0b0000_0100);
-    let bits = Reader::new(&octets).bit_string(70, 70).unwrap();
+    let bits = Reader::new(&octets).bit_string(70, 70, false).unwrap();
     assert_eq!(bits.as_octets().as_ptr(), octets.as_ptr());
     octets[8] = 0b0000_0111;
-    let bits = Reader::new(&octets).bit_string(70, 70).unwrap();
+    let bits = Reader::new(&octets).bit_string(70, 70, false).unwrap();
     assert_ne!(bits.as_octets().as_ptr(), octets.as_ptr());
     assert_eq!(bits.as_octets()[8], 0b0000_0100);
 }
@@ -1238,13 +1212,13 @@ fn a_bit_string_is_read_in_place_when_its_padding_is_zero() {
 #[test]
 fn a_number_with_a_length_has_no_octet_of_zeros_before_it() {
     for value in [0, 5, 0x105] {
-        let octets = written(|w| w.unsigned(value, 0, 1 << 20).unwrap());
+        let octets = written(|w| w.unsigned(value, 0, 1 << 20, false).unwrap());
         let mut reader = Reader::noting(&octets);
-        assert_eq!(reader.unsigned(0, 1 << 20).unwrap(), value);
+        assert_eq!(reader.unsigned(0, 1 << 20, false).unwrap(), value);
         assert!(reader.faults().is_empty(), "{value}: {:?}", reader.faults());
     }
     let mut reader = Reader::noting(&[0x40, 0x00, 0x05]);
-    assert_eq!(reader.unsigned(0, 1 << 20).unwrap(), 5);
+    assert_eq!(reader.unsigned(0, 1 << 20, false).unwrap(), 5);
     assert_eq!(reader.faults()[0].fault, oxirush_aper::Fault::LongNumber);
 }
 
@@ -1268,9 +1242,9 @@ fn an_extension_of_nothing_is_refused() {
          extension addition"
     );
     // The extension bit, then the index 1 of the additions, of which the CHOICE has one
-    let error = Reader::new(&[0x81]).choice(2, 1, true).unwrap_err();
+    let error = Reader::new(&[0x81]).index(2, 1, true).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
-    assert_eq!(Reader::new(&[0x80]).choice(2, 1, true).unwrap(), 2);
+    assert_eq!(Reader::new(&[0x80]).index(2, 1, true).unwrap(), 2);
 }
 
 /// An OCTET STRING of no octet takes no bit, and no padding.
@@ -1278,7 +1252,7 @@ fn an_extension_of_nothing_is_refused() {
 fn an_octet_string_of_no_octet_takes_no_padding() {
     let mut reader = Reader::new(&[0b1100_0000]);
     assert!(reader.bit().unwrap());
-    assert!(reader.octet_string(0, 0).unwrap().is_empty());
+    assert!(reader.octet_string(0, 0, false).unwrap().is_empty());
     assert!(reader.bit().unwrap());
 }
 

@@ -144,7 +144,7 @@ fn main() {
                 writer.bit(false);
                 writer.size(typed.len(), 0, 65535).unwrap();
                 for (id, criticality, value) in &typed {
-                    writer.unsigned(id.0.into(), 0, 65535).unwrap();
+                    writer.unsigned(id.0.into(), 0, 65535, false).unwrap();
                     writer.index(*criticality as u64, 3, false);
                     let start = writer.begin_open_type();
                     value.write(&mut writer).unwrap();

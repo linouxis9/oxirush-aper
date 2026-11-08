@@ -25,24 +25,24 @@
 //!     let mut octets = Vec::new();
 //!     let mut writer = Writer::new(&mut octets);
 //!     // INTEGER (0..7): three bits
-//!     writer.unsigned(5, 0, 7)?;
+//!     writer.unsigned(5, 0, 7, false)?;
 //!     // INTEGER (0..255, ...): the extension bit, then one octet, aligned
-//!     writer.unsigned_extensible(200, 0, 255)?;
+//!     writer.unsigned(200, 0, 255, true)?;
 //!     // ENUMERATED with 6 root values and an extension marker: the fourth
 //!     writer.index(3, 6, true);
 //!     // SIZE (1..256) of a SEQUENCE OF: its count, then its items
 //!     writer.size(2, 1, 256)?;
-//!     writer.unsigned(1, 0, 1)?;
-//!     writer.unsigned(0, 0, 1)?;
+//!     writer.unsigned(1, 0, 1, false)?;
+//!     writer.unsigned(0, 0, 1, false)?;
 //!     println!("{octets:02x?}");
 //!
 //!     let mut reader = Reader::new(&octets);
-//!     println!("{}", reader.unsigned(0, 7)?);
-//!     println!("{}", reader.unsigned_extensible(0, 255)?);
-//!     println!("{}", reader.enumerated(6, 0, true)?);
+//!     println!("{}", reader.unsigned(0, 7, false)?);
+//!     println!("{}", reader.unsigned(0, 255, true)?);
+//!     println!("{}", reader.index(6, 0, true)?);
 //!     println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
 //!
-//!     println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7).unwrap_err());
+//!     println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err());
 //!     Ok(())
 //! }
 //! ```
@@ -148,9 +148,9 @@ pub use writer::Writer;
 ///
 /// // OCTET STRING (SIZE (1..MAX)): the length of the octets, then the octets
 /// let mut octets = Vec::new();
-/// Writer::new(&mut octets).octet_string(&[0xca, 0xfe], 1, UNBOUNDED)?;
+/// Writer::new(&mut octets).octet_string(&[0xca, 0xfe], 1, UNBOUNDED, false)?;
 /// assert_eq!(octets, [0x02, 0xca, 0xfe]);
-/// assert_eq!(Reader::new(&octets).octet_string(1, UNBOUNDED)?, [0xca, 0xfe]);
+/// assert_eq!(Reader::new(&octets).octet_string(1, UNBOUNDED, false)?, [0xca, 0xfe]);
 /// # Ok::<(), oxirush_aper::Error>(())
 /// ```
 pub const UNBOUNDED: usize = usize::MAX;
@@ -180,13 +180,13 @@ pub trait AsnType {
 ///
 /// impl Decode<'_> for AmfUeNgapId {
 ///     fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
-///         Ok(Self(reader.unsigned(0, 1_099_511_627_775)?))
+///         Ok(Self(reader.unsigned(0, 1_099_511_627_775, false)?))
 ///     }
 /// }
 ///
 /// impl Encode for AmfUeNgapId {
 ///     fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-///         writer.unsigned(self.0, 0, 1_099_511_627_775)
+///         writer.unsigned(self.0, 0, 1_099_511_627_775, false)
 ///     }
 /// }
 ///

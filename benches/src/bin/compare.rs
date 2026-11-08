@@ -86,8 +86,8 @@ mod ours {
             let count = reader.size(1, 65535)?;
             let mut list = reader.list(count);
             for _ in 0..count {
-                let id = reader.unsigned(0, 65535)? as u16;
-                let criticality = reader.enumerated(3, 0, false)?;
+                let id = reader.unsigned(0, 65535, false)? as u16;
+                let criticality = reader.index(3, 0, false)?;
                 let value = reader.open_type()?;
                 list.push(Field {
                     id,
@@ -103,7 +103,7 @@ mod ours {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.size(self.0.len(), 1, 65535)?;
             for field in &self.0 {
-                writer.unsigned(field.id.into(), 0, 65535)?;
+                writer.unsigned(field.id.into(), 0, 65535, false)?;
                 writer.index(field.criticality, 3, false);
                 writer.open_type(&field.value);
             }
@@ -121,13 +121,13 @@ mod ours {
 
     impl<'a> Decode<'a> for AmfUeNgapId {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self(reader.unsigned(0, 1099511627775)?))
+            Ok(Self(reader.unsigned(0, 1099511627775, false)?))
         }
     }
 
     impl Encode for AmfUeNgapId {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.unsigned(self.0, 0, 1099511627775)
+            writer.unsigned(self.0, 0, 1099511627775, false)
         }
     }
 
@@ -141,13 +141,13 @@ mod ours {
 
     impl<'a> Decode<'a> for NasPdu<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self(reader.octet_string(0, UNBOUNDED)?))
+            Ok(Self(reader.octet_string(0, UNBOUNDED, false)?))
         }
     }
 
     impl Encode for NasPdu<'_> {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.octet_string(&self.0, 0, UNBOUNDED)
+            writer.octet_string(&self.0, 0, UNBOUNDED, false)
         }
     }
 
@@ -161,13 +161,13 @@ mod ours {
 
     impl<'a> Decode<'a> for AmfName<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self(reader.printable_string_extensible(1, 150)?))
+            Ok(Self(reader.printable_string(1, 150, true)?))
         }
     }
 
     impl Encode for AmfName<'_> {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
-            writer.printable_string_extensible(&self.0, 1, 150)
+            writer.printable_string(&self.0, 1, 150, true)
         }
     }
 

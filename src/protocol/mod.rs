@@ -110,7 +110,7 @@ impl AsnType for Criticality {
 impl<'a> Decode<'a> for Criticality {
     #[inline]
     fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-        Ok(Self::ALL[reader.enumerated(3, 0, false)? as usize])
+        Ok(Self::ALL[reader.index(3, 0, false)? as usize])
     }
 }
 
@@ -182,7 +182,7 @@ impl AsnType for Presence {
 impl<'a> Decode<'a> for Presence {
     #[inline]
     fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-        Ok(Self::ALL[reader.enumerated(3, 0, false)? as usize])
+        Ok(Self::ALL[reader.index(3, 0, false)? as usize])
     }
 }
 

@@ -604,12 +604,11 @@ fn kind(ty: &Type, attributes: &Attributes) -> Result<Kind> {
             no_value()?;
             bit_string(sized(size)?)
         }
-        "PrintableString" | "VisibleString" | "Ia5String" | "Utf8String" => {
+        "PrintableString" | "VisibleString" | "Utf8String" => {
             no_value()?;
             let of = match written.as_str() {
                 "PrintableString" => "printable_string",
                 "VisibleString" => "visible_string",
-                "Ia5String" => "ia5_string",
                 _ => "utf8_string",
             };
             Kind::Text {
@@ -1600,7 +1599,7 @@ impl Bindings {
         )?;
         writeln!(
             out,
-            "Ok(match reader.choice({root}, {additions}, {extensible})? {{"
+            "Ok(match reader.index({root}, {additions}, {extensible})? {{"
         )?;
         for (index, member) in members.iter().enumerate() {
             // The last alternative is the one of every other index, which the reader
@@ -1753,7 +1752,7 @@ impl Bindings {
         )?;
         writeln!(
             out,
-            "Ok(Self::VALUES[reader.enumerated({root}, {additions}, {extensible})? as usize])"
+            "Ok(Self::VALUES[reader.index({root}, {additions}, {extensible})? as usize])"
         )?;
         writeln!(out, "}} }}")?;
         writeln!(out, "impl Encode for {name} {{")?;
@@ -1974,7 +1973,6 @@ impl Bindings {
                 let characters = match *of {
                     "printable_string" => "Printable",
                     "visible_string" => "Visible",
-                    "ia5_string" => "Ia5",
                     _ => "Utf8",
                 };
                 format!("json::read_text(reading, value, json::Characters::{characters})")
@@ -1999,51 +1997,37 @@ impl Bindings {
             Kind::Boolean => unwrap("reader.bit()"),
             Kind::Null => "()".into(),
             Kind::Integer { native, range } => {
-                let read = match (range.lower, range.upper, range.extensible) {
-                    (Some(lower), Some(upper), false) if lower < 0 => {
-                        format!("reader.signed({lower}, {upper})")
-                    }
-                    (Some(lower), Some(upper), false) => {
-                        format!("reader.unsigned({lower}, {upper})")
-                    }
-                    (Some(lower), Some(upper), true) if lower < 0 => {
-                        format!("reader.signed_extensible({lower}, {upper})")
-                    }
-                    (Some(lower), Some(upper), true) => {
-                        format!("reader.unsigned_extensible({lower}, {upper})")
-                    }
-                    (Some(lower), None, _) if lower < 0 => {
-                        format!("reader.semi_constrained({lower})")
-                    }
-                    (Some(lower), None, _) => format!("reader.semi_constrained_unsigned({lower})"),
-                    _ => "reader.unconstrained()".into(),
+                let (Some(lower), Some(upper)) = (range.lower, range.upper) else {
+                    bail!("an INTEGER without an upper bound, which oxirush-aper does not read");
                 };
+                let form = if lower < 0 { "signed" } else { "unsigned" };
+                let read = format!("reader.{form}({lower}, {upper}, {})", range.extensible);
                 match *native {
                     "u64" | "i64" => unwrap(&read),
                     native => format!("{} as {native}", unwrap(&read)),
                 }
             }
             Kind::OctetArray(size) => unwrap(&format!("reader.octet_array::<{size}>()")),
-            Kind::Octets(range) => match range.extensible {
-                true => unwrap(&format!(
-                    "reader.octet_string_extensible({})",
-                    bounds(range)
-                )),
-                false => unwrap(&format!("reader.octet_string({})", bounds(range))),
-            },
+            Kind::Octets(range) => unwrap(&format!(
+                "reader.octet_string({}, {})",
+                bounds(range),
+                range.extensible
+            )),
             Kind::Bits(range) => unwrap(&format!("reader.bits_sized({})", bounds(range))),
-            Kind::BitString(range) => match range.extensible {
-                true => unwrap(&format!("reader.bit_string_extensible({})", bounds(range))),
-                false => unwrap(&format!("reader.bit_string({})", bounds(range))),
-            },
+            Kind::BitString(range) => unwrap(&format!(
+                "reader.bit_string({}, {})",
+                bounds(range),
+                range.extensible
+            )),
             // A size constraint on a UTF8String is not PER-visible (X.691 §10.3.7).
             Kind::Text {
                 of: "utf8_string", ..
             } => unwrap("reader.utf8_string()"),
-            Kind::Text { of, range } => match range.extensible {
-                true => unwrap(&format!("reader.{of}_extensible({})", bounds(range))),
-                false => unwrap(&format!("reader.{of}({})", bounds(range))),
-            },
+            Kind::Text { of, range } => unwrap(&format!(
+                "reader.{of}({}, {})",
+                bounds(range),
+                range.extensible
+            )),
             Kind::ObjectIdentifier => unwrap("reader.object_identifier()"),
             Kind::Open => unwrap("reader.open_type()"),
             Kind::Named(name) => unwrap(&format!("{name}::decode(reader)")),
@@ -2117,70 +2101,41 @@ impl Bindings {
                     native if native.starts_with('u') => format!("u64::from({copied})"),
                     _ => format!("i64::from({copied})"),
                 };
-                match (range.lower, range.upper, range.extensible) {
-                    (Some(lower), Some(upper), false) if lower < 0 => {
-                        writeln!(out, "writer.signed({wide}, {lower}, {upper}){tail};")?
-                    }
-                    (Some(lower), Some(upper), false) => {
-                        writeln!(out, "writer.unsigned({wide}, {lower}, {upper}){tail};")?
-                    }
-                    (Some(lower), Some(upper), true) if lower < 0 => writeln!(
-                        out,
-                        "writer.signed_extensible({wide}, {lower}, {upper}){tail};"
-                    )?,
-                    (Some(lower), Some(upper), true) => writeln!(
-                        out,
-                        "writer.unsigned_extensible({wide}, {lower}, {upper}){tail};"
-                    )?,
-                    (Some(lower), None, _) if lower < 0 => {
-                        writeln!(out, "writer.semi_constrained({wide}, {lower}){tail};")?
-                    }
-                    (Some(lower), None, _) => writeln!(
-                        out,
-                        "writer.semi_constrained_unsigned({wide}, {lower}){tail};"
-                    )?,
-                    _ => writeln!(out, "writer.unconstrained({wide});")?,
-                }
+                let (Some(lower), Some(upper)) = (range.lower, range.upper) else {
+                    bail!("an INTEGER without an upper bound, which oxirush-aper does not write");
+                };
+                let form = if lower < 0 { "signed" } else { "unsigned" };
+                let extensible = range.extensible;
+                writeln!(
+                    out,
+                    "writer.{form}({wide}, {lower}, {upper}, {extensible}){tail};"
+                )?
             }
             Kind::OctetArray(_) => writeln!(out, "writer.octet_array({referred});")?,
-            Kind::Octets(range) => match range.extensible {
-                true => writeln!(
-                    out,
-                    "writer.octet_string_extensible({referred}, {}){tail};",
-                    bounds(range)
-                )?,
-                false => writeln!(
-                    out,
-                    "writer.octet_string({referred}, {}){tail};",
-                    bounds(range)
-                )?,
-            },
+            Kind::Octets(range) => writeln!(
+                out,
+                "writer.octet_string({referred}, {}, {}){tail};",
+                bounds(range),
+                range.extensible
+            )?,
             Kind::Bits(range) => {
                 writeln!(out, "writer.bits_sized({copied}, {}){tail};", bounds(range))?
             }
-            Kind::BitString(range) => match range.extensible {
-                true => writeln!(
-                    out,
-                    "writer.bit_string_extensible({referred}, {}){tail};",
-                    bounds(range)
-                )?,
-                false => writeln!(
-                    out,
-                    "writer.bit_string({referred}, {}){tail};",
-                    bounds(range)
-                )?,
-            },
+            Kind::BitString(range) => writeln!(
+                out,
+                "writer.bit_string({referred}, {}, {}){tail};",
+                bounds(range),
+                range.extensible
+            )?,
             Kind::Text {
                 of: "utf8_string", ..
             } => writeln!(out, "writer.utf8_string({referred});")?,
-            Kind::Text { of, range } => match range.extensible {
-                true => writeln!(
-                    out,
-                    "writer.{of}_extensible({referred}, {}){tail};",
-                    bounds(range)
-                )?,
-                false => writeln!(out, "writer.{of}({referred}, {}){tail};", bounds(range))?,
-            },
+            Kind::Text { of, range } => writeln!(
+                out,
+                "writer.{of}({referred}, {}, {}){tail};",
+                bounds(range),
+                range.extensible
+            )?,
             Kind::ObjectIdentifier => writeln!(out, "writer.object_identifier({referred});")?,
             Kind::Open => writeln!(out, "writer.open_type({referred});")?,
             Kind::Named(_) => writeln!(out, "{value}.encode(writer){tail};")?,
@@ -2420,38 +2375,6 @@ mod tests {
         }
     }
 
-    /// An IA5String is read, written, shown and described as one.
-    #[test]
-    fn an_ia5_string_is_one() {
-        let text = text("Name ::= IA5String (SIZE (1..150))");
-        for expected in [
-            "/// `Name ::= IA5String (SIZE (1..150))`.",
-            "pub struct Name<'a>(pub Cow<'a, str>);",
-            "reader.ia5_string(1, 150)",
-            "writer.ia5_string(&self.0, 1, 150)",
-            "json::read_text(reading, value, json::Characters::Ia5)",
-        ] {
-            assert!(text.contains(expected), "{expected} in {text}");
-        }
-    }
-
-    /// An INTEGER with a lower bound alone is read and written as a semi-constrained
-    /// number, signed where that bound is negative.
-    #[test]
-    fn an_integer_with_a_lower_bound_alone_is_semi_constrained() {
-        let text = text("Offset ::= INTEGER (-5..MAX)\nCount ::= INTEGER (0..MAX)");
-        for expected in [
-            "pub struct Offset(pub i64);",
-            "reader.semi_constrained(-5)",
-            "writer.semi_constrained(self.0, -5)",
-            "pub struct Count(pub u64);",
-            "reader.semi_constrained_unsigned(0)",
-            "writer.semi_constrained_unsigned(self.0, 0)",
-        ] {
-            assert!(text.contains(expected), "{expected} in {text}");
-        }
-    }
-
     /// An OCTET STRING of one size is an array, but for a size that PER writes with a
     /// length: 64K and more.
     #[test]
@@ -2462,7 +2385,7 @@ mod tests {
         );
         for expected in [
             "pub big: Octets<'a>,",
-            "reader.octet_string(65536, 65536)",
+            "reader.octet_string(65536, 65536, false)",
             "pub edge: [u8; 65535],",
             "reader.octet_array::<65535>()",
         ] {
@@ -2546,7 +2469,7 @@ mod tests {
         let derive = "#[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]";
         let items = format!(
             "{derive} #[rasn(automatic_tags)] \
-             pub struct Listed {{ #[rasn(size(\"1..=4\"))] pub counts: SequenceOf<u8> }} \
+             pub struct Listed {{ #[rasn(size(\"1..=4\"))] pub flags: SequenceOf<bool> }} \
              {derive} #[rasn(choice, automatic_tags)] #[non_exhaustive] \
              pub enum Apart {{ listed(Listed) }}"
         );

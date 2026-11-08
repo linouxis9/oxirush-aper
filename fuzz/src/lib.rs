@@ -36,25 +36,18 @@ enum Field {
     Bit(bool),
     Bits(u64, usize),
     Align,
-    Unsigned(u64, u64, u64),
-    Signed(i64, i64, i64),
-    UnsignedExtensible(u64, u64, u64),
-    SignedExtensible(i64, i64, i64),
-    Unconstrained(i64),
-    SemiConstrained(i64, i64),
-    SemiConstrainedUnsigned(u64, u64),
+    Unsigned(u64, u64, u64, bool),
+    Signed(i64, i64, i64, bool),
     Small(u64),
     Size(usize, usize, usize),
     Index(u64, u64, u64, bool),
     Array3([u8; 3]),
     Array2([u8; 2]),
-    Octets(Vec<u8>, usize, usize),
-    OctetsExtensible(Vec<u8>, usize, usize),
+    Octets(Vec<u8>, usize, usize, bool),
     Open(Vec<u8>),
     BitsSized(Bits, usize, usize),
-    BitString(BitString<'static>, usize, usize),
-    BitStringExtensible(BitString<'static>, usize, usize),
-    Text(u8, bool, String, usize, usize),
+    BitString(BitString<'static>, usize, usize, bool),
+    Text(bool, bool, String, usize, usize),
     Utf8(String),
     Object(ObjectIdentifier),
 }
@@ -103,12 +96,13 @@ fn size_bounds(a: u8, b: u8) -> (usize, usize) {
 }
 
 /// The field that the octets `[code, a, b]` choose, read at the reader; `None` for
-/// what is not read.
+/// what is not read. The high bit of `a` chooses an extensible constraint.
 fn read(reader: &mut Reader<'_>, [code, a, b]: [u8; 3]) -> Option<Field> {
     let (lower, upper) = unsigned_bounds(a, b);
     let (low, high) = signed_bounds(a, b);
     let (least, most) = size_bounds(a, b);
-    Some(match code % 30 {
+    let extensible = a & 0x80 != 0;
+    Some(match code % 20 {
         0 => Field::Bit(reader.bit().ok()?),
         1 => {
             let count = usize::from(a) % 65;
@@ -118,80 +112,59 @@ fn read(reader: &mut Reader<'_>, [code, a, b]: [u8; 3]) -> Option<Field> {
             reader.align();
             Field::Align
         }
-        3 => Field::Unsigned(reader.unsigned(lower, upper).ok()?, lower, upper),
-        4 => Field::Signed(reader.signed(low, high).ok()?, low, high),
-        5 => {
-            let value = reader.unsigned_extensible(lower, upper).ok()?;
-            Field::UnsignedExtensible(value, lower, upper)
+        3 => {
+            let value = reader.unsigned(lower, upper, extensible).ok()?;
+            Field::Unsigned(value, lower, upper, extensible)
         }
-        6 => {
-            let value = reader.signed_extensible(low, high).ok()?;
-            Field::SignedExtensible(value, low, high)
-        }
-        7 => Field::Unconstrained(reader.unconstrained().ok()?),
-        8 => Field::SemiConstrained(reader.semi_constrained(low).ok()?, low),
-        9 => {
-            let value = reader.semi_constrained_unsigned(lower).ok()?;
-            Field::SemiConstrainedUnsigned(value, lower)
-        }
-        10 => Field::Small(reader.small().ok()?),
-        11 => Field::Size(reader.size(least, most).ok()?, least, most),
-        12 | 13 => {
+        4 => Field::Signed(
+            reader.signed(low, high, extensible).ok()?,
+            low,
+            high,
+            extensible,
+        ),
+        5 => Field::Small(reader.small().ok()?),
+        6 => Field::Size(reader.size(least, most).ok()?, least, most),
+        7 => {
             let root = u64::from(a) % 70 + 1;
             let additions = u64::from(b) % 70;
             let extensible = additions > 0;
-            let index = match code % 30 {
-                12 => reader.enumerated(root, additions, extensible),
-                _ => reader.choice(root, additions, extensible),
-            };
-            Field::Index(index.ok()?, root, additions, extensible)
+            let index = reader.index(root, additions, extensible).ok()?;
+            Field::Index(index, root, additions, extensible)
         }
-        14 => Field::Array3(reader.octet_array().ok()?),
-        15 => Field::Array2(reader.octet_array().ok()?),
-        16 => {
-            let octets = reader.octet_string(least, most).ok()?;
-            Field::Octets(octets.into_vec(), least, most)
+        8 => Field::Array3(reader.octet_array().ok()?),
+        9 => Field::Array2(reader.octet_array().ok()?),
+        10 => {
+            let octets = reader.octet_string(least, most, extensible).ok()?;
+            Field::Octets(octets.into_vec(), least, most, extensible)
         }
-        17 => {
-            let octets = reader.octet_string(0, UNBOUNDED).ok()?;
-            Field::Octets(octets.into_vec(), 0, UNBOUNDED)
+        11 => {
+            let octets = reader.octet_string(0, UNBOUNDED, false).ok()?;
+            Field::Octets(octets.into_vec(), 0, UNBOUNDED, false)
         }
-        18 => {
-            let octets = reader.octet_string_extensible(least, most).ok()?;
-            Field::OctetsExtensible(octets.into_vec(), least, most)
-        }
-        19 => Field::Open(reader.open_type().ok()?.into_vec()),
-        20 => {
+        12 => Field::Open(reader.open_type().ok()?.into_vec()),
+        13 => {
             let most = most.min(64);
             let least = least.min(most);
             Field::BitsSized(reader.bits_sized(least, most).ok()?, least, most)
         }
-        21 => {
-            let bits = reader.bit_string(least, most).ok()?;
-            Field::BitString(bits.into_owned(), least, most)
+        14 => {
+            let bits = reader.bit_string(least, most, extensible).ok()?;
+            Field::BitString(bits.into_owned(), least, most, extensible)
         }
-        22 => {
-            let bits = reader.bit_string(0, UNBOUNDED).ok()?;
-            Field::BitString(bits.into_owned(), 0, UNBOUNDED)
+        15 => {
+            let bits = reader.bit_string(0, UNBOUNDED, false).ok()?;
+            Field::BitString(bits.into_owned(), 0, UNBOUNDED, false)
         }
-        23 => {
-            let bits = reader.bit_string_extensible(least, most).ok()?;
-            Field::BitStringExtensible(bits.into_owned(), least, most)
-        }
-        24..=26 => {
-            let (alphabet, extensible) = (code % 30 - 24, a & 0x80 != 0);
-            let text = match (alphabet, extensible) {
-                (0, false) => reader.printable_string(least, most),
-                (0, true) => reader.printable_string_extensible(least, most),
-                (1, false) => reader.visible_string(least, most),
-                (1, true) => reader.visible_string_extensible(least, most),
-                (_, false) => reader.ia5_string(least, most),
-                (_, true) => reader.ia5_string_extensible(least, most),
+        16 => {
+            let visible = b & 0x80 != 0;
+            let text = match visible {
+                false => reader.printable_string(least, most, extensible),
+                true => reader.visible_string(least, most, extensible),
             };
-            Field::Text(alphabet, extensible, text.ok()?.into_owned(), least, most)
+            Field::Text(visible, extensible, text.ok()?.into_owned(), least, most)
         }
-        27 => Field::Utf8(reader.utf8_string().ok()?.into_owned()),
-        28 => Field::Object(reader.object_identifier().ok()?),
+        17 => Field::Utf8(reader.utf8_string().ok()?.into_owned()),
+        18 => Field::Object(reader.object_identifier().ok()?),
         _ => {
             // The additions of a SEQUENCE are skipped, and nothing is written back
             // of what was not read.
@@ -208,49 +181,30 @@ fn write(writer: &mut Writer<'_>, field: &Field) {
         Field::Bit(bit) => writer.bit(*bit),
         Field::Bits(value, count) => writer.bits(*value, *count),
         Field::Align => writer.align(),
-        Field::Unsigned(value, lower, upper) => writer.unsigned(*value, *lower, *upper).unwrap(),
-        Field::Signed(value, lower, upper) => writer.signed(*value, *lower, *upper).unwrap(),
-        Field::UnsignedExtensible(value, lower, upper) => {
-            writer.unsigned_extensible(*value, *lower, *upper).unwrap()
-        }
-        Field::SignedExtensible(value, lower, upper) => {
-            writer.signed_extensible(*value, *lower, *upper).unwrap()
-        }
-        Field::Unconstrained(value) => writer.unconstrained(*value),
-        Field::SemiConstrained(value, lower) => writer.semi_constrained(*value, *lower).unwrap(),
-        Field::SemiConstrainedUnsigned(value, lower) => {
-            writer.semi_constrained_unsigned(*value, *lower).unwrap()
+        Field::Unsigned(value, lower, upper, extensible) => writer
+            .unsigned(*value, *lower, *upper, *extensible)
+            .unwrap(),
+        Field::Signed(value, lower, upper, extensible) => {
+            writer.signed(*value, *lower, *upper, *extensible).unwrap()
         }
         Field::Small(value) => writer.small(*value),
         Field::Size(size, lower, upper) => writer.size(*size, *lower, *upper).unwrap(),
         Field::Index(index, root, _, extensible) => writer.index(*index, *root, *extensible),
         Field::Array3(octets) => writer.octet_array(octets),
         Field::Array2(octets) => writer.octet_array(octets),
-        Field::Octets(octets, lower, upper) => writer.octet_string(octets, *lower, *upper).unwrap(),
-        Field::OctetsExtensible(octets, lower, upper) => writer
-            .octet_string_extensible(octets, *lower, *upper)
+        Field::Octets(octets, lower, upper, extensible) => writer
+            .octet_string(octets, *lower, *upper, *extensible)
             .unwrap(),
         Field::Open(octets) => writer.open_type(octets),
         Field::BitsSized(bits, lower, upper) => writer.bits_sized(*bits, *lower, *upper).unwrap(),
-        Field::BitString(bits, lower, upper) => writer.bit_string(bits, *lower, *upper).unwrap(),
-        Field::BitStringExtensible(bits, lower, upper) => {
-            writer.bit_string_extensible(bits, *lower, *upper).unwrap()
+        Field::BitString(bits, lower, upper, extensible) => writer
+            .bit_string(bits, *lower, *upper, *extensible)
+            .unwrap(),
+        Field::Text(visible, extensible, text, lower, upper) => match visible {
+            false => writer.printable_string(text, *lower, *upper, *extensible),
+            true => writer.visible_string(text, *lower, *upper, *extensible),
         }
-        Field::Text(alphabet, extensible, text, lower, upper) => {
-            let (lower, upper) = (*lower, *upper);
-            match (alphabet, extensible) {
-                (0, false) => writer.printable_string(text, lower, upper).unwrap(),
-                (0, true) => writer
-                    .printable_string_extensible(text, lower, upper)
-                    .unwrap(),
-                (1, false) => writer.visible_string(text, lower, upper).unwrap(),
-                (1, true) => writer
-                    .visible_string_extensible(text, lower, upper)
-                    .unwrap(),
-                (_, false) => writer.ia5_string(text, lower, upper).unwrap(),
-                (_, true) => writer.ia5_string_extensible(text, lower, upper).unwrap(),
-            }
-        }
+        .unwrap(),
         Field::Utf8(text) => writer.utf8_string(text),
         Field::Object(identifier) => writer.object_identifier(identifier),
     }

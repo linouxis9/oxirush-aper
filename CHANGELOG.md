@@ -29,6 +29,12 @@ All notable changes to `oxirush-aper` are recorded here.
 - A field of the macro that extracts IEs takes the one value that the type of an
   IE is a name for by `From`, which the bindings implement, as
   `From<AMFUENGAPID> for u64`.
+- `Reader` and `Writer` have one method per form, with `extensible: bool`
+  last: `unsigned(lower, upper, extensible)`, `signed`, `octet_string`,
+  `bit_string`, `printable_string` and `visible_string`.
+  `Reader::index(root, additions, extensible)` reads the index of an
+  `ENUMERATED` and of a `CHOICE`, as `Writer::index` writes it, and its error
+  says that the type has no such index.
 - oxirush-utils 0.2.0, whose trees read a member of a `SEQUENCE` by its name.
 - The generator writes the codec of each member of a `SEQUENCE` in one line:
   the bindings of NGAP are 4794 lines shorter, those of S1AP 2106.
@@ -46,6 +52,11 @@ All notable changes to `oxirush-aper` are recorded here.
 - The macros `__with_ie_mut!` and `__build_ie!` (`with_ngap_ie_mut!` and
   `build_ngap_ie!` of the protocol crates), the module `messages` of a
   registry, `protocol::__Field`, and `Protocol::__procedure_criticality`.
+- The `_extensible` twin of each form of `Reader` and `Writer`,
+  `Reader::enumerated` and `Reader::choice`, and the forms that no binding
+  takes: `unconstrained`, `semi_constrained`, `semi_constrained_unsigned` and
+  `ia5_string`. The generator refuses an `INTEGER` without an upper bound and
+  an `IA5String`, as it refuses the other types that it does not write.
 
 ### Migration from 0.1
 
@@ -68,6 +79,9 @@ All notable changes to `oxirush-aper` are recorded here.
 | `inspect::message_names()` | `Ngap::object_sets()` |
 | `inspect::message_name(&pdu)` | `Ngap::object_set(pdu.direction(), pdu.procedure_code())?.name` |
 | `inspect::ie_names()`, `inspect::item_criticality(id)` | `Ngap::ie_names()`, `Ngap::item_criticality(id)` (a `Criticality`) |
+| `reader.unsigned(0, 255)`, `writer.unsigned(v, 0, 255)` | `reader.unsigned(0, 255, false)`, `writer.unsigned(v, 0, 255, false)` |
+| `reader.unsigned_extensible(0, 255)` (and of each form) | `reader.unsigned(0, 255, true)` |
+| `reader.enumerated(root, additions, ext)`, `reader.choice(...)` | `reader.index(root, additions, ext)` |
 
 ### Added
 

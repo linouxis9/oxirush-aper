@@ -469,8 +469,6 @@ pub enum Characters {
     Printable,
     /// A VisibleString.
     Visible,
-    /// An IA5String.
-    Ia5,
 }
 
 /// A character string of the characters `of`.
@@ -489,7 +487,6 @@ pub fn read_text(
         Characters::Utf8 => return Ok(text),
         Characters::Printable => (Alphabet::Printable, "a PrintableString"),
         Characters::Visible => (Alphabet::Visible, "a VisibleString"),
-        Characters::Ia5 => (Alphabet::Ia5, "an IA5String"),
     };
     if text.bytes().all(|code| alphabet.has(code)) {
         return Ok(text);

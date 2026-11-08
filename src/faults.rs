@@ -31,7 +31,7 @@ use core::fmt;
 ///
 /// // An OCTET STRING of one octet, whose length is in two octets
 /// let mut reader = Reader::noting(&[0x80, 0x01, 0xaa]);
-/// reader.octet_string(0, oxirush_aper::UNBOUNDED)?;
+/// reader.octet_string(0, oxirush_aper::UNBOUNDED, false)?;
 /// let noted = reader.faults()[0];
 /// assert_eq!(noted.fault, Fault::LengthInTwoOctets);
 /// assert_eq!(noted.fault.clause(), "11.9.3.6");

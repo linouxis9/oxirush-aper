@@ -20,6 +20,35 @@ fn octets(hexadecimal: &str) -> Vec<u8> {
         .collect()
 }
 
+/// An unconstrained whole number (X.691 §11.8), which the crate writes only after the
+/// extension bit of an INTEGER: the number of its octets, aligned, then its octets in
+/// two's complement, as few as hold it.
+fn write_unconstrained(value: i64, w: &mut Writer<'_>) {
+    let octets = value.to_be_bytes();
+    let sign = |octet: u8| octet & 0x80 != 0;
+    let skip = (0..7)
+        .take_while(|&at| match octets[at] {
+            0x00 => !sign(octets[at + 1]),
+            0xff => sign(octets[at + 1]),
+            _ => false,
+        })
+        .count();
+    w.align();
+    w.octet((8 - skip) as u8);
+    w.octets(&octets[skip..]);
+}
+
+/// The unconstrained whole number that [`write_unconstrained`] writes.
+fn read_unconstrained(r: &mut Reader<'_>) -> Result<i64, Error> {
+    r.align();
+    let length = usize::from(r.octet()?);
+    let octets = r.octets(length)?;
+    let start = if octets[0] & 0x80 != 0 { -1 } else { 0 };
+    Ok(octets
+        .iter()
+        .fold(start, |number, octet| number << 8 | i64::from(*octet)))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct Name {
     given_name: String,
@@ -89,16 +118,16 @@ mod a1 {
     use super::*;
 
     fn write_name(name: &Name, w: &mut Writer<'_>) -> Result<(), Error> {
-        w.visible_string(&name.given_name, 0, UNBOUNDED)?;
-        w.visible_string(&name.initial, 0, UNBOUNDED)?;
-        w.visible_string(&name.family_name, 0, UNBOUNDED)
+        w.visible_string(&name.given_name, 0, UNBOUNDED, false)?;
+        w.visible_string(&name.initial, 0, UNBOUNDED, false)?;
+        w.visible_string(&name.family_name, 0, UNBOUNDED, false)
     }
 
     fn read_name(r: &mut Reader<'_>) -> Result<Name, Error> {
         Ok(Name {
-            given_name: r.visible_string(0, UNBOUNDED)?.into_owned(),
-            initial: r.visible_string(0, UNBOUNDED)?.into_owned(),
-            family_name: r.visible_string(0, UNBOUNDED)?.into_owned(),
+            given_name: r.visible_string(0, UNBOUNDED, false)?.into_owned(),
+            initial: r.visible_string(0, UNBOUNDED, false)?.into_owned(),
+            family_name: r.visible_string(0, UNBOUNDED, false)?.into_owned(),
         })
     }
 
@@ -106,16 +135,16 @@ mod a1 {
         // `children` has a default value: one bit says whether it is there.
         w.bit(record.children.is_some());
         write_name(&record.name, w)?;
-        w.unconstrained(record.number);
-        w.visible_string(&record.title, 0, UNBOUNDED)?;
-        w.visible_string(&record.date_of_hire, 0, UNBOUNDED)?;
+        write_unconstrained(record.number, w);
+        w.visible_string(&record.title, 0, UNBOUNDED, false)?;
+        w.visible_string(&record.date_of_hire, 0, UNBOUNDED, false)?;
         write_name(&record.name_of_spouse, w)?;
         if let Some(children) = &record.children {
             let (count, more) = w.length(children.len());
             assert_eq!((count, more), (children.len(), false));
             for child in children {
                 write_name(&child.name, w)?;
-                w.visible_string(&child.date_of_birth, 0, UNBOUNDED)?;
+                w.visible_string(&child.date_of_birth, 0, UNBOUNDED, false)?;
             }
         }
         Ok(())
@@ -124,9 +153,9 @@ mod a1 {
     pub fn read(r: &mut Reader<'_>) -> Result<PersonnelRecord, Error> {
         let has_children = r.bit()?;
         let name = read_name(r)?;
-        let number = r.unconstrained()?;
-        let title = r.visible_string(0, UNBOUNDED)?.into_owned();
-        let date_of_hire = r.visible_string(0, UNBOUNDED)?.into_owned();
+        let number = read_unconstrained(r)?;
+        let title = r.visible_string(0, UNBOUNDED, false)?.into_owned();
+        let date_of_hire = r.visible_string(0, UNBOUNDED, false)?.into_owned();
         let name_of_spouse = read_name(r)?;
         let children = match has_children {
             true => {
@@ -136,7 +165,7 @@ mod a1 {
                 for _ in 0..count {
                     children.push(Child {
                         name: read_name(r)?,
-                        date_of_birth: r.visible_string(0, UNBOUNDED)?.into_owned(),
+                        date_of_birth: r.visible_string(0, UNBOUNDED, false)?.into_owned(),
                         sex: None,
                     });
                 }
@@ -204,15 +233,15 @@ mod constrained {
     /// each is its own code (X.691 §30.5.2, §30.5.4 a).
     fn write_name_string(text: &str, extensible: bool, w: &mut Writer<'_>) -> Result<(), Error> {
         match extensible {
-            true => w.visible_string_extensible(text, 1, 64),
-            false => w.visible_string(text, 1, 64),
+            true => w.visible_string(text, 1, 64, true),
+            false => w.visible_string(text, 1, 64, false),
         }
     }
 
     fn read_name_string(extensible: bool, r: &mut Reader<'_>) -> Result<String, Error> {
         let text = match extensible {
-            true => r.visible_string_extensible(1, 64)?,
-            false => r.visible_string(1, 64)?,
+            true => r.visible_string(1, 64, true)?,
+            false => r.visible_string(1, 64, false)?,
         };
         Ok(text.into_owned())
     }
@@ -224,7 +253,7 @@ mod constrained {
         write_name_string(&name.given_name, extensible, w)?;
         // `NameString (SIZE (1))`: the size constraint of the type is replaced, and
         // with it its extension marker.
-        w.visible_string(&name.initial, 1, 1)?;
+        w.visible_string(&name.initial, 1, 1, false)?;
         write_name_string(&name.family_name, extensible, w)
     }
 
@@ -232,7 +261,7 @@ mod constrained {
         let extended = extensible && r.bit()?;
         let name = Name {
             given_name: read_name_string(extensible, r)?,
-            initial: r.visible_string(1, 1)?.into_owned(),
+            initial: r.visible_string(1, 1, false)?.into_owned(),
             family_name: read_name_string(extensible, r)?,
         };
         if extended {
@@ -276,7 +305,7 @@ mod constrained {
                 let value = r.open_type()?;
                 let mut inner = Reader::new(&value);
                 sex = Some(
-                    [Sex::Male, Sex::Female, Sex::Unknown][inner.enumerated(3, 0, false)? as usize],
+                    [Sex::Male, Sex::Female, Sex::Unknown][inner.index(3, 0, false)? as usize],
                 );
             }
             additions.skip_rest(r)?;
@@ -300,10 +329,10 @@ mod constrained {
         write_name(&record.name, extensible, w)?;
         match extensible {
             // `INTEGER (0..9999, ...)`.
-            true => w.unsigned_extensible(record.number as u64, 0, 9999)?,
-            false => w.unconstrained(record.number),
+            true => w.unsigned(record.number as u64, 0, 9999, true)?,
+            false => write_unconstrained(record.number, w),
         }
-        w.visible_string(&record.title, 0, UNBOUNDED)?;
+        w.visible_string(&record.title, 0, UNBOUNDED, false)?;
         if extensible {
             w.bit(false);
         }
@@ -332,10 +361,10 @@ mod constrained {
         let has_children = r.bit()?;
         let name = read_name(extensible, r)?;
         let number = match extensible {
-            true => r.unsigned_extensible(0, 9999)? as i64,
-            false => r.unconstrained()?,
+            true => r.unsigned(0, 9999, true)? as i64,
+            false => read_unconstrained(r)?,
         };
-        let title = r.visible_string(0, UNBOUNDED)?.into_owned();
+        let title = r.visible_string(0, UNBOUNDED, false)?.into_owned();
         if extensible {
             assert!(!r.bit()?);
         }
@@ -431,7 +460,7 @@ fn write_ax(value: &Ax, w: &mut Writer<'_>) -> Result<(), Error> {
     // Additions follow, and neither `i` nor `j` is there.
     w.bit(true);
     w.bits(0, 2);
-    w.unsigned(value.a.into(), 250, 253)?;
+    w.unsigned(value.a.into(), 250, 253, false)?;
     w.bit(value.b);
     // `c`: its only alternative of the root is `d`, and `e` is the first addition. An
     // addition is an open type.
@@ -459,9 +488,9 @@ fn write_ax(value: &Ax, w: &mut Writer<'_>) -> Result<(), Error> {
 fn read_ax(r: &mut Reader<'_>) -> Result<Ax, Error> {
     let extended = r.bit()?;
     assert_eq!(r.bits(2)?, 0);
-    let a = r.unsigned(250, 253)? as u8;
+    let a = r.unsigned(250, 253, false)? as u8;
     let b = r.bit()?;
-    assert_eq!(r.choice(1, 1, true)?, 1);
+    assert_eq!(r.index(1, 1, true)?, 1);
     let alternative = r.open_type()?;
     let c_e = Reader::new(&alternative).bit()?;
     assert!(extended);

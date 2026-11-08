@@ -210,13 +210,13 @@ impl crate::AsnType for Octets<'_> {
 
 impl<'a> crate::Decode<'a> for Octets<'a> {
     fn decode(reader: &mut crate::Reader<'a>) -> Result<Self, crate::Error> {
-        reader.octet_string(0, crate::UNBOUNDED)
+        reader.octet_string(0, crate::UNBOUNDED, false)
     }
 }
 
 impl crate::Encode for Octets<'_> {
     fn encode(&self, writer: &mut crate::Writer<'_>) -> Result<(), crate::Error> {
-        writer.octet_string(self, 0, crate::UNBOUNDED)
+        writer.octet_string(self, 0, crate::UNBOUNDED, false)
     }
 }
 

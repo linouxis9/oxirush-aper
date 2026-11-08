@@ -76,17 +76,19 @@ fn fields(criterion: &mut Criterion) {
         FIELDS,
         |writer| {
             for id in 0..FIELDS {
-                writer.unsigned(black_box(id), 0, 65535).unwrap();
+                writer.unsigned(black_box(id), 0, 65535, false).unwrap();
                 writer.index(black_box(id % 3), 3, false);
                 let start = writer.begin_open_type();
-                writer.unsigned(black_box(id), 0, 4_294_967_295).unwrap();
+                writer
+                    .unsigned(black_box(id), 0, 4_294_967_295, false)
+                    .unwrap();
                 writer.end_open_type(start);
             }
         },
         |reader| {
             for _ in 0..FIELDS {
-                black_box(reader.unsigned(0, 65535).unwrap());
-                black_box(reader.enumerated(3, 0, false).unwrap());
+                black_box(reader.unsigned(0, 65535, false).unwrap());
+                black_box(reader.index(3, 0, false).unwrap());
                 black_box(reader.open_type().unwrap());
             }
         },
@@ -99,15 +101,19 @@ fn fields(criterion: &mut Criterion) {
         |writer| {
             for number in 0..FIELDS {
                 writer.bit(black_box(number & 1 == 0));
-                writer.unsigned(black_box(number % 16), 0, 15).unwrap();
-                writer.unsigned(black_box(number % 256), 0, 255).unwrap();
+                writer
+                    .unsigned(black_box(number % 16), 0, 15, false)
+                    .unwrap();
+                writer
+                    .unsigned(black_box(number % 256), 0, 255, false)
+                    .unwrap();
             }
         },
         |reader| {
             for _ in 0..FIELDS {
                 black_box(reader.bit().unwrap());
-                black_box(reader.unsigned(0, 15).unwrap());
-                black_box(reader.unsigned(0, 255).unwrap());
+                black_box(reader.unsigned(0, 15, false).unwrap());
+                black_box(reader.unsigned(0, 255, false).unwrap());
             }
         },
     );
@@ -119,16 +125,16 @@ fn fields(criterion: &mut Criterion) {
         |writer| {
             for number in 0..FIELDS {
                 let id = black_box(number << 28);
-                writer.unsigned(id, 0, 1_099_511_627_775).unwrap();
+                writer.unsigned(id, 0, 1_099_511_627_775, false).unwrap();
                 writer
-                    .unsigned_extensible(black_box(number * 1_000_000), 0, 4_000_000_000_000)
+                    .unsigned(black_box(number * 1_000_000), 0, 4_000_000_000_000, true)
                     .unwrap();
             }
         },
         |reader| {
             for _ in 0..FIELDS {
-                black_box(reader.unsigned(0, 1_099_511_627_775).unwrap());
-                black_box(reader.unsigned_extensible(0, 4_000_000_000_000).unwrap());
+                black_box(reader.unsigned(0, 1_099_511_627_775, false).unwrap());
+                black_box(reader.unsigned(0, 4_000_000_000_000, true).unwrap());
             }
         },
     );
@@ -169,7 +175,7 @@ fn fields(criterion: &mut Criterion) {
                 writer.octet_array(black_box(&[0, 0, number as u8]));
                 writer.octet_array(black_box(&[1, 0, 0, number as u8]));
                 writer
-                    .printable_string_extensible(black_box("amf-1"), 1, 150)
+                    .printable_string(black_box("amf-1"), 1, 150, true)
                     .unwrap();
             }
         },
@@ -178,7 +184,7 @@ fn fields(criterion: &mut Criterion) {
                 black_box(reader.octet_array::<3>().unwrap());
                 black_box(reader.octet_array::<3>().unwrap());
                 black_box(reader.octet_array::<4>().unwrap());
-                black_box(reader.printable_string_extensible(1, 150).unwrap());
+                black_box(reader.printable_string(1, 150, true).unwrap());
             }
         },
     );
@@ -191,11 +197,11 @@ fn fields(criterion: &mut Criterion) {
             1,
             |writer| {
                 writer
-                    .octet_string(black_box(&payload), 0, UNBOUNDED)
+                    .octet_string(black_box(&payload), 0, UNBOUNDED, false)
                     .unwrap()
             },
             |reader| {
-                black_box(reader.octet_string(0, UNBOUNDED).unwrap());
+                black_box(reader.octet_string(0, UNBOUNDED, false).unwrap());
             },
         );
     }

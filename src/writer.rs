@@ -22,8 +22,8 @@ const SIXTEEN_K: usize = 16384;
 /// // INTEGER (0..7), then INTEGER (0..65535), which is two octets after padding
 /// let mut octets = Vec::new();
 /// let mut writer = Writer::new(&mut octets);
-/// writer.unsigned(5, 0, 7)?;
-/// writer.unsigned(0x1234, 0, 65535)?;
+/// writer.unsigned(5, 0, 7, false)?;
+/// writer.unsigned(0x1234, 0, 65535, false)?;
 /// assert_eq!(octets, [0b1010_0000, 0x12, 0x34]);
 /// # Ok::<(), oxirush_aper::Error>(())
 /// ```
@@ -56,8 +56,8 @@ impl<'a> Writer<'a> {
     ///
     /// // INTEGER (0..255, ...): 256 is a value of a later version of the type
     /// let (mut any, mut none) = (Vec::new(), Vec::new());
-    /// assert!(Writer::new(&mut any).unsigned_extensible(256, 0, 255).is_ok());
-    /// let error = Writer::strict(&mut none).unsigned_extensible(256, 0, 255).unwrap_err();
+    /// assert!(Writer::new(&mut any).unsigned(256, 0, 255, true).is_ok());
+    /// let error = Writer::strict(&mut none).unsigned(256, 0, 255, true).unwrap_err();
     /// assert_eq!(error.kind(), ErrorKind::Encode);
     /// assert_eq!(
     ///     error.to_string(),
@@ -159,39 +159,85 @@ impl<'a> Writer<'a> {
 
     // ── Whole numbers ───────────────────────────────────────────────────────
 
-    /// A constrained whole number (X.691 §11.5) of `lower..=upper`, as an INTEGER of
-    /// that constraint is encoded (§13.2.2).
+    /// An INTEGER of the constraint `lower..=upper` (X.691 §13.2.2): a constrained
+    /// whole number (§11.5). When the constraint is `extensible` (§13.1), a bit comes
+    /// first, and a number outside the root is written after it as an unconstrained
+    /// one, which a receiver of a later version of the type reads.
     ///
     /// # Errors
     ///
-    /// A number outside the constraint is an error.
+    /// A number outside the constraint is an error, unless the constraint is
+    /// `extensible` and the writer is not [`strict`](Self::strict).
     #[inline]
-    pub fn unsigned(&mut self, value: u64, lower: u64, upper: u64) -> Result<(), Error> {
+    pub fn unsigned(
+        &mut self,
+        value: u64,
+        lower: u64,
+        upper: u64,
+        extensible: bool,
+    ) -> Result<(), Error> {
         debug_assert!(lower <= upper);
-        if value < lower || value > upper {
-            return Err(Error::number_written_outside(
-                value.into(),
-                lower.into(),
-                upper.into(),
-            ));
+        let outside = value < lower || value > upper;
+        self.root(outside, extensible, || {
+            (value.into(), lower.into(), upper.into())
+        })?;
+        match outside {
+            false => self.offset(value - lower, upper - lower),
+            true => self.whole_number(value.into(), true),
         }
-        self.offset(value - lower, upper - lower);
         Ok(())
     }
 
-    /// A constrained whole number of `lower..=upper`, where the bounds may be negative.
+    /// An INTEGER of the constraint `lower..=upper`, as [`unsigned`](Self::unsigned)
+    /// writes one, where the bounds may be negative.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`unsigned`](Self::unsigned).
     #[inline]
-    pub fn signed(&mut self, value: i64, lower: i64, upper: i64) -> Result<(), Error> {
+    pub fn signed(
+        &mut self,
+        value: i64,
+        lower: i64,
+        upper: i64,
+        extensible: bool,
+    ) -> Result<(), Error> {
         debug_assert!(lower <= upper);
-        if value < lower || value > upper {
-            return Err(Error::number_written_outside(
-                value.into(),
-                lower.into(),
-                upper.into(),
-            ));
+        let outside = value < lower || value > upper;
+        self.root(outside, extensible, || {
+            (value.into(), lower.into(), upper.into())
+        })?;
+        match outside {
+            false => {
+                let offset = (value as u64).wrapping_sub(lower as u64);
+                self.offset(offset, (upper as u64).wrapping_sub(lower as u64));
+            }
+            true => self.whole_number(value.into(), true),
         }
-        let offset = (value as u64).wrapping_sub(lower as u64);
-        self.offset(offset, (upper as u64).wrapping_sub(lower as u64));
+        Ok(())
+    }
+
+    /// The extension bit of a number of an `extensible` constraint, and the error of a
+    /// number `outside` it that the writer does not write: the number, the lower bound
+    /// and the upper one, which `bounds` gives.
+    #[inline]
+    fn root(
+        &mut self,
+        outside: bool,
+        extensible: bool,
+        bounds: impl FnOnce() -> (i128, i128, i128),
+    ) -> Result<(), Error> {
+        if outside && !extensible {
+            let (value, lower, upper) = bounds();
+            return Err(Error::number_written_outside(value, lower, upper));
+        }
+        if outside && self.strict {
+            let (value, lower, upper) = bounds();
+            return Err(Error::number_written_outside_root(value, lower, upper));
+        }
+        if extensible {
+            self.bit(outside);
+        }
         Ok(())
     }
 
@@ -216,91 +262,6 @@ impl<'a> Writer<'a> {
         let length = (64 - offset.leading_zeros() as usize).div_ceil(8).max(1);
         self.bits(length as u64 - 1, length_bits);
         self.octets(&offset.to_be_bytes()[8 - length..]);
-    }
-
-    /// An INTEGER whose constraint `lower..=upper` has an extension marker (X.691
-    /// §13.1): a bit, then the number within the constraint, or a number outside it as
-    /// an unconstrained one.
-    ///
-    /// # Errors
-    ///
-    /// A number outside the constraint, for a writer that is
-    /// [`strict`](Self::strict): no other writer refuses one.
-    pub fn unsigned_extensible(&mut self, value: u64, lower: u64, upper: u64) -> Result<(), Error> {
-        let outside = value < lower || value > upper;
-        if outside && self.strict {
-            return Err(Error::number_written_outside_root(
-                value.into(),
-                lower.into(),
-                upper.into(),
-            ));
-        }
-        self.bit(outside);
-        match outside {
-            false => self.offset(value - lower, upper - lower),
-            true => self.whole_number(value.into(), true),
-        }
-        Ok(())
-    }
-
-    /// An INTEGER whose constraint `lower..=upper` has an extension marker, where the
-    /// bounds may be negative.
-    ///
-    /// # Errors
-    ///
-    /// A number outside the constraint, for a writer that is
-    /// [`strict`](Self::strict).
-    pub fn signed_extensible(&mut self, value: i64, lower: i64, upper: i64) -> Result<(), Error> {
-        let outside = value < lower || value > upper;
-        if outside && self.strict {
-            return Err(Error::number_written_outside_root(
-                value.into(),
-                lower.into(),
-                upper.into(),
-            ));
-        }
-        self.bit(outside);
-        match outside {
-            false => {
-                let offset = (value as u64).wrapping_sub(lower as u64);
-                self.offset(offset, (upper as u64).wrapping_sub(lower as u64));
-            }
-            true => self.whole_number(value.into(), true),
-        }
-        Ok(())
-    }
-
-    /// An unconstrained whole number (X.691 §11.8): the number of its octets, then its
-    /// octets in two's complement, as few as hold it.
-    pub fn unconstrained(&mut self, value: i64) {
-        self.whole_number(value.into(), true);
-    }
-
-    /// A semi-constrained whole number (X.691 §11.7): the number of the octets of what
-    /// it has above `lower`, then these octets.
-    ///
-    /// # Errors
-    ///
-    /// A number below `lower` is an error.
-    pub fn semi_constrained(&mut self, value: i64, lower: i64) -> Result<(), Error> {
-        if value < lower {
-            return Err(Error::encode(alloc::format!(
-                "{value} is outside its constraint ({lower}..MAX)"
-            )));
-        }
-        self.whole_number(i128::from(value) - i128::from(lower), false);
-        Ok(())
-    }
-
-    /// A semi-constrained whole number whose lower bound is not negative.
-    pub fn semi_constrained_unsigned(&mut self, value: u64, lower: u64) -> Result<(), Error> {
-        if value < lower {
-            return Err(Error::encode(alloc::format!(
-                "{value} is outside its constraint ({lower}..MAX)"
-            )));
-        }
-        self.whole_number(i128::from(value) - i128::from(lower), false);
-        Ok(())
     }
 
     /// A whole number after the unconstrained length of its octets, which are as few
@@ -415,7 +376,7 @@ impl<'a> Writer<'a> {
     /// let mut octets = Vec::new();
     /// Writer::new(&mut octets).index(2, 3, true);
     /// assert_eq!(octets, [0x40]);
-    /// assert_eq!(Reader::new(&octets).enumerated(3, 0, true)?, 2);
+    /// assert_eq!(Reader::new(&octets).index(3, 0, true)?, 2);
     /// # Ok::<(), oxirush_aper::Error>(())
     /// ```
     #[inline]
@@ -501,13 +462,25 @@ impl<'a> Writer<'a> {
     }
 
     /// An OCTET STRING of the size constraint `lower..=upper` (X.691 §17), with
-    /// [`UNBOUNDED`] for no upper bound.
+    /// [`UNBOUNDED`] for no upper bound. When the constraint is `extensible` (§17.3), a
+    /// bit comes first, and a string of another size follows it after its length.
     ///
     /// # Errors
     ///
-    /// A size outside the constraint is an error.
+    /// A size outside the constraint is an error, unless the constraint is
+    /// `extensible` and the writer is not [`strict`](Self::strict).
     #[inline]
-    pub fn octet_string(&mut self, octets: &[u8], lower: usize, upper: usize) -> Result<(), Error> {
+    pub fn octet_string(
+        &mut self,
+        octets: &[u8],
+        lower: usize,
+        upper: usize,
+        extensible: bool,
+    ) -> Result<(), Error> {
+        if extensible && self.outside_root(octets.len(), lower, upper)? {
+            self.octets_in_fragments(octets);
+            return Ok(());
+        }
         if upper >= 65536 {
             check_size(octets.len(), lower, upper)?;
             self.octets_in_fragments(octets);
@@ -525,28 +498,16 @@ impl<'a> Writer<'a> {
         Ok(())
     }
 
-    /// An OCTET STRING whose size constraint `lower..=upper` has an extension marker
-    /// (X.691 §17.3): a bit, then the string within the constraint, or a string of
-    /// another size after its length.
-    ///
-    /// # Errors
-    ///
-    /// A size outside the constraint, for a writer that is [`strict`](Self::strict).
-    pub fn octet_string_extensible(
-        &mut self,
-        octets: &[u8],
-        lower: usize,
-        upper: usize,
-    ) -> Result<(), Error> {
-        let outside = octets.len() < lower || octets.len() > upper;
+    /// The extension bit of a string of a `size` of an extensible constraint: whether it
+    /// is outside the root, where a writer that is [`strict`](Self::strict) refuses it.
+    #[inline]
+    fn outside_root(&mut self, size: usize, lower: usize, upper: usize) -> Result<bool, Error> {
+        let outside = size < lower || size > upper;
         if outside && self.strict {
-            return Err(Error::size_written_outside_root(octets.len(), lower, upper));
+            return Err(Error::size_written_outside_root(size, lower, upper));
         }
         self.bit(outside);
-        if outside || self.octet_string(octets, lower, upper).is_err() {
-            self.octets_in_fragments(octets);
-        }
-        Ok(())
+        Ok(outside)
     }
 
     /// An open type (X.691 §11.2): the octets of the complete encoding of a value,
@@ -570,7 +531,7 @@ impl<'a> Writer<'a> {
     /// let mut octets = Vec::new();
     /// let mut writer = Writer::new(&mut octets);
     /// let start = writer.begin_open_type();
-    /// writer.unsigned(7, 0, 65535)?;
+    /// writer.unsigned(7, 0, 65535, false)?;
     /// writer.end_open_type(start);
     /// assert_eq!(octets, [0x02, 0x00, 0x07]);
     /// # Ok::<(), oxirush_aper::Error>(())
@@ -592,7 +553,7 @@ impl<'a> Writer<'a> {
     /// let mut writer = Writer::new(&mut octets);
     /// let start = writer.begin_open_type();
     /// for value in 0..130 {
-    ///     writer.unsigned(value, 0, 255)?;
+    ///     writer.unsigned(value, 0, 255, false)?;
     /// }
     /// writer.end_open_type(start);
     /// assert_eq!(octets[..4], [0x80, 0x82, 0x00, 0x01]);
@@ -666,19 +627,25 @@ impl<'a> Writer<'a> {
     }
 
     /// A BIT STRING of the size constraint `lower..=upper` (X.691 §16), with
-    /// [`UNBOUNDED`] for no upper bound.
+    /// [`UNBOUNDED`] for no upper bound. When the constraint is `extensible` (§16.6), a
+    /// bit comes first, and a string of another size follows it after its length.
     ///
     /// # Errors
     ///
-    /// A size outside the constraint is an error.
+    /// Those of [`octet_string`](Self::octet_string).
     #[inline]
     pub fn bit_string(
         &mut self,
         bits: &BitString<'_>,
         lower: usize,
         upper: usize,
+        extensible: bool,
     ) -> Result<(), Error> {
         let size = bits.len();
+        if extensible && self.outside_root(size, lower, upper)? {
+            self.bit_string_in_fragments(bits);
+            return Ok(());
+        }
         if upper >= 65536 {
             check_size(size, lower, upper)?;
             self.bit_string_in_fragments(bits);
@@ -692,30 +659,6 @@ impl<'a> Writer<'a> {
             self.bit_field(bits.as_octets(), size);
         } else {
             self.aligned_bits(bits.as_octets(), size);
-        }
-        Ok(())
-    }
-
-    /// A BIT STRING whose size constraint `lower..=upper` has an extension marker
-    /// (X.691 §16.6): a bit, then the string within the constraint, or a string of
-    /// another size after its length.
-    ///
-    /// # Errors
-    ///
-    /// A size outside the constraint, for a writer that is [`strict`](Self::strict).
-    pub fn bit_string_extensible(
-        &mut self,
-        bits: &BitString<'_>,
-        lower: usize,
-        upper: usize,
-    ) -> Result<(), Error> {
-        let outside = bits.len() < lower || bits.len() > upper;
-        if outside && self.strict {
-            return Err(Error::size_written_outside_root(bits.len(), lower, upper));
-        }
-        self.bit(outside);
-        if outside || self.bit_string(bits, lower, upper).is_err() {
-            self.bit_string_in_fragments(bits);
         }
         Ok(())
     }
@@ -750,61 +693,36 @@ impl<'a> Writer<'a> {
     // ── Character strings ───────────────────────────────────────────────────
 
     /// A PrintableString of the size constraint `lower..=upper` (X.691 §30.5), with
-    /// [`UNBOUNDED`] for no upper bound.
+    /// [`UNBOUNDED`] for no upper bound, and a bit first when the constraint is
+    /// `extensible` (§30.4).
     ///
     /// # Errors
     ///
-    /// A character that the type does not have, and a size outside the constraint,
-    /// are errors.
+    /// A character that the type does not have is an error, and so is a size outside
+    /// the constraint, as [`octet_string`](Self::octet_string) has it.
     pub fn printable_string(
         &mut self,
         text: &str,
         lower: usize,
         upper: usize,
+        extensible: bool,
     ) -> Result<(), Error> {
-        self.known_multiplier(text, lower, upper, false, Alphabet::Printable)
+        self.known_multiplier(text, lower, upper, extensible, Alphabet::Printable)
     }
 
-    /// A PrintableString whose size constraint has an extension marker (X.691 §30.4).
-    pub fn printable_string_extensible(
+    /// A VisibleString, as [`printable_string`](Self::printable_string) writes one.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`printable_string`](Self::printable_string).
+    pub fn visible_string(
         &mut self,
         text: &str,
         lower: usize,
         upper: usize,
+        extensible: bool,
     ) -> Result<(), Error> {
-        self.known_multiplier(text, lower, upper, true, Alphabet::Printable)
-    }
-
-    /// A VisibleString of the size constraint `lower..=upper`, with [`UNBOUNDED`] for
-    /// no upper bound.
-    pub fn visible_string(&mut self, text: &str, lower: usize, upper: usize) -> Result<(), Error> {
-        self.known_multiplier(text, lower, upper, false, Alphabet::Visible)
-    }
-
-    /// A VisibleString whose size constraint has an extension marker.
-    pub fn visible_string_extensible(
-        &mut self,
-        text: &str,
-        lower: usize,
-        upper: usize,
-    ) -> Result<(), Error> {
-        self.known_multiplier(text, lower, upper, true, Alphabet::Visible)
-    }
-
-    /// An IA5String of the size constraint `lower..=upper`, with [`UNBOUNDED`] for no
-    /// upper bound.
-    pub fn ia5_string(&mut self, text: &str, lower: usize, upper: usize) -> Result<(), Error> {
-        self.known_multiplier(text, lower, upper, false, Alphabet::Ia5)
-    }
-
-    /// An IA5String whose size constraint has an extension marker.
-    pub fn ia5_string_extensible(
-        &mut self,
-        text: &str,
-        lower: usize,
-        upper: usize,
-    ) -> Result<(), Error> {
-        self.known_multiplier(text, lower, upper, true, Alphabet::Ia5)
+        self.known_multiplier(text, lower, upper, extensible, Alphabet::Visible)
     }
 
     /// A UTF8String (X.691 §30.6): the length of its octets, then its octets. A size
@@ -834,19 +752,8 @@ impl<'a> Writer<'a> {
         }
         let size = octets.len();
         // Outside the root, the string is encoded as one without a size constraint.
-        let (lower, upper) = match extensible {
-            true => {
-                let outside = size < lower || size > upper;
-                if outside && self.strict {
-                    return Err(Error::size_written_outside_root(size, lower, upper));
-                }
-                self.bit(outside);
-                if outside {
-                    (0, UNBOUNDED)
-                } else {
-                    (lower, upper)
-                }
-            }
+        let (lower, upper) = match extensible && self.outside_root(size, lower, upper)? {
+            true => (0, UNBOUNDED),
             false => (lower, upper),
         };
         if upper >= 65536 {

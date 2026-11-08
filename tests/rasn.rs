@@ -122,14 +122,14 @@ macro_rules! constrained {
             if lower < 0 {
                 same(
                     &$name(number as $native),
-                    |w| w.signed(number as i64, lower as i64, upper as i64).unwrap(),
-                    |r| r.signed(lower as i64, upper as i64).unwrap() == number as i64,
+                    |w| w.signed(number as i64, lower as i64, upper as i64, false).unwrap(),
+                    |r| r.signed(lower as i64, upper as i64, false).unwrap() == number as i64,
                 );
             } else {
                 same(
                     &$name(number as $native),
-                    |w| w.unsigned(number as u64, lower as u64, upper as u64).unwrap(),
-                    |r| r.unsigned(lower as u64, upper as u64).unwrap() == number as u64,
+                    |w| w.unsigned(number as u64, lower as u64, upper as u64, false).unwrap(),
+                    |r| r.unsigned(lower as u64, upper as u64, false).unwrap() == number as u64,
                 );
             }
         }
@@ -174,12 +174,6 @@ fn whole_numbers_with_an_extension_marker_and_without_an_upper_bound() {
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
     #[rasn(delegate, value("-420..=10000", extensible))]
     struct Offset(Integer);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, value("0.."))]
-    struct Natural(Integer);
-    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
-    #[rasn(delegate, value("-5.."))]
-    struct Above(Integer);
 
     for number in [
         0u64,
@@ -196,18 +190,13 @@ fn whole_numbers_with_an_extension_marker_and_without_an_upper_bound() {
     ] {
         same(
             &Octet(Integer::from(number)),
-            |w| w.unsigned_extensible(number, 0, 255).unwrap(),
-            |r| r.unsigned_extensible(0, 255).unwrap() == number,
+            |w| w.unsigned(number, 0, 255, true).unwrap(),
+            |r| r.unsigned(0, 255, true).unwrap() == number,
         );
         same(
             &BitRate(Integer::from(number)),
-            |w| w.unsigned_extensible(number, 0, 4000000000000).unwrap(),
-            |r| r.unsigned_extensible(0, 4000000000000).unwrap() == number,
-        );
-        same(
-            &Natural(Integer::from(number)),
-            |w| w.semi_constrained_unsigned(number, 0).unwrap(),
-            |r| r.semi_constrained_unsigned(0).unwrap() == number,
+            |w| w.unsigned(number, 0, 4000000000000, true).unwrap(),
+            |r| r.unsigned(0, 4000000000000, true).unwrap() == number,
         );
     }
     for number in [
@@ -234,21 +223,9 @@ fn whole_numbers_with_an_extension_marker_and_without_an_upper_bound() {
     ] {
         same(
             &Offset(Integer::from(number)),
-            |w| w.signed_extensible(number, -420, 10000).unwrap(),
-            |r| r.signed_extensible(-420, 10000).unwrap() == number,
+            |w| w.signed(number, -420, 10000, true).unwrap(),
+            |r| r.signed(-420, 10000, true).unwrap() == number,
         );
-        same(
-            &Integer::from(number),
-            |w| w.unconstrained(number),
-            |r| r.unconstrained().unwrap() == number,
-        );
-        if number >= -5 {
-            same(
-                &Above(Integer::from(number)),
-                |w| w.semi_constrained(number, -5).unwrap(),
-                |r| r.semi_constrained(-5).unwrap() == number,
-            );
-        }
     }
 }
 
@@ -277,7 +254,7 @@ fn enumerated_and_choice() {
         same(
             &value,
             |w| w.index(index as u64, 3, false),
-            |r| r.enumerated(3, 0, false).unwrap() == index as u64,
+            |r| r.index(3, 0, false).unwrap() == index as u64,
         );
     }
     let extended = [
@@ -291,7 +268,7 @@ fn enumerated_and_choice() {
         same(
             &value,
             |w| w.index(index as u64, 3, true),
-            |r| r.enumerated(3, 2, true).unwrap() == index as u64,
+            |r| r.index(3, 2, true).unwrap() == index as u64,
         );
     }
 
@@ -307,9 +284,9 @@ fn enumerated_and_choice() {
         &Closed::Number(7),
         |w| {
             w.index(0, 3, false);
-            w.unsigned(7, 0, 255).unwrap();
+            w.unsigned(7, 0, 255, false).unwrap();
         },
-        |r| r.choice(3, 0, false).unwrap() == 0 && r.unsigned(0, 255).unwrap() == 7,
+        |r| r.index(3, 0, false).unwrap() == 0 && r.unsigned(0, 255, false).unwrap() == 7,
     );
     same(
         &Closed::Flag(true),
@@ -317,12 +294,12 @@ fn enumerated_and_choice() {
             w.index(1, 3, false);
             w.bit(true);
         },
-        |r| r.choice(3, 0, false).unwrap() == 1 && r.bit().unwrap(),
+        |r| r.index(3, 0, false).unwrap() == 1 && r.bit().unwrap(),
     );
     same(
         &Closed::Nothing(()),
         |w| w.index(2, 3, false),
-        |r| r.choice(3, 0, false).unwrap() == 2,
+        |r| r.index(3, 0, false).unwrap() == 2,
     );
 
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq)]
@@ -343,7 +320,7 @@ fn enumerated_and_choice() {
             w.index(1, 2, true);
             w.bit(true);
         },
-        |r| r.choice(2, 2, true).unwrap() == 1 && r.bit().unwrap(),
+        |r| r.index(2, 2, true).unwrap() == 1 && r.bit().unwrap(),
     );
     // An addition is in an open type (X.691 §23.8).
     same(
@@ -351,13 +328,13 @@ fn enumerated_and_choice() {
         |w| {
             w.index(2, 2, true);
             let start = w.begin_open_type();
-            w.unsigned(0x1234, 0, 65535).unwrap();
+            w.unsigned(0x1234, 0, 65535, false).unwrap();
             w.end_open_type(start);
         },
         |r| {
-            let alternative = r.choice(2, 2, true).unwrap();
+            let alternative = r.index(2, 2, true).unwrap();
             let value = r.open_type().unwrap();
-            alternative == 2 && Reader::new(&value).unsigned(0, 65535).unwrap() == 0x1234
+            alternative == 2 && Reader::new(&value).unsigned(0, 65535, false).unwrap() == 0x1234
         },
     );
     same(
@@ -369,7 +346,7 @@ fn enumerated_and_choice() {
             w.end_open_type(start);
         },
         |r| {
-            let alternative = r.choice(2, 2, true).unwrap();
+            let alternative = r.index(2, 2, true).unwrap();
             let value = r.open_type().unwrap();
             alternative == 3 && Reader::new(&value).bit().unwrap()
         },
@@ -439,35 +416,35 @@ fn octet_strings() {
         let octets = some_octets(length);
         same(
             &Short(octets.clone().into()),
-            |w| w.octet_string(&octets, 1, 4).unwrap(),
-            |r| r.octet_string(1, 4).unwrap() == octets,
+            |w| w.octet_string(&octets, 1, 4, false).unwrap(),
+            |r| r.octet_string(1, 4, false).unwrap() == octets,
         );
     }
     for length in 1..=3 {
         let octets = some_octets(length);
         same(
             &FromNone(octets.clone().into()),
-            |w| w.octet_string(&octets, 0, 3).unwrap(),
-            |r| r.octet_string(0, 3).unwrap() == octets,
+            |w| w.octet_string(&octets, 0, 3, false).unwrap(),
+            |r| r.octet_string(0, 3, false).unwrap() == octets,
         );
     }
     // No octet: nothing is added after the length, and no padding (X.691 §11.9.3.3).
     same(
         &FromNone(OctetString::from(Vec::new())),
-        |w| w.octet_string(&[], 0, 3).unwrap(),
-        |r| r.octet_string(0, 3).unwrap().is_empty(),
+        |w| w.octet_string(&[], 0, 3, false).unwrap(),
+        |r| r.octet_string(0, 3, false).unwrap().is_empty(),
     );
     for length in [1, 2, 127, 128, 150] {
         let octets = some_octets(length);
         same(
             &Name(octets.clone().into()),
-            |w| w.octet_string(&octets, 1, 150).unwrap(),
-            |r| r.octet_string(1, 150).unwrap() == octets,
+            |w| w.octet_string(&octets, 1, 150, false).unwrap(),
+            |r| r.octet_string(1, 150, false).unwrap() == octets,
         );
         same(
             &ExtensibleName(octets.clone().into()),
-            |w| w.octet_string_extensible(&octets, 1, 150).unwrap(),
-            |r| r.octet_string_extensible(1, 150).unwrap() == octets,
+            |w| w.octet_string(&octets, 1, 150, true).unwrap(),
+            |r| r.octet_string(1, 150, true).unwrap() == octets,
         );
     }
     // A range of 256 sizes or more: the length is octet-aligned (X.691 §11.5.7.3),
@@ -476,8 +453,8 @@ fn octet_strings() {
         let octets = some_octets(length);
         same_where(
             &Long(octets.clone().into()),
-            |w| w.octet_string(&octets, 1, 1000).unwrap(),
-            |r| r.octet_string(1, 1000).unwrap() == octets,
+            |w| w.octet_string(&octets, 1, 1000, false).unwrap(),
+            |r| r.octet_string(1, 1000, false).unwrap() == octets,
             Where::Alone,
         );
     }
@@ -489,14 +466,14 @@ fn octet_strings() {
         // not read it back.
         same_where(
             &Extensible(octets.clone().into()),
-            |w| w.octet_string_extensible(&octets, 3, 3).unwrap(),
-            |r| r.octet_string_extensible(3, 3).unwrap() == octets,
+            |w| w.octet_string(&octets, 3, 3, true).unwrap(),
+            |r| r.octet_string(3, 3, true).unwrap() == octets,
             Where::Written,
         );
         same(
             &ExtensibleName(octets.clone().into()),
-            |w| w.octet_string_extensible(&octets, 1, 150).unwrap(),
-            |r| r.octet_string_extensible(1, 150).unwrap() == octets,
+            |w| w.octet_string(&octets, 1, 150, true).unwrap(),
+            |r| r.octet_string(1, 150, true).unwrap() == octets,
         );
     }
     // No size constraint: each form of the length, and fragments.
@@ -506,8 +483,8 @@ fn octet_strings() {
         let octets = some_octets(length);
         same(
             &OctetString::from(octets.clone()),
-            |w| w.octet_string(&octets, 0, UNBOUNDED).unwrap(),
-            |r| r.octet_string(0, UNBOUNDED).unwrap() == octets,
+            |w| w.octet_string(&octets, 0, UNBOUNDED, false).unwrap(),
+            |r| r.octet_string(0, UNBOUNDED, false).unwrap() == octets,
         );
         // An open type holds one octet at least.
         if length > 0 {
@@ -556,8 +533,8 @@ fn bit_strings() {
             let compared = if $length <= 16 { Where::Anywhere } else { Where::WrittenAnywhere };
             same_where(
                 &$name(their_bits(&octets, $length)),
-                |w| w.bit_string(&long, $length, $length).unwrap(),
-                |r| r.bit_string($length, $length).unwrap() == long,
+                |w| w.bit_string(&long, $length, $length, false).unwrap(),
+                |r| r.bit_string($length, $length, false).unwrap() == long,
                 compared,
             );
             if $length <= 64 {
@@ -615,8 +592,8 @@ fn bit_strings() {
         );
         same(
             &Identifier(their_bits(&octets, length)),
-            |w| w.bit_string(&long, 22, 32).unwrap(),
-            |r| r.bit_string(22, 32).unwrap() == long,
+            |w| w.bit_string(&long, 22, 32, false).unwrap(),
+            |r| r.bit_string(22, 32, false).unwrap() == long,
         );
     }
     for length in 1..=7 {
@@ -633,20 +610,20 @@ fn bit_strings() {
         let long = oxirush_aper::BitString::new(octets.clone(), length).unwrap();
         same(
             &Address(their_bits(&octets, length)),
-            |w| w.bit_string_extensible(&long, 1, 160).unwrap(),
-            |r| r.bit_string_extensible(1, 160).unwrap() == long,
+            |w| w.bit_string(&long, 1, 160, true).unwrap(),
+            |r| r.bit_string(1, 160, true).unwrap() == long,
         );
         same(
             &Algorithms(their_bits(&octets, length)),
-            |w| w.bit_string_extensible(&long, 16, 16).unwrap(),
-            |r| r.bit_string_extensible(16, 16).unwrap() == long,
+            |w| w.bit_string(&long, 16, 16, true).unwrap(),
+            |r| r.bit_string(16, 16, true).unwrap() == long,
         );
     }
     let sixteen = oxirush_aper::BitString::from([0xe0, 0x00]);
     same(
         &Algorithms(their_bits(&[0xe0, 0x00], 16)),
-        |w| w.bit_string_extensible(&sixteen, 16, 16).unwrap(),
-        |r| r.bit_string_extensible(16, 16).unwrap() == sixteen,
+        |w| w.bit_string(&sixteen, 16, 16, true).unwrap(),
+        |r| r.bit_string(16, 16, true).unwrap() == sixteen,
     );
     // No size constraint: each form of the length, and fragments.
     for length in [
@@ -656,8 +633,8 @@ fn bit_strings() {
         let long = oxirush_aper::BitString::new(octets.clone(), length).unwrap();
         same(
             &their_bits(&octets, length),
-            |w| w.bit_string(&long, 0, UNBOUNDED).unwrap(),
-            |r| r.bit_string(0, UNBOUNDED).unwrap() == long,
+            |w| w.bit_string(&long, 0, UNBOUNDED, false).unwrap(),
+            |r| r.bit_string(0, UNBOUNDED, false).unwrap() == long,
         );
     }
 }
@@ -679,13 +656,13 @@ fn character_strings_and_object_identifiers() {
     ] {
         same(
             &Name(PrintableString::try_from(text).unwrap()),
-            |w| w.printable_string_extensible(text, 1, 150).unwrap(),
-            |r| r.printable_string_extensible(1, 150).unwrap() == text,
+            |w| w.printable_string(text, 1, 150, true).unwrap(),
+            |r| r.printable_string(1, 150, true).unwrap() == text,
         );
         same(
             &VisibleName(VisibleString::try_from(text).unwrap()),
-            |w| w.visible_string_extensible(text, 1, 150).unwrap(),
-            |r| r.visible_string_extensible(1, 150).unwrap() == text,
+            |w| w.visible_string(text, 1, 150, true).unwrap(),
+            |r| r.visible_string(1, 150, true).unwrap() == text,
         );
     }
     for text in [
@@ -696,13 +673,8 @@ fn character_strings_and_object_identifiers() {
     ] {
         same(
             &VisibleString::try_from(text).unwrap(),
-            |w| w.visible_string(text, 0, UNBOUNDED).unwrap(),
-            |r| r.visible_string(0, UNBOUNDED).unwrap() == text,
-        );
-        same(
-            &Ia5String::try_from(text).unwrap(),
-            |w| w.ia5_string(text, 0, UNBOUNDED).unwrap(),
-            |r| r.ia5_string(0, UNBOUNDED).unwrap() == text,
+            |w| w.visible_string(text, 0, UNBOUNDED, false).unwrap(),
+            |r| r.visible_string(0, UNBOUNDED, false).unwrap() == text,
         );
         same(
             &Utf8String::from(text),
@@ -770,23 +742,23 @@ fn sequences_with_members_that_may_be_absent_and_with_additions() {
                 w.bit(extended);
                 w.bit(flag.is_some());
                 w.bit(payload.is_some());
-                w.unsigned(0x1234, 0, 65535).unwrap();
+                w.unsigned(0x1234, 0, 65535, false).unwrap();
                 if let Some(flag) = flag {
                     w.bit(flag);
                 }
                 if let Some(payload) = &payload {
-                    w.octet_string(payload, 0, UNBOUNDED).unwrap();
+                    w.octet_string(payload, 0, UNBOUNDED, false).unwrap();
                 }
                 if extended {
                     w.additions(&[later.is_some(), last.is_some()]).unwrap();
                     if let Some(later) = later {
                         let start = w.begin_open_type();
-                        w.unsigned(later.into(), 0, 7).unwrap();
+                        w.unsigned(later.into(), 0, 7, false).unwrap();
                         w.end_open_type(start);
                     }
                     if let Some(last) = &last {
                         let start = w.begin_open_type();
-                        w.octet_string(last, 0, UNBOUNDED).unwrap();
+                        w.octet_string(last, 0, UNBOUNDED, false).unwrap();
                         w.end_open_type(start);
                     }
                 }
@@ -794,21 +766,22 @@ fn sequences_with_members_that_may_be_absent_and_with_additions() {
             |r| {
                 let extended = r.bit().unwrap();
                 let (has_flag, has_payload) = (r.bit().unwrap(), r.bit().unwrap());
-                let id = r.unsigned(0, 65535).unwrap();
+                let id = r.unsigned(0, 65535, false).unwrap();
                 let read_flag = has_flag.then(|| r.bit().unwrap());
                 let read_payload =
-                    has_payload.then(|| r.octet_string(0, UNBOUNDED).unwrap().into_vec());
+                    has_payload.then(|| r.octet_string(0, UNBOUNDED, false).unwrap().into_vec());
                 let (mut read_later, mut read_last) = (None, None);
                 if extended {
                     let mut additions = r.additions().unwrap();
                     if additions.present() {
                         let value = r.open_type().unwrap();
-                        read_later = Some(Reader::new(&value).unsigned(0, 7).unwrap() as u8);
+                        read_later = Some(Reader::new(&value).unsigned(0, 7, false).unwrap() as u8);
                     }
                     if additions.present() {
                         let value = r.open_type().unwrap();
                         let mut inner = Reader::new(&value);
-                        read_last = Some(inner.octet_string(0, UNBOUNDED).unwrap().into_vec());
+                        read_last =
+                            Some(inner.octet_string(0, UNBOUNDED, false).unwrap().into_vec());
                     }
                     additions.skip_rest(r).unwrap();
                 }
@@ -929,7 +902,7 @@ fn a_number_of_more_octets_than_64_bits_have_is_refused_whatever_it_holds() {
         let held = octets.len().saturating_sub(2) <= size_of::<usize>();
         let read = index.filter(|_| held);
         assert_eq!(theirs.map(|value| value as u64), read, "{octets:02x?}");
-        let ours = Reader::new(octets).enumerated(3, 2, true).ok();
+        let ours = Reader::new(octets).index(3, 2, true).ok();
         assert_eq!(ours, index, "{octets:02x?}");
     }
 }
@@ -957,11 +930,11 @@ fn what_one_refuses_the_other_refuses() {
         let mut r = Reader::new(octets);
         let extended = r.bit().ok()?;
         let has_payload = r.bit().ok()?;
-        let small = r.unsigned(0, 100).ok()? as u8;
-        let rate = r.unsigned_extensible(0, 4000000000000).ok()?;
-        let name = r.printable_string_extensible(1, 150).ok()?.into_owned();
+        let small = r.unsigned(0, 100, false).ok()? as u8;
+        let rate = r.unsigned(0, 4000000000000, true).ok()?;
+        let name = r.printable_string(1, 150, true).ok()?.into_owned();
         let payload = match has_payload {
-            true => Some(r.octet_string(0, UNBOUNDED).ok()?.into_vec()),
+            true => Some(r.octet_string(0, UNBOUNDED, false).ok()?.into_vec()),
             false => None,
         };
         let fixed = r.octet_array::<3>().ok()?;

@@ -113,7 +113,7 @@ pub fn in_field(name: &'static str) -> impl FnOnce(Error) -> Error {
 /// use oxirush_aper::{ErrorKind, Reader};
 ///
 /// // A number of the constraint (0..65535) is two octets, and one is there
-/// let error = Reader::new(&[0x12]).unsigned(0, 65535).unwrap_err();
+/// let error = Reader::new(&[0x12]).unsigned(0, 65535, false).unwrap_err();
 /// assert_eq!(error.kind(), ErrorKind::Decode);
 /// assert_eq!(
 ///     error.to_string(),
@@ -435,7 +435,7 @@ impl Error {
     /// use oxirush_aper::{ErrorKind, Reader};
     ///
     /// // An ENUMERATED of four values and an extension marker, read from no octet
-    /// let codec = Reader::new(&[]).enumerated(4, 0, true).unwrap_err();
+    /// let codec = Reader::new(&[]).index(4, 0, true).unwrap_err();
     /// let error = codec.undecodable_ie("NGSetupRequest", "DefaultPagingDRX");
     /// assert_eq!(error.kind(), ErrorKind::UndecodableIe);
     /// assert_eq!(

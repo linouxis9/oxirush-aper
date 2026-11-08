@@ -101,7 +101,6 @@ struct Sample {
     name: Cow<'static, str>,
     printable: Cow<'static, str>,
     visible: Cow<'static, str>,
-    ia5: Cow<'static, str>,
     object: ObjectIdentifier,
     open: Octets<'static>,
     list: Vec<Either>,
@@ -131,7 +130,6 @@ const MEMBERS: &[&str] = &[
     "name",
     "printable",
     "visible",
-    "ia5",
     "object",
     "open",
     "list",
@@ -161,7 +159,6 @@ impl Tree for Sample {
         members.put("name", json::text(&self.name));
         members.put("printable", json::text(&self.printable));
         members.put("visible", json::text(&self.visible));
-        members.put("ia5", json::text(&self.ia5));
         members.put("object", json::object_identifier(&self.object));
         members.put("open", json::octets(&self.open));
         let list = self.list.iter().map(|item| item.to_tree()).collect();
@@ -203,9 +200,6 @@ impl Tree for Sample {
             visible: reading.member(&members, "visible", |v, r| {
                 json::read_text(r, v, Characters::Visible)
             })?,
-            ia5: reading.member(&members, "ia5", |v, r| {
-                json::read_text(r, v, Characters::Ia5)
-            })?,
             object: reading.member(&members, "object", |v, r| {
                 json::read_object_identifier(r, v)
             })?,
@@ -239,7 +233,6 @@ fn sample() -> Sample {
         name: "gnb-1".into(),
         printable: "AMF 1".into(),
         visible: "visible".into(),
-        ia5: "a@b".into(),
         object: ObjectIdentifier::new(vec![1, 2, 840]).unwrap(),
         open: vec![0x05, 0x00].into(),
         list: vec![
@@ -270,7 +263,6 @@ fn written() -> Value {
         "name": "gnb-1",
         "printable": "AMF 1",
         "visible": "visible",
-        "ia5": "a@b",
         "object": "1.2.840",
         "open": "0500",
         "list": [{"number": 7}, {"kind": "unspecified"}, {"nothing": null}],
@@ -548,7 +540,7 @@ fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
         why,
         "this is not a value of Sample: \"other\" is not a member that its type has: it has \
          flag, id, rate, small, kind, either, octets, plmn, fixed-bits, mask, address, \
-         day-of-week, few, name, printable, visible, ia5, object, open, list, absent, later"
+         day-of-week, few, name, printable, visible, object, open, list, absent, later"
     );
 
     let mut without = written();
@@ -630,11 +622,6 @@ fn the_other_values_are_refused_as_what_they_are_not() {
             "visible",
             tree!("a\tb"),
             "\"a\\tb\" has a character that a VisibleString has not",
-        ),
-        (
-            "ia5",
-            tree!("é"),
-            "\"é\" has a character that an IA5String has not",
         ),
         (
             "object",

@@ -55,24 +55,24 @@ fn block_1() {
         let mut octets = Vec::new();
         let mut writer = Writer::new(&mut octets);
         // INTEGER (0..7): three bits
-        writer.unsigned(5, 0, 7)?;
+        writer.unsigned(5, 0, 7, false)?;
         // INTEGER (0..255, ...): the extension bit, then one octet, aligned
-        writer.unsigned_extensible(200, 0, 255)?;
+        writer.unsigned(200, 0, 255, true)?;
         // ENUMERATED with 6 root values and an extension marker: the fourth
         writer.index(3, 6, true);
         // SIZE (1..256) of a SEQUENCE OF: its count, then its items
         writer.size(2, 1, 256)?;
-        writer.unsigned(1, 0, 1)?;
-        writer.unsigned(0, 0, 1)?;
+        writer.unsigned(1, 0, 1, false)?;
+        writer.unsigned(0, 0, 1, false)?;
         println!("{octets:02x?}");
 
         let mut reader = Reader::new(&octets);
-        println!("{}", reader.unsigned(0, 7)?);
-        println!("{}", reader.unsigned_extensible(0, 255)?);
-        println!("{}", reader.enumerated(6, 0, true)?);
+        println!("{}", reader.unsigned(0, 7, false)?);
+        println!("{}", reader.unsigned(0, 255, true)?);
+        println!("{}", reader.index(6, 0, true)?);
         println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
 
-        println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7).unwrap_err());
+        println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err());
         Ok(())
     }
 
@@ -114,19 +114,19 @@ fn block_2() {
             // The extension bit, then a bit for each member that may be absent
             let extended = reader.bit()?;
             let has_name = reader.bit()?;
-            let id = reader.unsigned(0, 4095)? as u16;
+            let id = reader.unsigned(0, 4095, false)? as u16;
             // An index among two values of the root, and none added that is known
-            let kind = match reader.enumerated(2, 0, true)? {
+            let kind = match reader.index(2, 0, true)? {
                 0 => Kind::Macro,
                 _ => Kind::Small,
             };
             let name = match has_name {
-                true => Some(reader.printable_string(1, 150)?),
+                true => Some(reader.printable_string(1, 150, false)?),
                 false => None,
             };
             let count = reader.size(0, 8)?;
             let neighbours = (0..count)
-                .map(|_| reader.unsigned(0, 4095).map(|id| id as u16))
+                .map(|_| reader.unsigned(0, 4095, false).map(|id| id as u16))
                 .collect::<Result<_, _>>()?;
             // What a later version adds is skipped
             if extended {
@@ -140,14 +140,14 @@ fn block_2() {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.bit(false);
             writer.bit(self.name.is_some());
-            writer.unsigned(self.id.into(), 0, 4095)?;
+            writer.unsigned(self.id.into(), 0, 4095, false)?;
             writer.index(match self.kind { Kind::Macro => 0, Kind::Small => 1 }, 2, true);
             if let Some(name) = &self.name {
-                writer.printable_string(name, 1, 150)?;
+                writer.printable_string(name, 1, 150, false)?;
             }
             writer.size(self.neighbours.len(), 0, 8)?;
             for neighbour in &self.neighbours {
-                writer.unsigned((*neighbour).into(), 0, 4095)?;
+                writer.unsigned((*neighbour).into(), 0, 4095, false)?;
             }
             Ok(())
         }
@@ -226,13 +226,13 @@ fn block_5() {
         let mut octets = Vec::new();
         let mut writer = Writer::new(&mut octets);
         let start = writer.begin_open_type();
-        writer.unsigned(0x1234, 0, 65535)?;
+        writer.unsigned(0x1234, 0, 65535, false)?;
         writer.end_open_type(start);
         println!("{octets:02x?}");
 
         let mut reader = Reader::new(&octets);
         let held = reader.open_type()?;
-        println!("{held:?}: {:#x}", Reader::new(&held).unsigned(0, 65535)?);
+        println!("{held:?}: {:#x}", Reader::new(&held).unsigned(0, 65535, false)?);
         Ok(())
     }
 
@@ -251,7 +251,7 @@ fn block_6() {
         writer.bit(true); // a
         writer.additions(&[true, false])?; // b is there, c is not
         let start = writer.begin_open_type();
-        writer.unsigned(7, 0, 255)?;
+        writer.unsigned(7, 0, 255, false)?;
         writer.end_open_type(start);
 
         let mut reader = Reader::new(&octets);
@@ -259,7 +259,7 @@ fn block_6() {
         let a = reader.bit()?;
         let mut additions = reader.additions()?;
         let b = match additions.present() {
-            true => Some(Reader::new(&reader.open_type()?).unsigned(0, 255)?),
+            true => Some(Reader::new(&reader.open_type()?).unsigned(0, 255, false)?),
             false => None,
         };
         // What a later version of the type added is skipped
@@ -375,24 +375,24 @@ fn block_10() {
         let mut octets = Vec::new();
         let mut writer = Writer::new(&mut octets);
         // INTEGER (0..7): three bits
-        writer.unsigned(5, 0, 7)?;
+        writer.unsigned(5, 0, 7, false)?;
         // INTEGER (0..255, ...): the extension bit, then one octet, aligned
-        writer.unsigned_extensible(200, 0, 255)?;
+        writer.unsigned(200, 0, 255, true)?;
         // ENUMERATED with 6 root values and an extension marker: the fourth
         writer.index(3, 6, true);
         // SIZE (1..256) of a SEQUENCE OF: its count, then its items
         writer.size(2, 1, 256)?;
-        writer.unsigned(1, 0, 1)?;
-        writer.unsigned(0, 0, 1)?;
+        writer.unsigned(1, 0, 1, false)?;
+        writer.unsigned(0, 0, 1, false)?;
         println!("{octets:02x?}");
 
         let mut reader = Reader::new(&octets);
-        println!("{}", reader.unsigned(0, 7)?);
-        println!("{}", reader.unsigned_extensible(0, 255)?);
-        println!("{}", reader.enumerated(6, 0, true)?);
+        println!("{}", reader.unsigned(0, 7, false)?);
+        println!("{}", reader.unsigned(0, 255, true)?);
+        println!("{}", reader.index(6, 0, true)?);
         println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
 
-        println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7).unwrap_err());
+        println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err());
         Ok(())
     }
 

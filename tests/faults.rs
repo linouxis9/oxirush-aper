@@ -53,7 +53,8 @@ fn a_length_of_127_or_less_is_one_octet() {
     // §11.9.3.6: "If "n" is less than or equal to 127, then "n" shall be encoded [...]
     // into bits 7 (most significant) to 1 (least significant) of a single octet and bit
     // 8 shall be set to zero." An OCTET STRING of five octets, after its length.
-    let string = |reader: &mut Reader<'_>| reader.octet_string(0, UNBOUNDED).unwrap().to_vec();
+    let string =
+        |reader: &mut Reader<'_>| reader.octet_string(0, UNBOUNDED, false).unwrap().to_vec();
     let (value, faults) = read(&[5, 1, 2, 3, 4, 5], string);
     assert_eq!((value, noted(&faults)), (vec![1, 2, 3, 4, 5], vec![]));
     // The same length in the two octets of §11.9.3.7, which are for 128 to 16383.
@@ -74,7 +75,7 @@ fn a_fragment_before_another_is_the_largest() {
     // value such that the associated field or list of fields contains more than or
     // exactly "m" octets, bits, components or characters". 32768 octets are one fragment
     // of twice 16K, then a length of zero.
-    let string = |reader: &mut Reader<'_>| reader.octet_string(0, UNBOUNDED).unwrap().len();
+    let string = |reader: &mut Reader<'_>| reader.octet_string(0, UNBOUNDED, false).unwrap().len();
     let one = [&[0xc2][..], &[9; 32768], &[0]].concat();
     let (length, faults) = read(&one, string);
     assert_eq!((length, noted(&faults)), (32768, vec![]));
@@ -88,7 +89,7 @@ fn a_fragment_before_another_is_the_largest() {
     let most = [&[0xc4][..], &[9; 65536], &[0xc1], &[9; 16384], &[0]].concat();
     assert!(read(&most, string).1.is_empty());
     // The elements of a list and the bits of a string are counted the same way.
-    let bits = |reader: &mut Reader<'_>| reader.bit_string(0, UNBOUNDED).unwrap().len();
+    let bits = |reader: &mut Reader<'_>| reader.bit_string(0, UNBOUNDED, false).unwrap().len();
     let two = [&[0xc1][..], &[0; 2048], &[0xc1], &[0; 2048], &[0]].concat();
     let (length, faults) = read(&two, bits);
     assert_eq!((length, faults.len()), (32768, 1));
@@ -117,34 +118,34 @@ fn a_normally_small_number_of_63_or_less_is_six_bits() {
 fn a_whole_number_has_the_least_octets_that_hold_it() {
     // §11.3.6: a non-negative-binary-integer in the least octets: "the leading eight
     // bits of the field shall not all be zero unless the field is precisely eight bits
-    // long". A semi-constrained whole number (§11.7.4) of 5.
-    let above = |reader: &mut Reader<'_>| reader.semi_constrained(0).unwrap();
-    assert_eq!(read(&[1, 5], above), (5, Faults::default()));
-    let (number, faults) = read(&[2, 0, 5], above);
-    assert_eq!(number, 5);
-    assert_eq!(noted(&faults), [(Fault::LongNumber, 8)]);
+    // long". The semi-constrained whole number (§11.7.4) of a normally small number
+    // above 63 (§11.6), 300.
+    let above = |reader: &mut Reader<'_>| reader.small().unwrap();
+    assert_eq!(read(&[0x80, 2, 1, 44], above), (300, Faults::default()));
+    let (number, faults) = read(&[0x80, 3, 0, 1, 44], above);
+    assert_eq!(number, 300);
+    assert_eq!(noted(&faults), [(Fault::LongNumber, 16)]);
     assert_eq!(Fault::LongNumber.clause(), "11.3.6, 11.4.6");
-    // Zero is one octet of zero.
-    assert!(read(&[1, 0], above).1.is_empty());
     // §11.4.6: a 2's-complement-binary-integer in the least octets: "the leading nine
-    // bits of the field shall not all be zero and shall not all be ones". An
-    // unconstrained whole number (§11.8.3) of 5, of -1, of 128 and of -129.
-    let any = |reader: &mut Reader<'_>| reader.unconstrained().unwrap();
+    // bits of the field shall not all be zero and shall not all be ones". The
+    // unconstrained whole number (§11.8.3) of an INTEGER (0..0, ...) after its
+    // extension bit: 5, -1, 128 and -129.
+    let any = |reader: &mut Reader<'_>| reader.signed(0, 0, true).unwrap();
     for (least, more, number) in [
-        (&[1, 0x05][..], &[2, 0x00, 0x05][..], 5),
-        (&[1, 0xff], &[2, 0xff, 0xff], -1),
-        (&[2, 0x00, 0x80], &[3, 0x00, 0x00, 0x80], 128),
-        (&[2, 0xff, 0x7f], &[3, 0xff, 0xff, 0x7f], -129),
+        (&[0x80, 1, 0x05][..], &[0x80, 2, 0x00, 0x05][..], 5),
+        (&[0x80, 1, 0xff], &[0x80, 2, 0xff, 0xff], -1),
+        (&[0x80, 2, 0x00, 0x80], &[0x80, 3, 0x00, 0x00, 0x80], 128),
+        (&[0x80, 2, 0xff, 0x7f], &[0x80, 3, 0xff, 0xff, 0x7f], -129),
     ] {
         assert_eq!(read(least, any), (number, Faults::default()), "{number}");
         let (read, faults) = read(more, any);
         assert_eq!(read, number);
-        assert_eq!(noted(&faults), [(Fault::LongNumber, 8)], "{number}");
+        assert_eq!(noted(&faults), [(Fault::LongNumber, 16)], "{number}");
     }
     // §11.5.7.4, the constrained whole number of a range above 64K: the number of its
     // octets, less one, in the bits that the range needs, then the octets, which are
     // the least (§11.3.6). 5 of 0..4294967295: two bits, then an octet.
-    let wide = |reader: &mut Reader<'_>| reader.unsigned(0, 4_294_967_295).unwrap();
+    let wide = |reader: &mut Reader<'_>| reader.unsigned(0, 4_294_967_295, false).unwrap();
     assert_eq!(read(&[0x00, 5], wide), (5, Faults::default()));
     let (number, faults) = read(&[0x40, 0, 5], wide);
     assert_eq!(number, 5);
@@ -157,8 +158,8 @@ fn padding_bits_are_zero() {
     // zero bits have been concatenated to make the length of the encoding produced so far
     // a multiple of eight bits". INTEGER (0..7), then INTEGER (0..65535) in two octets.
     let two = |reader: &mut Reader<'_>| {
-        let first = reader.unsigned(0, 7).unwrap();
-        (first, reader.unsigned(0, 65535).unwrap())
+        let first = reader.unsigned(0, 7, false).unwrap();
+        (first, reader.unsigned(0, 65535, false).unwrap())
     };
     assert_eq!(
         read(&[0b1010_0000, 0x12, 0x34], two),
@@ -177,7 +178,7 @@ fn padding_bits_are_zero() {
     assert_eq!(noted(&read(&[0x81, 7], octet).1), [(Fault::Padding, 1)]);
     let string = |reader: &mut Reader<'_>| {
         let first = reader.bit().unwrap();
-        (first, reader.octet_string(3, 3).unwrap().to_vec())
+        (first, reader.octet_string(3, 3, false).unwrap().to_vec())
     };
     assert_eq!(
         noted(&read(&[0xc0, 1, 2, 3], string).1),
@@ -185,7 +186,7 @@ fn padding_bits_are_zero() {
     );
     let bits = |reader: &mut Reader<'_>| {
         let first = reader.bit().unwrap();
-        (first, reader.bit_string(24, 24).unwrap().len())
+        (first, reader.bit_string(24, 24, false).unwrap().len())
     };
     assert_eq!(
         noted(&read(&[0xa0, 1, 2, 3], bits).1),
@@ -256,7 +257,7 @@ fn the_faults_are_counted_and_the_first_are_kept() {
     let octets = [0x80, 1, 9].repeat(6);
     let mut reader = Reader::noting(&octets);
     for _ in 0..6 {
-        assert_eq!(reader.octet_string(0, UNBOUNDED).unwrap(), [9]);
+        assert_eq!(reader.octet_string(0, UNBOUNDED, false).unwrap(), [9]);
     }
     let faults = reader.faults();
     assert_eq!(faults.count(), 6);

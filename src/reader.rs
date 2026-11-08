@@ -32,8 +32,8 @@ const RESERVED: usize = 4096;
 ///
 /// // INTEGER (0..7), then INTEGER (0..65535), which is two octets after padding
 /// let mut reader = Reader::new(&[0b1010_0000, 0x12, 0x34]);
-/// assert_eq!(reader.unsigned(0, 7)?, 5);
-/// assert_eq!(reader.unsigned(0, 65535)?, 0x1234);
+/// assert_eq!(reader.unsigned(0, 7, false)?, 5);
+/// assert_eq!(reader.unsigned(0, 65535, false)?, 0x1234);
 /// # Ok::<(), oxirush_aper::Error>(())
 /// ```
 ///
@@ -85,7 +85,7 @@ impl<'a> Reader<'a> {
     ///
     /// // An OCTET STRING of one octet, whose length is in two octets
     /// let mut reader = Reader::noting(&[0x80, 0x01, 0xaa]);
-    /// assert_eq!(reader.octet_string(0, UNBOUNDED)?, [0xaa]);
+    /// assert_eq!(reader.octet_string(0, UNBOUNDED, false)?, [0xaa]);
     /// assert_eq!(reader.faults()[0].fault, Fault::LengthInTwoOctets);
     /// # Ok::<(), oxirush_aper::Error>(())
     /// ```
@@ -285,12 +285,24 @@ impl<'a> Reader<'a> {
 
     // ── Whole numbers ───────────────────────────────────────────────────────
 
-    /// A constrained whole number (X.691 §11.5) of `lower..=upper`, as an INTEGER of
-    /// that constraint is encoded (§13.2.2): no bit for one value, a bit-field for a
-    /// range of 255 values at most, one octet for 256, two octets up to 64K, and
-    /// above that the number of its octets, then its octets.
+    /// An INTEGER of the constraint `lower..=upper` (X.691 §13.2.2), held in 64 bits
+    /// without a sign: a constrained whole number (§11.5), which is no bit for one
+    /// value, a bit-field for a range of 255 values at most, one octet for 256, two
+    /// octets up to 64K, and above that the number of its octets, then its octets.
+    /// When the constraint is `extensible` (§13.1), a bit comes first, and when it is
+    /// set the number is any, as an unconstrained one.
+    ///
+    /// # Errors
+    ///
+    /// A number outside the root of the constraint is an error, and so is one after the
+    /// extension bit that is negative or of more than 64 bits: the bindings have no type
+    /// for it.
     #[inline]
-    pub fn unsigned(&mut self, lower: u64, upper: u64) -> Result<u64, Error> {
+    pub fn unsigned(&mut self, lower: u64, upper: u64, extensible: bool) -> Result<u64, Error> {
+        if extensible && self.bit()? {
+            let number = self.whole_number(true)?;
+            return u64::try_from(number).map_err(|_| Error::does_not_fit(64));
+        }
         debug_assert!(lower <= upper);
         let span = upper.wrapping_sub(lower);
         let offset = self.offset(span)?;
@@ -305,9 +317,14 @@ impl<'a> Reader<'a> {
         Ok(lower + offset)
     }
 
-    /// A constrained whole number of `lower..=upper`, where the bounds may be negative.
+    /// An INTEGER of the constraint `lower..=upper`, as [`unsigned`](Self::unsigned)
+    /// reads one, where the bounds may be negative: held in 64 bits with a sign.
     #[inline]
-    pub fn signed(&mut self, lower: i64, upper: i64) -> Result<i64, Error> {
+    pub fn signed(&mut self, lower: i64, upper: i64, extensible: bool) -> Result<i64, Error> {
+        if extensible && self.bit()? {
+            let number = self.whole_number(true)?;
+            return i64::try_from(number).map_err(|_| Error::does_not_fit(64));
+        }
         debug_assert!(lower <= upper);
         let span = (upper as u64).wrapping_sub(lower as u64);
         let offset = self.offset(span)?;
@@ -356,56 +373,6 @@ impl<'a> Reader<'a> {
             .fold(0, |number, octet| number << 8 | u64::from(*octet)))
     }
 
-    /// An INTEGER whose constraint `lower..=upper` has an extension marker (X.691
-    /// §13.1): a bit, then the number within the constraint, or any number as an
-    /// unconstrained one. The bindings hold it in 64 bits without a sign.
-    ///
-    /// # Errors
-    ///
-    /// A number outside the constraint that is negative, or of more than 64 bits, is an
-    /// error: the bindings have no type for it.
-    pub fn unsigned_extensible(&mut self, lower: u64, upper: u64) -> Result<u64, Error> {
-        if !self.bit()? {
-            return self.unsigned(lower, upper);
-        }
-        let number = self.whole_number(true)?;
-        u64::try_from(number).map_err(|_| Error::does_not_fit(64))
-    }
-
-    /// An INTEGER whose constraint `lower..=upper` has an extension marker, where the
-    /// bounds may be negative. The bindings hold it in 64 bits with a sign.
-    pub fn signed_extensible(&mut self, lower: i64, upper: i64) -> Result<i64, Error> {
-        if !self.bit()? {
-            return self.signed(lower, upper);
-        }
-        self.unconstrained()
-    }
-
-    /// An unconstrained whole number (X.691 §11.8), as an INTEGER without a
-    /// PER-visible constraint is encoded (§13.2.4): the number of its octets, then
-    /// its octets in two's complement.
-    pub fn unconstrained(&mut self) -> Result<i64, Error> {
-        let number = self.whole_number(true)?;
-        i64::try_from(number).map_err(|_| Error::does_not_fit(64))
-    }
-
-    /// A semi-constrained whole number (X.691 §11.7), as an INTEGER with a lower
-    /// bound and no upper one is encoded (§13.2.3): the number of the octets of what
-    /// it has above `lower`, then these octets.
-    pub fn semi_constrained(&mut self, lower: i64) -> Result<i64, Error> {
-        let above = self.whole_number(false)?;
-        let number = i128::from(lower) + above;
-        i64::try_from(number).map_err(|_| Error::does_not_fit(64))
-    }
-
-    /// A semi-constrained whole number whose lower bound is not negative, in 64 bits
-    /// without a sign.
-    pub fn semi_constrained_unsigned(&mut self, lower: u64) -> Result<u64, Error> {
-        let above = self.whole_number(false)?;
-        let number = i128::from(lower) + above;
-        u64::try_from(number).map_err(|_| Error::does_not_fit(64))
-    }
-
     /// A whole number after the unconstrained length of its octets: in two's
     /// complement when it is `signed`.
     ///
@@ -446,7 +413,9 @@ impl<'a> Reader<'a> {
             return self.bits(6);
         }
         let start = self.at - 1;
-        let number = self.semi_constrained_unsigned(0)?;
+        // A semi-constrained whole number of the lower bound 0 (§11.7).
+        let number = self.whole_number(false)?;
+        let number = u64::try_from(number).map_err(|_| Error::does_not_fit(64))?;
         // 63 and less are six bits after a zero bit (§11.6.1).
         if number <= 63 {
             self.note(Fault::SmallNumberAsLarge, start);
@@ -578,55 +547,35 @@ impl<'a> Reader<'a> {
 
     // ── ENUMERATED and CHOICE ───────────────────────────────────────────────
 
-    /// The index of a value of an ENUMERATED (X.691 §14) that has `root` values before
-    /// its extension marker and `additions` after it, when it is `extensible`. The
-    /// values are counted in the order of their numbers, those of the root first: the
-    /// first addition has the index `root`.
+    /// The index of a value of an ENUMERATED (X.691 §14) or of an alternative of a
+    /// CHOICE (§23) that has `root` of them before its extension marker and
+    /// `additions` after it, when it is `extensible`. They are counted in their order,
+    /// those of the root first: the first addition has the index `root`, and the
+    /// alternative of a CHOICE that is an addition follows in an open type.
     ///
     /// # Errors
     ///
-    /// An index that no value has is an error: a field of two bits holds four indexes
-    /// for three values, and a later version may add a value.
+    /// An index that the type does not have is an error: a field of two bits holds four
+    /// indexes for three values, and a later version may add one.
     #[inline]
-    pub fn enumerated(
-        &mut self,
-        root: u64,
-        additions: u64,
-        extensible: bool,
-    ) -> Result<u64, Error> {
-        match self.index(root, extensible)? {
-            (index, false) if index < root => Ok(index),
-            (index, true) if index < additions => Ok(root + index),
-            (index, addition) => Err(no_index(index, addition, "value of the ENUMERATED")),
-        }
-    }
-
-    /// The index of the alternative of a CHOICE (X.691 §23) that has `root`
-    /// alternatives before its extension marker and `additions` after it, when it is
-    /// `extensible`. The first addition has the index `root`, and its value follows in
-    /// an open type.
-    ///
-    /// # Errors
-    ///
-    /// An index that no alternative has is an error.
-    #[inline]
-    pub fn choice(&mut self, root: u64, additions: u64, extensible: bool) -> Result<u64, Error> {
-        match self.index(root, extensible)? {
-            (index, false) if index < root => Ok(index),
-            (index, true) if index < additions => Ok(root + index),
-            (index, addition) => Err(no_index(index, addition, "alternative of the CHOICE")),
-        }
-    }
-
-    /// An index among `root` values or alternatives, or among the additions: which of
-    /// the two it is.
-    #[inline]
-    fn index(&mut self, root: u64, extensible: bool) -> Result<(u64, bool), Error> {
+    pub fn index(&mut self, root: u64, additions: u64, extensible: bool) -> Result<u64, Error> {
         debug_assert!(root > 0);
         if extensible && self.bit()? {
-            return Ok((self.small()?, true));
+            let index = self.small()?;
+            if index < additions {
+                return Ok(root + index);
+            }
+            return Err(Error::decode(alloc::format!(
+                "the type has no index {index} after its extension marker"
+            )));
         }
-        Ok((self.offset(root - 1)?, false))
+        let index = self.offset(root - 1)?;
+        if index < root {
+            return Ok(index);
+        }
+        Err(Error::decode(alloc::format!(
+            "the type has no index {index}"
+        )))
     }
 
     // ── SEQUENCE ────────────────────────────────────────────────────────────
@@ -643,7 +592,7 @@ impl<'a> Reader<'a> {
     /// // octet of what follows the SEQUENCE
     /// let mut reader = Reader::new(&[0b0000_0010, 0b1000_0000, 0x01, 0xaa, 0x07]);
     /// reader.skip_additions()?;
-    /// assert_eq!(reader.unsigned(0, 255)?, 7);
+    /// assert_eq!(reader.unsigned(0, 255, false)?, 7);
     ///
     /// // A bitmap of two additions of which none is present has no encoding
     /// assert!(Reader::new(&[0b0000_0010, 0b0000_0000]).skip_additions().is_err());
@@ -700,12 +649,22 @@ impl<'a> Reader<'a> {
     }
 
     /// An OCTET STRING of the size constraint `lower..=upper` (X.691 §17), with
-    /// [`UNBOUNDED`] for no upper bound. The octets are borrowed.
+    /// [`UNBOUNDED`] for no upper bound. The octets are borrowed. When the constraint is
+    /// `extensible` (§17.3), a bit comes first, and when it is set the string is of any
+    /// size.
     ///
     /// A string of 16384 octets or more is in fragments when its size has no bound
     /// below 64K, and is then copied.
     #[inline]
-    pub fn octet_string(&mut self, lower: usize, upper: usize) -> Result<Octets<'a>, Error> {
+    pub fn octet_string(
+        &mut self,
+        lower: usize,
+        upper: usize,
+        extensible: bool,
+    ) -> Result<Octets<'a>, Error> {
+        if extensible && self.bit()? {
+            return self.octets_in_fragments();
+        }
         if upper >= 65536 {
             let octets = self.octets_in_fragments()?;
             return check_size(octets.len(), lower, upper).map(|()| octets);
@@ -728,20 +687,6 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// An OCTET STRING whose size constraint `lower..=upper` has an extension marker
-    /// (X.691 §17.3): a bit, then the string within the constraint, or a string of any
-    /// size.
-    pub fn octet_string_extensible(
-        &mut self,
-        lower: usize,
-        upper: usize,
-    ) -> Result<Octets<'a>, Error> {
-        match self.bit()? {
-            false => self.octet_string(lower, upper),
-            true => self.octets_in_fragments(),
-        }
-    }
-
     /// The octets of an open type (X.691 §11.2): the complete encoding of a value,
     /// after its length. The octets are borrowed, unless they are in fragments.
     ///
@@ -758,9 +703,9 @@ impl<'a> Reader<'a> {
     ///     let open = Reader::new(input).open_type()?;
     ///     match open.as_borrowed() {
     ///         // In one piece: the string is a part of `input`
-    ///         Some(octets) => Reader::new(octets).octet_string(0, 255),
+    ///         Some(octets) => Reader::new(octets).octet_string(0, 255, false),
     ///         // Gathered from fragments: the string is copied out of them
-    ///         None => Ok(Reader::new(&open).octet_string(0, 255)?.into_owned()),
+    ///         None => Ok(Reader::new(&open).octet_string(0, 255, false)?.into_owned()),
     ///     }
     /// }
     ///
@@ -844,9 +789,18 @@ impl<'a> Reader<'a> {
     /// octet-aligned, and one of 64 bits at most is held without an allocation.
     ///
     /// A string of 16384 bits or more is in fragments when its size has no bound
-    /// below 64K, and is then copied.
+    /// below 64K, and is then copied. When the constraint is `extensible` (§16.6), a bit
+    /// comes first, and when it is set the string is of any size.
     #[inline]
-    pub fn bit_string(&mut self, lower: usize, upper: usize) -> Result<BitString<'a>, Error> {
+    pub fn bit_string(
+        &mut self,
+        lower: usize,
+        upper: usize,
+        extensible: bool,
+    ) -> Result<BitString<'a>, Error> {
+        if extensible && self.bit()? {
+            return self.bit_string_in_fragments();
+        }
         if upper >= 65536 {
             let bits = self.bit_string_in_fragments()?;
             return check_size(bits.len(), lower, upper).map(|()| bits);
@@ -860,20 +814,6 @@ impl<'a> Reader<'a> {
         }
         let octets = self.aligned_bits(size)?;
         Ok(BitString::of(octets, size))
-    }
-
-    /// A BIT STRING whose size constraint `lower..=upper` has an extension marker
-    /// (X.691 §16.6): a bit, then the string within the constraint, or a string of any
-    /// size.
-    pub fn bit_string_extensible(
-        &mut self,
-        lower: usize,
-        upper: usize,
-    ) -> Result<BitString<'a>, Error> {
-        match self.bit()? {
-            false => self.bit_string(lower, upper),
-            true => self.bit_string_in_fragments(),
-        }
     }
 
     /// `count` bits that are not aligned, as a bit string.
@@ -919,49 +859,25 @@ impl<'a> Reader<'a> {
     // ── Character strings ───────────────────────────────────────────────────
 
     /// A PrintableString of the size constraint `lower..=upper` (X.691 §30.5), with
-    /// [`UNBOUNDED`] for no upper bound: a character is eight bits in the aligned
-    /// variant.
-    pub fn printable_string(&mut self, lower: usize, upper: usize) -> Result<Cow<'a, str>, Error> {
-        self.known_multiplier(lower, upper, false, Alphabet::Printable)
-    }
-
-    /// A PrintableString whose size constraint has an extension marker (X.691 §30.4).
-    pub fn printable_string_extensible(
+    /// [`UNBOUNDED`] for no upper bound, and a bit first when the constraint is
+    /// `extensible` (§30.4): a character is eight bits in the aligned variant.
+    pub fn printable_string(
         &mut self,
         lower: usize,
         upper: usize,
+        extensible: bool,
     ) -> Result<Cow<'a, str>, Error> {
-        self.known_multiplier(lower, upper, true, Alphabet::Printable)
+        self.known_multiplier(lower, upper, extensible, Alphabet::Printable)
     }
 
-    /// A VisibleString of the size constraint `lower..=upper`, with [`UNBOUNDED`] for
-    /// no upper bound.
-    pub fn visible_string(&mut self, lower: usize, upper: usize) -> Result<Cow<'a, str>, Error> {
-        self.known_multiplier(lower, upper, false, Alphabet::Visible)
-    }
-
-    /// A VisibleString whose size constraint has an extension marker.
-    pub fn visible_string_extensible(
+    /// A VisibleString, as [`printable_string`](Self::printable_string) reads one.
+    pub fn visible_string(
         &mut self,
         lower: usize,
         upper: usize,
+        extensible: bool,
     ) -> Result<Cow<'a, str>, Error> {
-        self.known_multiplier(lower, upper, true, Alphabet::Visible)
-    }
-
-    /// An IA5String of the size constraint `lower..=upper`, with [`UNBOUNDED`] for no
-    /// upper bound.
-    pub fn ia5_string(&mut self, lower: usize, upper: usize) -> Result<Cow<'a, str>, Error> {
-        self.known_multiplier(lower, upper, false, Alphabet::Ia5)
-    }
-
-    /// An IA5String whose size constraint has an extension marker.
-    pub fn ia5_string_extensible(
-        &mut self,
-        lower: usize,
-        upper: usize,
-    ) -> Result<Cow<'a, str>, Error> {
-        self.known_multiplier(lower, upper, true, Alphabet::Ia5)
+        self.known_multiplier(lower, upper, extensible, Alphabet::Visible)
     }
 
     /// A UTF8String (X.691 §30.6): the length of its octets, then its octets. A size
@@ -1079,7 +995,6 @@ impl Additions<'_> {
 pub(crate) enum Alphabet {
     Printable,
     Visible,
-    Ia5,
 }
 
 impl Alphabet {
@@ -1088,7 +1003,6 @@ impl Alphabet {
         match self {
             Self::Printable => code.is_ascii_alphanumeric() || b" '()+,-./:=?".contains(&code),
             Self::Visible => (0x20..=0x7e).contains(&code),
-            Self::Ia5 => code <= 0x7f,
         }
     }
 
@@ -1096,7 +1010,6 @@ impl Alphabet {
         match self {
             Self::Printable => "PrintableString",
             Self::Visible => "VisibleString",
-            Self::Ia5 => "IA5String",
         }
     }
 }
@@ -1123,16 +1036,6 @@ fn text<'a>(
             Err(_) => Err(not_text()),
         },
     }
-}
-
-/// The error of an index that nothing has: among the additions when it is one of an
-/// `addition`.
-#[cold]
-fn no_index(index: u64, addition: bool, of: &str) -> Error {
-    Error::decode(match addition {
-        false => alloc::format!("{index} is no {of}"),
-        true => alloc::format!("{index} is no {of} among those after its extension marker"),
-    })
 }
 
 /// A size that was read after an unconstrained length is within `lower..=upper`.
@@ -1165,12 +1068,12 @@ mod tests {
     fn the_octets_after_those_that_a_reader_takes_follow_the_value() {
         let octets = [0x05, 0x00, 0x00];
         let mut reader = Reader::taking(&octets, 1);
-        assert_eq!(reader.unsigned(0, 255).unwrap(), 5);
-        assert!(reader.unsigned(0, 255).is_err());
+        assert_eq!(reader.unsigned(0, 255, false).unwrap(), 5);
+        assert!(reader.unsigned(0, 255, false).is_err());
         let error = reader.finish().unwrap_err().to_string();
         assert!(error.contains("followed by 2 octets"), "{error}");
         let mut reader = Reader::taking(&octets[..1], 1);
-        assert_eq!(reader.unsigned(0, 255).unwrap(), 5);
+        assert_eq!(reader.unsigned(0, 255, false).unwrap(), 5);
         assert!(reader.finish().is_ok());
     }
 }
