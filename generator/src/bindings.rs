@@ -19,6 +19,8 @@ use std::fmt::Write;
 use anyhow::{Context, Result, bail, ensure};
 use syn::{Attribute, Fields, Item, Type};
 
+use crate::inspection::CONTAINERS;
+
 /// A constraint of a size or of a value: its bounds, where it has them, and whether it
 /// has an extension marker.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -930,6 +932,8 @@ impl Bindings {
                 out,
                 "use oxirush_aper::json::{{self, Reading, Refused, Tree, Value}};"
             )?;
+            writeln!(out, "#[cfg(feature = \"inspect\")]")?;
+            writeln!(out, "use crate::inspect_registry::names;")?;
             for entry in &module.entries {
                 match entry {
                     Entry::Constant { docs, text } => {
@@ -1177,7 +1181,7 @@ impl Bindings {
                 writeln!(out, "}}")?;
                 self.asn_type(out, &named, &definition.asn)?;
                 self.sequence_codec(out, definition, members, &declared, &named)?;
-                self.sequence_json(out, members, &named)?;
+                self.sequence_json(out, members, name, &named)?;
             }
             Shape::Choice(members) => {
                 writeln!(out, "pub enum {declared} {{")?;
@@ -1235,7 +1239,7 @@ impl Bindings {
                 }
                 self.asn_type(out, &named, &definition.asn)?;
                 self.choice_codec(out, definition, members, &declared, &named)?;
-                self.choice_json(out, members, &named)?;
+                self.choice_json(out, members, name, &named)?;
             }
             Shape::Enumerated(members) => {
                 writeln!(out, "pub enum {name} {{")?;
@@ -1251,12 +1255,12 @@ impl Bindings {
                 writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
                 writeln!(
                     out,
-                    "fn to_tree(&self) -> Value {{ json::text(Self::NAMES[self.index() as usize]) }}"
+                    "fn to_tree(&self) -> Value {{ json::text(names::{name}[self.index() as usize]) }}"
                 )?;
                 writeln!(
                     out,
                     "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{ \
-                     Ok(Self::VALUES[reading.named(value, &Self::NAMES)?]) }}"
+                     Ok(Self::VALUES[reading.named(value, names::{name})?]) }}"
                 )?;
                 writeln!(out, "}}")?;
                 self.serde(out, name)?;
@@ -1710,21 +1714,6 @@ impl Bindings {
             ordered.len(),
             values.join(", ")
         )?;
-        writeln!(
-            out,
-            "/// The names that ASN.1 gives the values, in the same order."
-        )?;
-        let names: Vec<String> = ordered
-            .iter()
-            .map(|member| format!("{:?}", member.asn))
-            .collect();
-        writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-        writeln!(
-            out,
-            "pub(crate) const NAMES: [&'static str; {}] = [{}];",
-            ordered.len(),
-            names.join(", ")
-        )?;
         // The number of a value is its index, unless ASN.1 numbers the values
         // otherwise.
         let numbered = ordered
@@ -1769,7 +1758,15 @@ impl Bindings {
 
     // ── The JSON forms ──────────────────────────────────────────────────────
 
-    fn sequence_json(&self, out: &mut String, members: &[Member], named: &str) -> Result<()> {
+    /// The tree of a SEQUENCE `name`, whose members the module `names` of the
+    /// inspection names, but for a field of a container, which it does not list.
+    fn sequence_json(
+        &self,
+        out: &mut String,
+        members: &[Member],
+        name: &str,
+        named: &str,
+    ) -> Result<()> {
         writeln!(out, "#[cfg(feature = \"inspect\")]")?;
         writeln!(out, "impl Tree for {named} {{")?;
         writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
@@ -1797,15 +1794,17 @@ impl Bindings {
             out,
             "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
         )?;
-        let names: Vec<String> = members
-            .iter()
-            .map(|member| format!("{:?}", member.asn))
-            .collect();
-        writeln!(
-            out,
-            "let members = reading.members(value, &[{}])?;",
-            names.join(", ")
-        )?;
+        let names = match CONTAINERS.iter().any(|(container, _)| *container == name) {
+            true => {
+                let names: Vec<String> = members
+                    .iter()
+                    .map(|member| format!("{:?}", member.asn))
+                    .collect();
+                format!("&[{}]", names.join(", "))
+            }
+            false => format!("names::{name}"),
+        };
+        writeln!(out, "let members = reading.members(value, {names})?;")?;
         for member in members {
             let read = match &member.kind {
                 Kind::Named(name) => format!("{name}::from_tree"),
@@ -1828,7 +1827,15 @@ impl Bindings {
         self.serde(out, named)
     }
 
-    fn choice_json(&self, out: &mut String, members: &[Member], named: &str) -> Result<()> {
+    /// The tree of a CHOICE `name`, whose alternatives the module `names` of the
+    /// inspection names.
+    fn choice_json(
+        &self,
+        out: &mut String,
+        members: &[Member],
+        name: &str,
+        named: &str,
+    ) -> Result<()> {
         writeln!(out, "#[cfg(feature = \"inspect\")]")?;
         writeln!(out, "impl Tree for {named} {{")?;
         writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
@@ -1849,14 +1856,9 @@ impl Bindings {
             out,
             "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
         )?;
-        let names: Vec<String> = members
-            .iter()
-            .map(|member| format!("{:?}", member.asn))
-            .collect();
         writeln!(
             out,
-            "let (position, value) = reading.alternative(value, &[{}])?;",
-            names.join(", ")
+            "let (position, value) = reading.alternative(value, names::{name})?;"
         )?;
         writeln!(out, "Ok(match position {{")?;
         for (position, member) in members.iter().enumerate() {

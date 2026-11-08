@@ -83,6 +83,21 @@ fn one_size(attributes: &[syn::Attribute]) -> Result<bool> {
     Ok(false)
 }
 
+/// Whether the attributes of a value of an ENUMERATED make it an extension addition.
+fn addition(attributes: &[syn::Attribute]) -> Result<bool> {
+    use syn::{Meta, Token, punctuated::Punctuated};
+    for attribute in attributes.iter().filter(|a| a.path().is_ident("rasn")) {
+        let metas = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+        if metas
+            .iter()
+            .any(|meta| meta.path().is_ident("extension_addition"))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// What [`rasn`] gives, and whether the attributes of a member give it a default value.
 fn rasn_kind(attributes: &[syn::Attribute]) -> Result<(Option<String>, bool, bool)> {
     use syn::{Meta, Token, punctuated::Punctuated};
@@ -152,10 +167,8 @@ pub(crate) fn well_known(asn: &str) -> Option<&'static str> {
     known.map(|(form, _)| *form)
 }
 
-/// The readable form of each well-known type, by the name that the bindings give it,
-/// and the names of the values of each ENUMERATED.
+/// The readable form of each well-known type, by the name that the bindings give it.
 fn generate_readable(generated: &str, out: &mut String) -> Result<()> {
-    use syn::ext::IdentExt;
     let syntax = syn::parse_file(generated)?;
     let mut declarations = Vec::new();
     items(&syntax.items, "", &mut declarations);
@@ -168,22 +181,6 @@ fn generate_readable(generated: &str, out: &mut String) -> Result<()> {
             let asn = rasn(&item.attrs)?.0;
             let asn = asn.unwrap_or_else(|| item.ident.to_string());
             wrapped.insert(item.ident.to_string(), (asn, &fields.unnamed[0].ty));
-        }
-    }
-    // The names of the values of each ENUMERATED, in the order of its definition.
-    let mut enumerations: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (_, item) in &declarations {
-        if let syn::Item::Enum(item) = item
-            && rasn(&item.attrs)?.1
-        {
-            for value in &item.variants {
-                let name = rasn(&value.attrs)?.0;
-                let name = name.unwrap_or_else(|| value.ident.unraw().to_string());
-                enumerations
-                    .entry(item.ident.to_string())
-                    .or_default()
-                    .push(name);
-            }
         }
     }
     // One line for each well-known type, in the order of the names of the types.
@@ -211,22 +208,12 @@ fn generate_readable(generated: &str, out: &mut String) -> Result<()> {
             forms.join("\n")
         )?,
     }
-    writeln!(
-        out,
-        "/// The names of the values of each ENUMERATED, by the name of its type in the \
-         bindings, in the order of the names of the types.\n\
-         pub(crate) const ENUMERATIONS: &[(&str, &[&str])] = &["
-    )?;
-    for (ty, names) in &enumerations {
-        writeln!(out, "({ty:?}, &{names:?}),")?;
-    }
-    writeln!(out, "];")?;
     Ok(())
 }
 
 /// The containers of the protocol, which a view shows as IEs, and how the list of the
 /// types writes each.
-const CONTAINERS: &[(&str, &str)] = &[
+pub(crate) const CONTAINERS: &[(&str, &str)] = &[
     ("ProtocolIEContainer", "ies"),
     ("ProtocolIEField", "ie"),
     ("ProtocolExtensionContainer", "extensions"),
@@ -291,8 +278,8 @@ fn shape(ty: &syn::Type, declared: &BTreeMap<String, &syn::Item>, depth: u8) -> 
 
 /// The list of the types: one line for each SEQUENCE and each CHOICE, with its members
 /// or its alternatives by the names that ASN.1 gives them, and one for each type that is
-/// a list or a bit string. A member that holds a transfer has the type that its
-/// octets contain in parentheses.
+/// a list or a bit string; then one for each ENUMERATED, with the names of its values.
+/// A member that holds a transfer has the type that its octets contain in parentheses.
 fn generate_types(
     generated: &str,
     transfers: &BTreeMap<String, std::collections::BTreeSet<String>>,
@@ -336,7 +323,9 @@ fn generate_types(
         Ok(format!("{name:?}{presence} {written}"))
     };
     // rustfmt leaves the lines of a macro called with braces as they are.
-    writeln!(out, "oxirush_aper::__types! {{")?;
+    writeln!(out, "oxirush_aper::__types! {{\n    types {{")?;
+    // The names of the values of each ENUMERATED, in the order of its definition.
+    let mut enumerations = Vec::new();
     for (name, item) in &declared {
         if CONTAINERS.iter().any(|(container, _)| container == name) {
             continue;
@@ -352,12 +341,12 @@ fn generate_types(
                         )
                     });
                     let members = members.collect::<Result<Vec<_>>>()?;
-                    writeln!(out, "    {name} sequence {{ {} }};", members.join(", "))?;
+                    writeln!(out, "        {name} sequence {{ {} }};", members.join(", "))?;
                 }
                 syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
                     let (written, _) = shape(&fields.unnamed[0].ty, &declared, 0);
                     if written != "_" && !(written == "bits" && one_size(&item.attrs)?) {
-                        writeln!(out, "    {name} = {written};")?;
+                        writeln!(out, "        {name} = {written};")?;
                     }
                 }
                 _ => {}
@@ -375,12 +364,46 @@ fn generate_types(
                     }
                 });
                 let alternatives = alternatives.collect::<Result<Vec<_>>>()?;
-                writeln!(out, "    {name} choice {{ {} }};", alternatives.join(", "))?;
+                writeln!(
+                    out,
+                    "        {name} choice {{ {} }};",
+                    alternatives.join(", ")
+                )?;
+            }
+            // The values in the order of their indexes in PER, which its tree reads them
+            // by: those of the root by their numbers, then the additions in their order
+            // (X.691 §14.1).
+            syn::Item::Enum(item) => {
+                let mut values = Vec::new();
+                for value in &item.variants {
+                    let written = rasn(&value.attrs)?.0;
+                    let written = written.unwrap_or_else(|| value.ident.unraw().to_string());
+                    let number = value.discriminant.as_ref().map(|(_, number)| {
+                        quote::ToTokens::to_token_stream(number)
+                            .to_string()
+                            .replace(' ', "")
+                    });
+                    let number = number.and_then(|number| number.parse::<i128>().ok());
+                    let number =
+                        number.ok_or_else(|| anyhow!("{name}: a value without a number"))?;
+                    let addition = addition(&value.attrs)?;
+                    values.push(((addition, if addition { 0 } else { number }), written));
+                }
+                values.sort_by_key(|(index, _)| *index);
+                let values: Vec<_> = values
+                    .iter()
+                    .map(|(_, written)| format!("{written:?}"))
+                    .collect();
+                enumerations.push(format!("        {name} [{}];", values.join(", ")));
             }
             _ => {}
         }
     }
-    writeln!(out, "}}")?;
+    writeln!(out, "    }}\n    enumerations {{")?;
+    for line in enumerations {
+        writeln!(out, "{line}")?;
+    }
+    writeln!(out, "    }}\n}}")?;
     Ok(())
 }
 

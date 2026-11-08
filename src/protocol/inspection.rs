@@ -78,17 +78,44 @@ macro_rules! __kind {
 /// The types of a protocol, which its `src/inspect_registry.rs` lists from the bindings in
 /// the order of their names: each SEQUENCE with its members and each CHOICE with its
 /// alternatives, by the names that ASN.1 gives them, and each type that is a list or a
-/// bit string. A member is written with `?` when a value may be without it, and its value
-/// as `_` when it has no members, `bits` for a bit string whose size varies, the name of
-/// its type, a list in brackets, a container by its kind, or in parentheses the type that
-/// the octets of a transfer contain.
+/// bit string; then each ENUMERATED with the names of its values. A member is written
+/// with `?` when a value may be without it, and its value as `_` when it has no members,
+/// `bits` for a bit string whose size varies, the name of its type, a list in brackets,
+/// a container by its kind, or in parentheses the type that the octets of a transfer
+/// contain.
+///
+/// The module `names` has the names of each SEQUENCE, CHOICE and ENUMERATED, by the
+/// name of its type: those that its tree writes, and that the paths read in `TYPES` and
+/// `ENUMERATIONS`.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __types {
-    ($($name:ident $kind:tt $body:tt;)*) => {
+    (
+        types { $($name:ident $kind:tt $body:tt;)* }
+        enumerations { $($enumerated:ident [$($value:literal),*];)* }
+    ) => {
         pub(crate) const TYPES: &[(&str, $crate::inspect::Kind)] = &[
             $((stringify!($name), $crate::__kind!($kind $body)),)*
         ];
+        pub(crate) const ENUMERATIONS: &[(&str, &[&str])] = &[
+            $((stringify!($enumerated), names::$enumerated),)*
+        ];
+        #[allow(non_upper_case_globals)]
+        pub(crate) mod names {
+            $($crate::__names!($name $kind $body);)*
+            $(pub(crate) const $enumerated: &[&str] = &[$($value),*];)*
+        }
+    };
+}
+
+/// The names of the members of a SEQUENCE or the alternatives of a CHOICE of
+/// [`__types!`], as a constant named after its type.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __names {
+    ($name:ident = $is:tt) => {};
+    ($name:ident $kind:ident { $($member:literal $presence:tt $shape:tt),* }) => {
+        pub(crate) const $name: &[&str] = &[$($member),*];
     };
 }
 

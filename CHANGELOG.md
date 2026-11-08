@@ -35,6 +35,11 @@ All notable changes to `oxirush-aper` are recorded here.
   `Reader::index(root, additions, extensible)` reads the index of an
   `ENUMERATED` and of a `CHOICE`, as `Writer::index` writes it, and its error
   says that the type has no such index.
+- The inspection tables of a protocol write the names of the members of each
+  `SEQUENCE`, of the alternatives of each `CHOICE` and of the values of each
+  `ENUMERATED` once, in its module `names`, which the trees of the bindings and
+  the paths share: the bindings of NGAP are 2926 lines shorter, those of S1AP
+  1259.
 - oxirush-utils 0.2.0, whose trees read a member of a `SEQUENCE` by its name.
 - The generator writes the codec of each member of a `SEQUENCE` in one line:
   the bindings of NGAP are 4794 lines shorter, those of S1AP 2106.
