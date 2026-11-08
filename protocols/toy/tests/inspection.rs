@@ -1815,3 +1815,62 @@ fn the_items_of_a_list_go_by_their_names_or_their_positions() {
     }
     assert_eq!(edited, before);
 }
+
+/// A RELEASE REQUEST with a Tunnel, which a tree writes with the criticality of its
+/// IE, and a Cause.
+fn with_tunnel(tunnel: Value) -> Value {
+    tree!({"message": "ReleaseRequest", "ies": [
+        {"Tunnel": tunnel, "criticality": "ignore"},
+        {"Cause": {"radioNetwork": "user-inactivity"}},
+    ]})
+}
+
+/// An alternative of the type NULL is a value, `null`, which a path lists and selects
+/// as any other, and `null` set there is that alternative. Elsewhere `null` is the
+/// absence of a value.
+#[test]
+fn an_alternative_of_the_type_null_is_a_value() {
+    let unassigned = with_tunnel(tree!({"unassigned": null}));
+    let tree = sent(&unassigned).unwrap();
+    assert_eq!(tree, unassigned);
+    assert_eq!(select(&tree, "/toy/Tunnel/unassigned"), [Value::Null]);
+    assert_eq!(select(&tree, "/toy/Tunnel/*"), [Value::Null]);
+    let paths = inspect::paths(&tree);
+    assert!(
+        paths.contains(&("/toy/Tunnel/unassigned".to_string(), Value::Null)),
+        "{paths:?}"
+    );
+    // An alternative that is not there selects nothing.
+    assert!(select(&tree, "/toy/Tunnel/gTPTunnel").is_empty());
+    let checked = inspect::check_path("SetupRequest", "/toy/Tunnel/unassigned");
+    assert_eq!(checked, Ok(()));
+    // `null` set there is that alternative, in the place of the one there.
+    let mut edited = sent(&with_tunnel(tunnel())).unwrap();
+    inspect::set(&mut edited, "/toy/Tunnel/unassigned", Value::Null).unwrap();
+    assert_eq!(edited, unassigned);
+    assert_eq!(sent(&edited).unwrap(), unassigned);
+    // Elsewhere, `null` takes an optional member out, which then selects nothing.
+    let mut setup = sent(&setup_request()).unwrap();
+    let failure = "/toy/TransferList/0/failureTransfer";
+    inspect::set(&mut setup, failure, Value::Null).unwrap();
+    assert!(select(&setup, failure).is_empty());
+}
+
+/// So it is in a procedure that the tables do not have: its message is read as a
+/// container of IEs, each of the type of its identifier.
+#[test]
+fn an_alternative_of_the_type_null_is_a_value_in_a_procedure_that_the_tables_lack() {
+    let pdu = TOYPDU::from_tree(&with_tunnel(tree!({"unassigned": null}))).unwrap();
+    let mut octets = pdu.encode().unwrap();
+    octets[1] = 200;
+    let tree = TOYPDU::decode(&octets).unwrap().to_tree();
+    assert_eq!(tree["procedure_code"], tree!(200));
+    let paths = inspect::paths(&tree);
+    assert!(
+        paths.contains(&("/toy/Tunnel/unassigned".to_string(), Value::Null)),
+        "{paths:?}"
+    );
+    for (path, value) in &paths {
+        assert_eq!(select(&tree, path), std::slice::from_ref(value), "{path}");
+    }
+}

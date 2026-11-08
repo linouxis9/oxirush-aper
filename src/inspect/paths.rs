@@ -31,15 +31,8 @@ use super::views::LOSSY;
 use super::{Kind, Member, Protocol, Sent, Shape, foreign, registered, same_name, type_name};
 use crate::{Direction, Error, ErrorKind};
 
-/// The member of a view that holds the message of the PDU.
-const MESSAGE: &str = "message";
 /// The member of a message that holds its IEs.
 const IES: &str = "protocolIEs";
-/// The member that marks an IE or a transfer whose value an edit changed: its octets are
-/// no longer those of its value.
-pub const EDITED: &str = "_edited";
-/// The members that hold the value of an IE or of a transfer.
-const VALUES: [&str; 3] = ["value", "extensionValue", "decoded"];
 /// How deep a tree that is written is read.
 const WRITTEN: usize = 256;
 
@@ -180,35 +173,21 @@ impl Protocol {
             };
             let decoded = match has("_decode_error") {
                 true => Shape::Undecoded,
-                false => self.ie_value(of("_original_id").or(of("id")).or(id), extended),
+                false => self.ie_value(of("id").or(id), extended),
             };
             vec![
                 ("id", Shape::Plain, false),
                 ("criticality", Shape::Plain, false),
                 (value, decoded, true),
                 (raw, Shape::Plain, true),
-                ("_original_id", Shape::Plain, true),
-                ("_ie_name", Shape::Plain, true),
                 ("_decode_error", Shape::Plain, true),
-                (EDITED, Shape::Plain, true),
                 (LOSSY, Shape::Plain, true),
             ]
         };
         Some(match shape {
             // The members of a type of another protocol are those that its tables give.
-            Shape::Unknown | Shape::Undecoded | Shape::Foreign(..) => return None,
-            Shape::Pdu(message) => vec![
-                ("procedure_code", Shape::Plain, false),
-                ("direction", Shape::Plain, false),
-                ("criticality", Shape::Plain, false),
-                (
-                    MESSAGE,
-                    message.map_or(Shape::AnyMessage, Shape::Message),
-                    false,
-                ),
-                ("_raw_message", Shape::Plain, true),
-                (LOSSY, Shape::Plain, true),
-            ],
+            // The members of a tree of a PDU are those that the trees give it.
+            Shape::Unknown | Shape::Undecoded | Shape::Foreign(..) | Shape::Pdu(_) => return None,
             // The IEs of the message of a PDU are those of its object set.
             Shape::Message(message) => {
                 let mut members = self.members(Shape::Named(message.ty), entry)?;
@@ -252,7 +231,6 @@ impl Protocol {
                     ("decoded", decoded, true),
                     ("_raw_transfer", Shape::Plain, true),
                     ("_decode_error", Shape::Plain, true),
-                    (EDITED, Shape::Plain, true),
                     (LOSSY, Shape::Plain, true),
                 ]
             }
@@ -566,34 +544,14 @@ pub(super) fn refuse(
 
 // ── Edits ───────────────────────────────────────────────────────────────────
 
-/// Write the entry of an IE of `protocol` as a view has it: the name of the IE that its
-/// `id` may be written as becomes its number, and its `octets` what it is sent as in
-/// place of a value. An entry of a list of IEs has an `id`, which no member of an ASN.1
-/// type is named beside a string or a number.
-///
-/// # Errors
-///
-/// An `id` that names no IE of the protocol, and an IE written with its value and its
-/// octets.
-pub fn written_ie(protocol: &'static Protocol, entry: &mut Map) -> Result<(), Error> {
-    let id = match entry.get("id") {
-        Some(Value::String(name)) => Some(oxirush_utils::tree!(protocol.ie_named(name)?)),
-        Some(Value::Number(_)) => None,
-        _ => return Ok(()),
-    };
-    if let Some(id) = id {
-        entry.insert("id".into(), id);
-    }
-    if let Some(octets) = entry.shift_remove("octets") {
-        if VALUES.iter().any(|value| entry.contains_key(value)) {
-            return Err(Error::new(
-                ErrorKind::Value,
-                "an IE is written with its value or its octets, not both",
-            ));
-        }
+/// Write the entry of an IE as a view has it: the `octets` that a tree writes in the place
+/// of its value are what it is sent as.
+pub(super) fn written_ie(entry: &mut Map) {
+    if entry.get("id").is_some_and(Value::is_number)
+        && let Some(octets) = entry.shift_remove("octets")
+    {
         entry.insert("_raw_value".into(), octets);
     }
-    Ok(())
 }
 
 // ── Trees ───────────────────────────────────────────────────────────────────

@@ -85,6 +85,17 @@ All notable changes to `oxirush-aper` are recorded here.
 
 - The family of the paths of a view and the functions of a view that only the
   protocol crates called: `view_parts`, `of_the_pdu` and `view_of_jer`.
+- `inspect::view`, and what the view of a PDU kept for edits that only a view
+  written by hand made, now that it is the codec of a tree alone: the marks
+  `_edited`, `_original_id`, `_ie_name` and `_raw_message`, an IE written with
+  its name as its `id`, and the octets received of a transfer or an IE beside an
+  edited value, which a tree never has (`EDITED`, `written_ie`,
+  `received_transfer`). `inspect` exports `named_ies` and `listed_ies` alone of
+  what reads a view, which the tests of the tables take. The tests of a view
+  written by hand, `tests/inspect.rs` and those of `tests/trees.rs` that TOY
+  has, go: `tests/trees.rs` keeps the tests of a protocol written by hand for
+  what TOY cannot have, types that hold one another 256 deep and the types of
+  another protocol.
 - `json::to_value(&x)`, which is `x.to_tree()`.
 - `protocol::CriticalityOf`, the associated type `check::Diagnostics::Criticality`,
   the parameter of `protocol::ObjectSet` and the conversions between two
@@ -162,7 +173,7 @@ All notable changes to `oxirush-aper` are recorded here.
   `thumbv7em-none-eabihf` takes `inspect` and not every feature.
 - TOY (`protocols/toy/`), a protocol of five procedures that the generator
   writes from its own ASN.1 modules as it writes NGAP and S1AP, with one of each
-  form that the generator writes. Its tests are those of what the generated
+  form that the generator writes, an alternative of the type NULL among them. Its tests are those of what the generated
   crates share, which oxirush-ngap and oxirush-s1ap held twice: the codec and the
   `Display` of a PDU, its keys, the memory that a claimed count reserves, the
   macros and the readers, `check` and the Criticality Diagnostics, the errors,

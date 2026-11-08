@@ -3306,6 +3306,7 @@ pub mod toy_ies {
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum Tunnel<'a> {
         gTPTunnel(GTPTunnel<'a>),
+        unassigned(()),
         choice_Extensions(ProtocolIEField<'static>),
     }
     impl<'a> Tunnel<'a> {
@@ -3314,6 +3315,7 @@ pub mod toy_ies {
         pub fn into_owned(self) -> Tunnel<'static> {
             match self {
                 Self::gTPTunnel(value) => Tunnel::gTPTunnel(value.into_owned()),
+                Self::unassigned(value) => Tunnel::unassigned(value),
                 Self::choice_Extensions(value) => Tunnel::choice_Extensions(value),
             }
         }
@@ -3321,6 +3323,11 @@ pub mod toy_ies {
     impl<'a> From<GTPTunnel<'a>> for Tunnel<'a> {
         fn from(value: GTPTunnel<'a>) -> Self {
             Self::gTPTunnel(value)
+        }
+    }
+    impl<'a> From<()> for Tunnel<'a> {
+        fn from(value: ()) -> Self {
+            Self::unassigned(value)
         }
     }
     impl<'a> From<ProtocolIEField<'static>> for Tunnel<'a> {
@@ -3333,8 +3340,9 @@ pub mod toy_ies {
     }
     impl<'a> Decode<'a> for Tunnel<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(match reader.index(2, 0, false)? {
+            Ok(match reader.index(3, 0, false)? {
                 0 => Self::gTPTunnel(GTPTunnel::decode(reader)?),
+                1 => Self::unassigned(()),
                 _ => Self::choice_Extensions((ProtocolIEField::decode(reader)?).into_owned()),
             })
         }
@@ -3343,11 +3351,14 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             match self {
                 Self::gTPTunnel(value) => {
-                    writer.index(0, 2, false);
+                    writer.index(0, 3, false);
                     value.encode(writer)?;
                 }
+                Self::unassigned(value) => {
+                    writer.index(1, 3, false);
+                }
                 Self::choice_Extensions(value) => {
-                    writer.index(1, 2, false);
+                    writer.index(2, 3, false);
                     value.encode(writer)?;
                 }
             }
@@ -3360,6 +3371,7 @@ pub mod toy_ies {
         fn to_tree(&self) -> Value {
             match self {
                 Self::gTPTunnel(value) => json::alternative("gTPTunnel", value.to_tree()),
+                Self::unassigned(value) => json::alternative("unassigned", Value::Null),
                 Self::choice_Extensions(value) => {
                     json::alternative("choice-Extensions", value.to_tree())
                 }
@@ -3369,6 +3381,9 @@ pub mod toy_ies {
             let (position, value) = reading.alternative(value, names::Tunnel)?;
             Ok(match position {
                 0 => Self::gTPTunnel(reading.within("gTPTunnel", value, GTPTunnel::from_tree)?),
+                1 => Self::unassigned(
+                    reading.within("unassigned", value, |value, reading| reading.null(value))?,
+                ),
                 _ => Self::choice_Extensions(reading.within(
                     "choice-Extensions",
                     value,

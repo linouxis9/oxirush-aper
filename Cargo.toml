@@ -50,9 +50,5 @@ name = "json"
 required-features = ["inspect"]
 
 [[test]]
-name = "inspect"
-required-features = ["inspect"]
-
-[[test]]
 name = "trees"
 required-features = ["inspect"]

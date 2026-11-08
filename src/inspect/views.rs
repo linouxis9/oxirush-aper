@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 
 use oxirush_utils::tree::{Map, Value};
 
-use super::paths::{EDITED, extended, member_shape, of_a_transfer, written_ie};
+use super::paths::{extended, member_shape, of_a_transfer, written_ie};
 use super::{Protocol, Shape, Typed, foreign, same_name};
 use crate::json::{self, hex};
 use crate::{Direction, Error, ErrorKind};
@@ -221,10 +221,6 @@ impl Protocol {
                     }
                 }
                 object.insert("_raw_value".into(), raw);
-                object.insert("_original_id".into(), id.into());
-                if let Some(name) = self.ie_name_of(id) {
-                    object.insert("_ie_name".into(), name.into());
-                }
             }
             // What each member is, once the entry of an IE says what it was decoded as.
             let members = self.member_shapes(shape, object);
@@ -269,8 +265,8 @@ impl Protocol {
             return other.collapse(value, member, depth, other.carried_shape(name));
         }
         if let Some(object) = value.as_object_mut() {
-            // An IE may be written with its name as `id`, and with its `octets`.
-            written_ie(self, object)?;
+            // An IE may be written as its `octets`.
+            written_ie(object);
             let id = object
                 .get("id")
                 .and_then(Value::as_u64)
@@ -281,9 +277,7 @@ impl Protocol {
                     continue;
                 }
                 self.collapse(child, key, depth + 1, member_shape(&members, key))?;
-                if let Some(raw) = child.get("_raw_transfer").cloned() {
-                    self.received_transfer(child, key, id, raw)?;
-                } else if let Some(members) = child.as_object() {
+                if let Some(members) = child.as_object() {
                     // What was not received is encoded from the value written.
                     let transfer = match key.as_str() {
                         "value" | "extensionValue" => id.and_then(self.ie_contents),
@@ -314,14 +308,8 @@ impl Protocol {
                 }
             }
             let raw = object.shift_remove("_raw_value");
-            let original_id = object.shift_remove("_original_id");
-            let undecoded = object.shift_remove("_decode_error").is_some();
-            object.shift_remove("_ie_name");
-            object.shift_remove(EDITED);
-            object.shift_remove(LOSSY);
             if let Some(id) = id {
-                let wire =
-                    self.ie_octets(object, member, shape, id, raw, original_id, undecoded)?;
+                let wire = self.ie_octets(object, member, shape, id, raw)?;
                 let field = match member.starts_with("iE-Extension") {
                     true => "extensionValue",
                     false => "value",
@@ -336,63 +324,9 @@ impl Protocol {
         Ok(())
     }
 
-    /// The octets of a transfer of the member `key`, which was received as `raw`: those
-    /// received for a value that was not edited, and its edited value encoded.
-    fn received_transfer(
-        &self,
-        child: &mut Value,
-        key: &str,
-        id: Option<u16>,
-        raw: Value,
-    ) -> Result<(), Error> {
-        // Nothing that is written is left out: a transfer has its decoded value beside
-        // the octets that it was received as, and no other.
-        let known = ["_raw_transfer", "decoded", "_decode_error", EDITED, LOSSY];
-        let mut members = child.as_object().into_iter().flatten();
-        if let Some((other, _)) = members.find(|(name, _)| !known.contains(&name.as_str())) {
-            return Err(Error::new(
-                ErrorKind::Path,
-                format!("{key} has no member {other:?}: a transfer has its decoded value"),
-            ));
-        }
-        let Some(edited) = child.get("decoded") else {
-            *child = raw;
-            return Ok(());
-        };
-        let bytes = unhex(&raw)?;
-        // An IE's identifier gives the type of what it contains, and the name of a
-        // transfer field the type of the transfer.
-        let transfer = match key {
-            "value" | "extensionValue" => id.and_then(self.ie_contents).ok_or_else(|| {
-                Error::new(
-                    ErrorKind::Value,
-                    "an IE that contains no type has no decoded value beside its octets",
-                )
-            })?,
-            key => match self.carried_or_foreign(key) {
-                Some(carried) => carried,
-                None => (self.transfer_typed)(key)?,
-            },
-        };
-        let (original, ..) = (transfer.decode)(&bytes)?;
-        if &original == edited {
-            *child = raw;
-        } else {
-            if (transfer.encode)(&original)? != bytes {
-                return Err(Error::new(
-                    ErrorKind::Value,
-                    format!("{key} does not encode back to the octets received"),
-                ));
-            }
-            *child = Value::String(hex(&(transfer.encode)(edited)?));
-        }
-        Ok(())
-    }
-
     /// The octets of the IE `id`, whose entry is `object` in a container of `shape`
-    /// that the member `member` holds: those that it was received as, `raw`, for a
-    /// value that was not edited, and its value encoded otherwise.
-    #[allow(clippy::too_many_arguments)]
+    /// that the member `member` holds: the octets that a tree writes in the place of its
+    /// value, `raw`, or its value encoded.
     fn ie_octets(
         &self,
         object: &mut Map,
@@ -400,9 +334,10 @@ impl Protocol {
         shape: Shape,
         id: u16,
         raw: Option<Value>,
-        original_id: Option<Value>,
-        undecoded: bool,
     ) -> Result<Value, Error> {
+        if let Some(raw) = raw {
+            return Ok(raw);
+        }
         // The value of an IE of an extension container has another name.
         let field = match member.starts_with("iE-Extension") {
             true => "extensionValue",
@@ -414,65 +349,11 @@ impl Protocol {
         {
             *written = self.carried_octets(written, id)?;
         }
-        let typed = |id: u16| {
-            let octets = "write its value as its octets, {\"octets\": \"…\"}";
-            self.ie_type(id, shape)
-                .map_err(|error| error.reworded(|what| format!("{what}: {octets}")))
-        };
-        Ok(match (raw, object.get(field)) {
-            // The octets alone are sent as they are.
-            (Some(raw), None) => raw,
-            // The IE was shown as its octets.
-            (_, Some(edited)) if undecoded => {
-                if !edited.is_string() {
-                    return Err(Error::new(
-                        ErrorKind::Value,
-                        format!("IE {id} did not decode: its value is its octets in hexadecimal"),
-                    ));
-                }
-                edited.clone()
-            }
-            (Some(raw), Some(edited)) => {
-                // The identifier that the octets were decoded as, when a view has one:
-                // without it they are those of the identifier of the entry.
-                let original_id = match &original_id {
-                    Some(original) => (original.as_u64())
-                        .and_then(|v| u16::try_from(v).ok())
-                        .ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::Value,
-                                "_original_id is the identifier that the octets were decoded \
-                                 as, a number",
-                            )
-                        })?,
-                    None => id,
-                };
-                let bytes = unhex(&raw)?;
-                let received = self.ie_type(original_id, shape)?;
-                let (original, ..) = (received.decode)(&bytes)?;
-                if &original == edited && id == original_id {
-                    raw
-                } else if (received.encode)(&original)? != bytes {
-                    return Err(Error::new(
-                        ErrorKind::Value,
-                        format!(
-                            "IE {original_id} does not encode back to the octets received; \
-                         replace its octets instead"
-                        ),
-                    ));
-                } else {
-                    Value::String(hex(&(typed(id)?.encode)(edited)?))
-                }
-            }
-            // An IE that was not received.
-            (None, Some(new)) => Value::String(hex(&(typed(id)?.encode)(new)?)),
-            (None, None) => {
-                return Err(Error::new(
-                    ErrorKind::Value,
-                    format!("IE {id} has no {field} and no _raw_value"),
-                ));
-            }
-        })
+        let octets = "write its value as its octets, {\"octets\": \"…\"}";
+        let typed = self.ie_type(id, shape);
+        let typed = typed.map_err(|error| error.reworded(|what| format!("{what}: {octets}")))?;
+        let value = object.get(field).unwrap_or(&Value::Null);
+        Ok(Value::String(hex(&(typed.encode)(value)?)))
     }
 
     /// The name that ASN.1 gives the message of a direction and a procedure code.
@@ -490,36 +371,6 @@ impl Protocol {
         let (set, ..) = messages.find(|(set, ..)| same_name(set.name, name))?;
         Some(set.criticality.name())
     }
-}
-
-/// The view of a PDU of `protocol` of a direction, a procedure code and a criticality,
-/// whose message is the octets `raw`: its `procedure_code`, its `direction`, its
-/// `criticality` and its `message`, each IE of which has its typed value and what it was
-/// received as.
-///
-/// # Errors
-///
-/// The message does not decode.
-pub fn view(
-    protocol: &'static Protocol,
-    direction: Direction,
-    code: u8,
-    criticality: Value,
-    raw: &[u8],
-) -> Result<Value, Error> {
-    // The container of the message is read whatever its form: its IEs say theirs.
-    let (mut message, exact, _) = (protocol.message_typed(direction, code).decode)(raw)?;
-    protocol.expand(&mut message, 0, protocol.message_shape(direction, code));
-    let mut view = Map::new();
-    view.insert("procedure_code".into(), code.into());
-    view.insert("direction".into(), direction.name().into());
-    view.insert("criticality".into(), criticality);
-    view.insert("message".into(), message);
-    view.insert("_raw_message".into(), hex(raw).into());
-    if !exact {
-        view.insert(LOSSY.into(), true.into());
-    }
-    Ok(Value::Object(view))
 }
 
 /// The tree of the PDU of `protocol` of a direction, a procedure code and a criticality,
@@ -540,12 +391,13 @@ pub fn tree(
     criticality: Value,
     raw: &[u8],
 ) -> Value {
-    // The view is taken: its IEs are moved into the tree, and not copied.
-    let ies = view(protocol, direction, code, Value::Null, raw)
-        .ok()
-        .filter(|view| view.get(LOSSY).is_none())
-        .and_then(|mut view| {
-            let message = view.get_mut("message")?;
+    // The message as a view has it, whose IEs are moved into the tree, and not copied. The
+    // container of the message is read whatever its form: its IEs say theirs.
+    let decoded = (protocol.message_typed(direction, code).decode)(raw).ok();
+    let ies = decoded
+        .filter(|(_, exact, _)| *exact)
+        .and_then(|(mut message, ..)| {
+            protocol.expand(&mut message, 0, protocol.message_shape(direction, code));
             message.get_mut("protocolIEs").map(core::mem::take)
         });
     tree_of(protocol, direction, code, criticality, ies, || {

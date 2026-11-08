@@ -3,8 +3,8 @@
 -- single containers, extension containers whose IE has the type that the type it
 -- extends gives it, a value that holds a key, a list of up to 65536 items, a count
 -- that two octets do not hold, a number of an extensible range, an ENUMERATED whose
--- order its numbers and its addition give, the well-known types and the identifiers
--- of a UE.
+-- order its numbers and its addition give, an alternative of the type NULL, the
+-- well-known types and the identifiers of a UE.
 
 TOY-IEs {
 iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
@@ -286,6 +286,7 @@ TransportLayerAddress ::= BIT STRING (SIZE(1..160, ...))
 
 Tunnel ::= CHOICE {
 	gTPTunnel			GTPTunnel,
+	unassigned			NULL,
 	choice-Extensions	ProtocolIE-SingleContainer { {Tunnel-ExtIEs} }
 }
 

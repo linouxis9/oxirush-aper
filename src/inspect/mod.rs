@@ -42,11 +42,9 @@ use oxirush_utils::tree::Value;
 use crate::{Error, ErrorKind};
 
 pub use crate::json::Form;
-pub use paths::{
-    EDITED, Members, extended, listed_ies, member_shape, named_ies, of_a_transfer, written_ie,
-};
+pub use paths::{listed_ies, named_ies};
 pub use trees::{check_path, enumerated_at, insert, open, paths, remove, select, set};
-pub use views::{Parts, tree, tree_of_jer, tree_parts, view};
+pub use views::{Parts, tree, tree_of_jer, tree_parts};
 
 /// What a type of a protocol makes of octets: the JSON form of their value, whether that
 /// value encodes back to them, and why a reader that takes the one encoding of X.691

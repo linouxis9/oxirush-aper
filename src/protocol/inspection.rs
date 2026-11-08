@@ -539,7 +539,6 @@ mod tests {
             let mut entry = tree!({"id": cause, "criticality": "ignore", "value": &value});
             if received {
                 entry["_raw_value"] = tree!("0000");
-                entry["_original_id"] = tree!(cause);
             }
             entry
         };

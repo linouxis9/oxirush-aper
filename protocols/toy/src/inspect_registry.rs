@@ -62,7 +62,7 @@ oxirush_aper::__types! {
         TransferItem sequence { "transfer-ID": _, "setupTransfer": (SetupTransfer), "failureTransfer"? (FailureTransfer), "iE-Extensions"? extensions };
         TransferList = [TransferItem];
         TransportLayerAddress = bits;
-        Tunnel choice { "gTPTunnel": GTPTunnel, "choice-Extensions": ie };
+        Tunnel choice { "gTPTunnel": GTPTunnel, "unassigned": null, "choice-Extensions": ie };
         UEIDPair sequence { "uE-Core-ID": _, "uE-RAN-ID": _, "iE-Extensions"? extensions };
         UEIDs choice { "uE-ID-pair": UEIDPair, "uE-Core-ID": _, "choice-Extensions": ie };
         UnsuccessfulOutcome sequence { "procedureCode": _, "criticality": Criticality, "value": _ };
