@@ -490,10 +490,6 @@ pub trait Message<'a>: Container<'a> {
     /// that holds it has: what `of_message` is given for it, and what the macro that
     /// builds a PDU gives one whose criticality it is not given.
     const CRITICALITY: Criticality;
-    /// The message that `octets` hold, which borrows nothing from them: what it holds of
-    /// octets is copied.
-    #[doc(hidden)]
-    fn __decode_owned(octets: &[u8]) -> Result<Self, Error>;
 }
 
 /// A transfer of protocol IEs: the type of octets that an IE or a member of a value holds,

@@ -50,11 +50,11 @@ fn ours(written: &Result<Vec<u8>, Error>) -> Result<&[u8], String> {
 }
 
 /// The octets of the open type that holds the message of a PDU.
-fn message(pdu: &Pdu) -> &[u8] {
+fn message<'p>(pdu: &'p Borrowed<'_>) -> &'p [u8] {
     match pdu {
-        Pdu::initiatingMessage(message) => &message.value,
-        Pdu::successfulOutcome(message) => &message.value,
-        Pdu::unsuccessfulOutcome(message) => &message.value,
+        Borrowed::initiatingMessage(message) => &message.value,
+        Borrowed::successfulOutcome(message) => &message.value,
+        Borrowed::unsuccessfulOutcome(message) => &message.value,
         _ => panic!("a PDU of an alternative that the bindings do not have"),
     }
 }
@@ -63,8 +63,11 @@ fn message(pdu: &Pdu) -> &[u8] {
 /// crate reads and writes it, and as the codec of rasn does.
 pub fn decode(octets: &[u8]) {
     // The PDU, which both read or both refuse, and write back as the same octets.
-    let read = Pdu::decode(octets);
-    let written = read.as_ref().map_err(Clone::clone).and_then(Pdu::encode);
+    let read = Borrowed::decode(octets);
+    let written = read
+        .as_ref()
+        .map_err(Clone::clone)
+        .and_then(Borrowed::encode);
     oracle::same_octets(PDU_TYPE, octets, ours(&written));
     let pdu = match read {
         Ok(pdu) => pdu,
@@ -78,12 +81,12 @@ pub fn decode(octets: &[u8]) {
         Ok(written) => written,
         Err(error) => panic!("a PDU that was decoded does not encode: {error}: {pdu:?}"),
     };
-    assert_eq!(Pdu::decode(&written).as_ref(), Ok(&pdu), "{written:02x?}");
+    assert_eq!(
+        Borrowed::decode(&written).as_ref(),
+        Ok(&pdu),
+        "{written:02x?}"
+    );
 
-    // A PDU that borrows its message from the octets is the same PDU.
-    let borrowed = Borrowed::decode_borrowed(octets);
-    assert_eq!(borrowed.as_ref(), Ok(&pdu), "{octets:02x?}");
-    assert_eq!(borrowed.unwrap().into_owned(), pdu);
     // `decode` and `encode` take a PDU of the usual layout octet by octet: the codec of
     // the type gives the same PDU and the same octets.
     assert_eq!(aper::decode::<Borrowed>(octets).as_ref(), Ok(&pdu));
@@ -156,7 +159,7 @@ fn observed(name: &'static str, octets: &[u8], ours: &Result<Value, Error>) {
 /// values, its tree, and the paths of its view. Each value that a view shows is
 /// compared with what the JSON Encoding Rules of rasn write of the same octets.
 pub fn view(octets: &[u8]) {
-    let Ok(pdu) = Pdu::decode(octets) else {
+    let Ok(pdu) = Borrowed::decode(octets) else {
         return;
     };
     hooks::observe(Some(observed));
@@ -253,7 +256,7 @@ pub fn paths(octets: &[u8]) {
     let Some((value, rest)) = counted(rest) else {
         return;
     };
-    let Ok(pdu) = Pdu::decode(rest) else {
+    let Ok(pdu) = Borrowed::decode(rest) else {
         return;
     };
     let Ok(mut view) = pdu.to_view() else {
@@ -297,7 +300,7 @@ pub fn paths(octets: &[u8]) {
     if let Ok(edited) = pdu.with_view(&view) {
         assert_eq!(Pdu::from_view(&view).as_ref(), Ok(&edited), "{path}");
         if let Ok(octets) = edited.encode() {
-            assert_eq!(Pdu::decode(&octets).as_ref(), Ok(&edited), "{path}");
+            assert_eq!(Borrowed::decode(&octets).as_ref(), Ok(&edited), "{path}");
         }
     }
 }
@@ -332,7 +335,7 @@ fn has_member(value: &Value, name: &str) -> bool {
 /// its message, and,
 /// when its view read every value and transfer with its type, the PDU that the values of
 /// its view write alone is the PDU.
-fn checked(pdu: &Pdu) {
+fn checked(pdu: &Borrowed<'_>) {
     let (deviations, structure) = match (pdu.check(), pdu.check_structure()) {
         (Ok(deviations), Ok(structure)) => (deviations, structure),
         (Err(all), Err(structure)) => {
@@ -363,14 +366,13 @@ fn checked(pdu: &Pdu) {
         pdu.criticality_diagnostics(&deviations),
         pdu.criticality_diagnostics_for_response(&deviations),
     ] {
-        let octets = match hooks::bindings::encode_open_type(&diagnostics) {
+        let octets = match aper::encode(&diagnostics) {
             Ok(octets) => octets,
             Err(error) => {
                 panic!("Criticality Diagnostics that do not encode: {error}: {diagnostics:?}")
             }
         };
-        let read =
-            hooks::bindings::decode_open_type::<hooks::bindings::CriticalityDiagnostics>(&octets);
+        let read = aper::decode::<hooks::bindings::CriticalityDiagnostics>(&octets);
         assert_eq!(read.as_ref(), Ok(&diagnostics), "{octets:02x?}");
     }
 
@@ -406,7 +408,7 @@ fn ies_of(view: &Value) -> Option<&Value> {
 /// finds such a form around their values, or does not know its procedure. What `check` says agrees with the other
 /// readings ([`checked`]).
 pub fn exact(octets: &[u8]) {
-    let Ok(pdu) = Pdu::decode(octets) else {
+    let Ok(pdu) = Borrowed::decode(octets) else {
         return;
     };
     let written = match pdu.encode() {
@@ -488,7 +490,11 @@ static POOL: LazyLock<Pool> = LazyLock::new(|| {
     let pdus: Vec<Pdu> = rows
         .filter(|line| !line.starts_with('#'))
         .filter_map(|line| line.split('\t').nth(1))
-        .filter_map(|octets| Pdu::decode(&unhex(octets)).ok())
+        .filter_map(|octets| {
+            Borrowed::decode(&unhex(octets))
+                .ok()
+                .map(Borrowed::into_owned)
+        })
         .collect();
     let mut ies = Vec::new();
     let mut values = std::collections::BTreeMap::<String, Vec<Value>>::new();
@@ -584,12 +590,12 @@ fn change(value: &mut Value, walk: &[u16], leaf: Value) {
 /// What holds of a PDU that the crate wrote, from a view or a tree: it encodes, its
 /// octets decode to it, its tree writes it again, and what `check` says of it agrees
 /// with the other readings ([`checked`]).
-fn written_pdu(pdu: &Pdu) {
+fn written_pdu(pdu: &Borrowed<'_>) {
     let octets = match pdu.encode() {
         Ok(octets) => octets,
         Err(error) => panic!("a PDU that the crate wrote does not encode: {error}: {pdu:?}"),
     };
-    assert_eq!(Pdu::decode(&octets).as_ref(), Ok(pdu), "{octets:02x?}");
+    assert_eq!(Borrowed::decode(&octets).as_ref(), Ok(pdu), "{octets:02x?}");
     let tree = pdu.to_tree();
     assert_eq!(Pdu::from_tree(&tree).as_ref(), Ok(pdu), "{tree}");
     checked(pdu);

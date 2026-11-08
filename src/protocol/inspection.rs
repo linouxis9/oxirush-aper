@@ -996,7 +996,7 @@ pub fn __view_of_jer(view: &Value) -> Result<Value, Error> {
 // A protocol calls it in its crate, whose items `crate::` names.
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! __hooks {
-    (cfg $cfg:ident, bindings $bindings:ident, pdu $pdu:ident, owned $owned:ident) => {
+    (cfg $cfg:ident, bindings $bindings:ident, pdu $pdu:ident) => {
         #[cfg($cfg)]
         #[doc(hidden)]
         #[doc = concat!(
@@ -1018,7 +1018,7 @@ macro_rules! __hooks {
             /// The bindings, by a name that is the same for both protocols.
             pub use crate::$bindings as bindings;
             /// A PDU that owns its octets, by a name that is the same for both protocols.
-            pub use crate::$bindings::$owned as Pdu;
+            pub type Pdu = crate::$bindings::$pdu<'static>;
             /// A PDU that borrows its message from the octets that it is decoded from.
             pub use crate::$bindings::$pdu as BorrowedPdu;
 
@@ -1030,7 +1030,7 @@ macro_rules! __hooks {
 
             /// The octets of the message of `pdu`.
             pub fn message_octets<'p>(pdu: &'p $pdu<'_>) -> &'p [u8] {
-                pdu.value()
+                $crate::protocol::Pdu::value(pdu)
             }
 
             /// The octets of the message that has these protocol IEs, as `set_protocol_ies`

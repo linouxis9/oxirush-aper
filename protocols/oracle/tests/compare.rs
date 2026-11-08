@@ -115,14 +115,16 @@ fn same(name: &str, octets: &[u8], ours: &Result<Vec<u8>, codec::Error>) -> bool
 
 /// A PDU and its message, as octets that are those of a PDU or that are none.
 fn pdu_and_message(octets: &[u8]) -> (usize, usize) {
-    let pdu = Pdu::decode(octets);
-    let written = pdu.as_ref().map_err(Clone::clone).and_then(Pdu::encode);
+    let pdu = BorrowedPdu::decode(octets);
+    let written = pdu
+        .as_ref()
+        .map_err(Clone::clone)
+        .and_then(BorrowedPdu::encode);
     // `decode` and `encode` take a PDU of the usual layout octet by octet. The codec of
     // the type, which they stand for, gives the same PDU, the same error and the same
-    // octets, and so does the PDU that borrows.
+    // octets.
     let as_its_type = codec::aper::decode::<BorrowedPdu>(octets);
     assert_eq!(as_its_type, pdu, "{octets:02x?}");
-    assert_eq!(BorrowedPdu::decode_borrowed(octets), pdu, "{octets:02x?}");
     if let Ok(pdu) = &pdu {
         assert_eq!(codec::aper::encode(pdu), written, "{pdu:?}");
         // The protocol IEs of its message are put back octet by octet too.
@@ -326,7 +328,7 @@ mod values {
         for (at, fixture) in fixtures().iter().enumerate() {
             // A vector has a view, whose values are compared, and which gives its
             // octets back when no addition of a later release was skipped.
-            let pdu = Pdu::decode(fixture).unwrap();
+            let pdu = BorrowedPdu::decode(fixture).unwrap();
             let view = pdu.to_view().unwrap();
             let again = Pdu::from_view(&view).unwrap();
             assert_eq!(again.encode().unwrap(), *fixture);
@@ -336,7 +338,7 @@ mod values {
                 continue;
             }
             variants(fixture, |octets| {
-                if let Ok(pdu) = Pdu::decode(octets) {
+                if let Ok(pdu) = BorrowedPdu::decode(octets) {
                     views += usize::from(pdu.to_view().is_ok());
                 }
             });

@@ -160,19 +160,7 @@ pub struct Keys<'a> {
 /// converts to and from the `Plmn` of oxirush-utils, which the crate of the bindings
 /// then depends on. Every other type that is a fixed number of octets prints them in
 /// hexadecimal.
-///
-/// `field` is the path, in the crate of the bindings, of a trait `Trait<T>` with one
-/// method `__field(self) -> T`: each type that is a name for one value implements it
-/// for the type of that value, so that a macro of the crate takes either.
-///
-/// `examples` are the examples of the documentation of some types, each with the name
-/// of its type in the bindings: a paragraph that follows what the type is in ASN.1.
-pub fn bindings(
-    description: &str,
-    keys: Keys<'_>,
-    plmns: &[&str],
-    examples: &[(&str, &str)],
-) -> Result<Written> {
+pub fn bindings(description: &str, keys: Keys<'_>, plmns: &[&str]) -> Result<Written> {
     let file = syn::parse_file(description).context("parse the resolved bindings")?;
     let mut modules = Vec::new();
     for item in &file.items {
@@ -188,21 +176,7 @@ pub fn bindings(
             entries: entries(items).with_context(|| format!("in {}", module.ident))?,
         });
     }
-    let mut bindings = Bindings::new(&modules, keys, plmns)?;
-    for (ty, example) in examples {
-        let known = modules.iter().flat_map(|module| &module.entries);
-        let mut known = known.filter_map(|entry| match entry {
-            Entry::Definition(definition) => Some(definition.name.as_str()),
-            _ => None,
-        });
-        ensure!(
-            known.any(|name| name == *ty),
-            "an example of {ty}, which is no type"
-        );
-        bindings
-            .examples
-            .insert(ty.to_string(), example.to_string());
-    }
+    let bindings = Bindings::new(&modules, keys, plmns)?;
     let text = bindings.write(&modules)?;
     Ok(Written {
         text,
@@ -700,8 +674,6 @@ struct Bindings {
     /// The types that are a PLMN identity, each with the types that it is a name for,
     /// down to the one that is three octets: none when it is three octets itself.
     plmns: BTreeMap<String, Vec<String>>,
-    /// The examples of the documentation of some types, by the names of the types.
-    examples: BTreeMap<String, String>,
 }
 
 impl Bindings {
@@ -742,7 +714,6 @@ impl Bindings {
                 .map(|(name, holds)| (name.to_string(), holds.to_string()))
                 .collect(),
             plmns: BTreeMap::new(),
-            examples: BTreeMap::new(),
         };
         // A PLMN identity is three octets, or a name for a type that is.
         for plmn in plmns {
@@ -1081,14 +1052,6 @@ impl Bindings {
         }
         writeln!(out, "/// {}", summary(definition))?;
         write_docs(out, &definition.docs)?;
-        if let Some(example) = self.examples.get(name) {
-            for line in std::iter::once("").chain(example.lines()) {
-                match line.is_empty() {
-                    true => writeln!(out, "///")?,
-                    false => writeln!(out, "/// {line}")?,
-                }
-            }
-        }
         let copy = if self.copied.contains(name) {
             ", Copy"
         } else {
@@ -2262,7 +2225,7 @@ mod tests {
             .add_asn_literal(module)
             .compile_to_string()
             .map_err(|error| anyhow::anyhow!("{error}"))?;
-        bindings(&resolved.generated, keys, &[], &[])
+        bindings(&resolved.generated, keys, &[])
     }
 
     fn text(asn: &str) -> String {
@@ -2284,7 +2247,7 @@ mod tests {
     /// The bindings of a description written by hand, in a module `toy`.
     fn described(items: &str, keys: Keys<'_>) -> Result<Written> {
         let description = format!("pub mod toy {{ use rasn::prelude::*; {items} }}");
-        bindings(&description, keys, &[], &[])
+        bindings(&description, keys, &[])
     }
 
     /// An INTEGER has the smallest native type that holds its range, and none past 64

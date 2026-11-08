@@ -251,13 +251,6 @@ macro_rules! __message {
             const PROCEDURE_CODE: u8 = $code;
             const CRITICALITY: $crate::Criticality =
                 $crate::__set_of!($direction, $code).criticality;
-            fn __decode_owned(octets: &[u8]) -> Result<Self, $crate::Error> {
-                // The same type, of the octets that are read here.
-                fn read<'a>(octets: &'a [u8]) -> Result<$type, $crate::Error> {
-                    $crate::decode(octets)
-                }
-                read(octets).map(|message| message.into_owned())
-            }
         }
     };
 }

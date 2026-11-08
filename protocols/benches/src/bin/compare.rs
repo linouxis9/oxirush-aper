@@ -24,7 +24,7 @@
 //! `CODEC` is `ours`, the crate, or `rasn`, the rasn 0.29 bindings of `oracle/`.
 //! `OPERATION` is
 //!
-//! - `envelope`: the PDU decoded, its message left as octets, as `decode_borrowed` of
+//! - `envelope`: the PDU decoded, its message left as octets, as `decode` of
 //!   the crate reads it;
 //! - `decode`: the PDU decoded, its message and the value of each of its IEs, each of
 //!   the type of its identifier (a transfer stays its octets);
@@ -37,7 +37,7 @@
 //! oxirush-ngap and oxirush-s1ap take this file from oxirush-aper.
 
 use benches::counting::{Counting, allocations};
-use benches::{Pdu, TheirMessage, TheirPdu, codec, our_pdu, their_message, their_pdu};
+use benches::{Borrowed, Pdu, TheirMessage, TheirPdu, codec, our_pdu, their_message, their_pdu};
 use oracle::rasn;
 use std::hint::black_box;
 use std::time::Instant;
@@ -93,7 +93,7 @@ include!(concat!(env!("OUT_DIR"), "/ies.rs"));
 
 /// Decode a PDU and the value of each of its IEs with the crate, and drop them.
 fn ours_decode(octets: &[u8]) {
-    let pdu = Pdu::decode_borrowed(octets).unwrap();
+    let pdu = Borrowed::decode(octets).unwrap();
     for ie in pdu.protocol_ies().unwrap().0 {
         ours_dropped(ie.id.0, &ie.value).unwrap().unwrap();
     }
@@ -120,12 +120,13 @@ fn main() {
     let octets = &octets[..];
     let mut call: Box<dyn FnMut()> = match (codec.as_str(), operation.as_str()) {
         ("ours", "envelope") => Box::new(|| {
-            black_box(Pdu::decode_borrowed(black_box(octets)).unwrap());
+            black_box(Borrowed::decode(black_box(octets)).unwrap());
         }),
         ("ours", "decode") => Box::new(|| ours_decode(black_box(octets))),
         ("ours", "encode") => {
             // What the typed values borrow lives as long as the program.
-            let pdu: &'static Pdu = Box::leak(Box::new(Pdu::decode(octets).unwrap()));
+            let pdu: &'static Pdu =
+                Box::leak(Box::new(Borrowed::decode(octets).unwrap().into_owned()));
             let ies = Box::leak(Box::new(pdu.protocol_ies().unwrap().0));
             let typed: Vec<_> = (ies.iter())
                 .map(|ie| {

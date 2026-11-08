@@ -225,7 +225,7 @@ impl Message {
         edit: Option<(&str, Value)>,
         typed: Option<Typed>,
     ) -> Self {
-        let pdu = Pdu::decode(&octets).unwrap();
+        let pdu = Borrowed::decode(&octets).unwrap().into_owned();
         assert_eq!(pdu.encode().unwrap(), octets);
         let name = message_name(&pdu).unwrap();
         let view = pdu.to_view().unwrap();
@@ -290,7 +290,7 @@ fn fixtures() -> Vec<Message> {
     let octets = lines
         .filter(|line| !line.starts_with('#'))
         .map(|line| hex::decode(line.split('\t').nth(1).unwrap()).unwrap());
-    let with_ies = octets.filter(|octets| Pdu::decode(octets).unwrap().protocol_ies().is_ok());
+    let with_ies = octets.filter(|octets| Borrowed::decode(octets).unwrap().protocol_ies().is_ok());
     let messages: Vec<_> = with_ies
         .map(|octets| Message::new(octets, None, None, None))
         .collect();
@@ -304,7 +304,10 @@ pub fn written() -> Vec<(&'static str, Pdu)> {
     let pdus = protocol::written().into_iter().map(|written| {
         let pdu = Pdu::from_tree(&written.tree)
             .unwrap_or_else(|error| panic!("{}: {error}", written.name));
-        (written.name, Pdu::decode(&pdu.encode().unwrap()).unwrap())
+        let pdu = Borrowed::decode(&pdu.encode().unwrap())
+            .unwrap()
+            .into_owned();
+        (written.name, pdu)
     });
     pdus.collect()
 }
@@ -449,10 +452,7 @@ impl Input {
 
         let mut operations = vec![
             operation("decode", count, move |at| {
-                done(Pdu::decode(&message(at).octets))
-            }),
-            operation("decode-borrowed", count, move |at| {
-                done(Borrowed::decode_borrowed(&message(at).octets))
+                done(Borrowed::decode(&message(at).octets))
             }),
             operation("encode", count, move |at| done(message(at).pdu.encode())),
             operation("protocol-ies", count, move |at| {
@@ -570,7 +570,7 @@ mod tests {
         for input in inputs() {
             let operations = input.operations();
             let typed = input.messages[0].typed.is_some();
-            assert_eq!(operations.len(), if typed { 18 } else { 15 });
+            assert_eq!(operations.len(), if typed { 17 } else { 14 });
             for operation in operations {
                 assert_eq!(operation.messages, input.messages.len());
                 for mut call in operation.calls() {

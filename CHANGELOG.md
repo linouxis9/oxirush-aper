@@ -35,6 +35,14 @@ All notable changes to `oxirush-aper` are recorded here.
   `Reader::index(root, additions, extensible)` reads the index of an
   `ENUMERATED` and of a `CHOICE`, as `Writer::index` writes it, and its error
   says that the type has no such index.
+- The methods of the PDU of a protocol and its `Display` are written once, in
+  `__pdu!`, which the protocol crate calls with the clauses of its specification
+  that their documentation cites, the octets of a UE CONTEXT RELEASE REQUEST for
+  its examples, and the IEs of the identifiers of a UE that `Display` shows. The
+  generator writes the types, their codecs and the registry alone.
+- A PDU decodes one way: `decode` borrows the octets of its message from what it
+  is given, and `into_owned()` keeps it after them. `decode_value` is the one way
+  to the message, which borrows from the PDU.
 - The generator writes no `new` for a `SEQUENCE`: a struct literal builds one,
   with its members by their names. The `new` of a bit string of one size, which
   refuses a number that its bits do not hold, stays. The macro of the
@@ -61,6 +69,10 @@ All notable changes to `oxirush-aper` are recorded here.
 - The macros `__with_ie_mut!` and `__build_ie!` (`with_ngap_ie_mut!` and
   `build_ngap_ie!` of the protocol crates), the module `messages` of a
   registry, `protocol::__Field`, and `Protocol::__procedure_criticality`.
+- `Message::__decode_owned`, and the fields of the `Protocol` of the generator
+  that only the documentation of a PDU took: `aliases`, `ue_ids` (and `UeIds`),
+  `release_request`, `release_display`, `other_message`, `no_message` and
+  `examples`; `bindings()` takes no examples, and `__hooks!` no owned PDU.
 - The `_extensible` twin of each form of `Reader` and `Writer`,
   `Reader::enumerated` and `Reader::choice`, and the forms that no binding
   takes: `unconstrained`, `semi_constrained`, `semi_constrained_unsigned` and

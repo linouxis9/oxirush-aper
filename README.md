@@ -466,12 +466,12 @@ type in TS 38.413, as the generated codec of the IE does.
 
 ```rust,ignore
 use oxirush_ngap::aper::{Reader, Writer};
-use oxirush_ngap::ngap::NGAP_PDU;
+use oxirush_ngap::ngap::NGAPPDU;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A UE CONTEXT RELEASE REQUEST, and the octets of the value of each of its IEs
     let octets = hex::decode("002a4015000003000a0002002a005500020007000f40020500")?;
-    let pdu = NGAP_PDU::decode(&octets)?;
+    let pdu = NGAPPDU::decode(&octets)?;
     let ies = pdu.protocol_ies()?;
     for ie in &ies.0 {
         let mut reader = Reader::new(&ie.value);

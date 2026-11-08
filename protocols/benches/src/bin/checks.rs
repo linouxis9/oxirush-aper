@@ -25,7 +25,7 @@
 //! A row is the time of a call in the fastest of three runs of about 0.3 s, and its
 //! allocations and the octets that they ask for.
 
-use benches::Pdu;
+use benches::Borrowed;
 use benches::counting::{Counting, allocations};
 use std::hint::black_box;
 use std::time::{Duration, Instant};
@@ -63,14 +63,14 @@ fn main() {
         let octets = hex::decode(hex.trim()).unwrap();
         let check = || {
             black_box(
-                Pdu::decode_borrowed(black_box(&octets))
+                Borrowed::decode(black_box(&octets))
                     .unwrap()
                     .check()
                     .unwrap(),
             );
         };
         let structure = || {
-            let pdu = Pdu::decode_borrowed(black_box(&octets)).unwrap();
+            let pdu = Borrowed::decode(black_box(&octets)).unwrap();
             black_box(pdu.check_structure().unwrap());
         };
         let (checked, structured) = (time(check), time(structure));
