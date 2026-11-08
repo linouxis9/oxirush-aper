@@ -1602,6 +1602,7 @@ pub mod toy_ies {
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Counts {
         pub count_ul: u64,
+        pub counts: Option<u8>,
         pub count_dl: u64,
         pub ie_extensions: Option<ProtocolExtensionContainer<'static>>,
     }
@@ -1611,10 +1612,15 @@ pub mod toy_ies {
     impl<'a> Decode<'a> for Counts {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
             let extended = reader.bit()?;
-            let present = reader.bits(1)?;
+            let present = reader.bits(2)?;
             let count_ul = reader
                 .unsigned(0, 18446744073709551615, false)
                 .map_err(in_field("count_ul"))?;
+            let counts = if present & 2 != 0 {
+                Some(reader.unsigned(0, 255, false).map_err(in_field("counts"))? as u8)
+            } else {
+                None
+            };
             let count_dl = reader
                 .unsigned(0, 4000000000000, true)
                 .map_err(in_field("count_dl"))?;
@@ -1632,6 +1638,7 @@ pub mod toy_ies {
             }
             Ok(Self {
                 count_ul,
+                counts,
                 count_dl,
                 ie_extensions,
             })
@@ -1640,10 +1647,16 @@ pub mod toy_ies {
     impl Encode for Counts {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.bit(false);
+            writer.bit(self.counts.is_some());
             writer.bit(self.ie_extensions.is_some());
             writer
                 .unsigned(self.count_ul, 0, 18446744073709551615, false)
                 .map_err(in_field("count_ul"))?;
+            if let Some(value) = &self.counts {
+                writer
+                    .unsigned(u64::from(*value), 0, 255, false)
+                    .map_err(in_field("counts"))?;
+            }
             writer
                 .unsigned(self.count_dl, 0, 4000000000000, true)
                 .map_err(in_field("count_dl"))?;
@@ -1659,6 +1672,12 @@ pub mod toy_ies {
         fn to_tree(&self) -> Value {
             let mut members = json::Members::new();
             members.put("countUL", json::unsigned(self.count_ul));
+            members.put_optional(
+                "counts",
+                self.counts
+                    .as_ref()
+                    .map(|value| json::unsigned(u64::from(*value))),
+            );
             members.put("countDL", json::unsigned(self.count_dl));
             members.put_optional(
                 "iE-Extensions",
@@ -1671,6 +1690,9 @@ pub mod toy_ies {
             let count_ul = reading.member(&members, "countUL", |value, reading| {
                 reading.unsigned(value, 0, 18446744073709551615)
             })?;
+            let counts = reading.optional(&members, "counts", |value, reading| {
+                reading.unsigned(value, 0, 255).map(|number| number as u8)
+            })?;
             let count_dl = reading.member(&members, "countDL", |value, reading| {
                 reading.unsigned(value, u64::MIN, u64::MAX)
             })?;
@@ -1681,6 +1703,7 @@ pub mod toy_ies {
             )?;
             Ok(Self {
                 count_ul,
+                counts,
                 count_dl,
                 ie_extensions,
             })

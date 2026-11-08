@@ -1459,6 +1459,7 @@ fn a_private_message_has_no_ies_under_the_root() {
 fn counted(downlink: u64) -> TOYPDU<'static> {
     let counts = Counts {
         count_ul: 1,
+        counts: None,
         count_dl: downlink,
         ie_extensions: None,
     };
@@ -1494,6 +1495,7 @@ fn an_integer_of_two_to_the_63_or_more_is_a_number() {
     // 2^64 in the place of its own nine.
     let largest = Counts {
         count_ul: 1,
+        counts: None,
         count_dl: u64::MAX,
         ie_extensions: None,
     };
@@ -1946,4 +1948,110 @@ fn a_value_that_no_table_describes_has_the_members_of_its_tree() {
     assert!(inspect::remove(&mut tree, "/toy/@id=60000/c").is_err());
     inspect::remove(&mut tree, "/toy/@id=60000/a").unwrap();
     assert_eq!(tree["ies"][0]["60000"], tree!({"b": 2}));
+}
+
+/// A bit string of the size that its type gives is its octets in hexadecimal, and has
+/// the members of a bit string all the same: its value and its length, which select
+/// nothing in it.
+#[test]
+fn a_bit_string_of_the_size_of_its_type_has_the_members_of_a_bit_string() {
+    let tree = sent(&tree!({"message": "SetupRequest", "ies": [
+        {"Areas": areas()}, {"Algorithms": "c000"},
+    ]}))
+    .unwrap();
+    assert_eq!(select(&tree, "/toy/Algorithms"), [tree!("c000")]);
+    assert!(select(&tree, "/toy/Algorithms/length").is_empty());
+    let error = inspect::select(&tree, "/toy/Algorithms/x").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "\"x\" is not a member of a bit string, which has value, length, at /toy/Algorithms/x"
+    );
+}
+
+/// The entry of an IE that a value holds alone, written without the IE, takes the IE that
+/// a set gives it, as the last segment of its path; nothing else goes into it.
+#[test]
+fn an_ie_that_a_value_holds_alone_is_added_by_a_set() {
+    let mut tree = tree!({"message": "SetupFailure", "ies": [
+        {"Cause": {"choice-Extensions": {"criticality": "ignore"}}},
+    ]});
+    let held = "/toy/Cause/choice-Extensions";
+    assert!(select(&tree, &format!("{held}/ExtendedCause")).is_empty());
+    assert!(select(&tree, &format!("{held}/ExtendedCause/x")).is_empty());
+    let deeper = inspect::set(&mut tree, &format!("{held}/ExtendedCause/x"), tree!(1));
+    assert!(deeper.is_err());
+    inspect::set(
+        &mut tree,
+        &format!("{held}/ExtendedCause"),
+        tree!("overload"),
+    )
+    .unwrap();
+    assert_eq!(
+        select(&tree, held),
+        [tree!({"criticality": "ignore", "ExtendedCause": "overload"})]
+    );
+    assert!(TOYPDU::from_tree(&tree).is_ok());
+}
+
+/// A set adds a member that its type has and the value has not as the last segment of its
+/// path, and goes into none that is not there.
+#[test]
+fn a_set_adds_a_member_at_the_end_of_its_path_alone() {
+    let mut tree = sent(&tree!({"message": "SetupRequest", "ies": [
+        {"Areas": areas()},
+        {"TransferList": [{"transfer-ID": 1, "setupTransfer": {"protocolIEs": [{"Tunnel": tunnel()}]}}]},
+    ]}))
+    .unwrap();
+    let item = "/toy/TransferList/0";
+    let before = tree.clone();
+    let through = format!("{item}/failureTransfer/cause/nas");
+    assert!(inspect::set(&mut tree, &through, tree!("deregister")).is_err());
+    assert!(inspect::remove(&mut tree, &format!("{item}/failureTransfer")).is_err());
+    assert_eq!(tree, before);
+    let failure = tree!({"cause": {"nas": "deregister"}});
+    inspect::set(
+        &mut tree,
+        &format!("{item}/failureTransfer"),
+        failure.clone(),
+    )
+    .unwrap();
+    assert_eq!(select(&tree, &format!("{item}/failureTransfer")), [failure]);
+}
+
+/// A member of the name of the IE whose value has it is that member when the path writes
+/// it as the member is written, and the IE that the value is otherwise, with a tree and
+/// without one: the Counts of a SETUP REQUEST have their `counts`.
+#[test]
+fn a_member_of_the_name_of_its_ie_is_that_member_as_it_is_written() {
+    let counts = tree!({"countUL": 1, "counts": 7, "countDL": 2});
+    let tree = sent(&tree!({"message": "SetupRequest", "ies": [
+        {"Areas": areas()}, {"Counts": counts},
+    ]}))
+    .unwrap();
+    for path in [
+        "/toy/1/counts",
+        "/toy/1/Counts/counts",
+        "/toy/Counts/counts",
+    ] {
+        assert_eq!(select(&tree, path), [tree!(7)], "{path}");
+        assert_eq!(inspect::check_path("SetupRequest", path), Ok(()), "{path}");
+    }
+}
+
+/// The name of the IE stays after the IE once, in a list as in a value, with a tree and
+/// without one: a second time it is refused.
+#[test]
+fn the_name_of_a_list_of_ies_stays_after_it_once() {
+    let tree = sent(&tree!({"message": "SetupRequest", "ies": [
+        {"Areas": areas()},
+        {"Items": [{"Item": {"item-ID": 1}}]},
+    ]}))
+    .unwrap();
+    assert_eq!(select(&tree, "/toy/Items/Items/0/item-ID"), [tree!(1)]);
+    assert!(select(&tree, "/toy/Items/Items/Items/0").is_empty());
+    let checked = |path: &str| inspect::check_path("SetupRequest", path);
+    assert_eq!(checked("/toy/Items/Items/0/item-ID"), Ok(()));
+    assert_eq!(checked("/toy/Items/Items/Items/0"), Ok(()));
+    assert_eq!(checked("/toy/Areas/Areas/0/tAC"), Ok(()));
+    assert!(checked("/toy/Areas/Areas/Areas/0").is_err());
 }

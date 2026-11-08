@@ -925,7 +925,6 @@ impl Trees<'_> {
             // A value without members has none to select, nor a bit string written as its
             // octets.
             _ if part == "*" => Ok(()),
-            Shape::Plain => Err(protocol.no_member(shape, &[], part)),
             Shape::Bits => {
                 let members = protocol.members(shape, None).unwrap_or_default();
                 match member(&members, part) {

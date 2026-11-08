@@ -36,7 +36,7 @@ oxirush_aper::__types! {
         ConnectionItem sequence { "uE-Core-ID"? _, "uE-RAN-ID"? _, "iE-Extensions"? extensions };
         Connections = [ConnectionItem];
         ContainerBlob sequence { "tAC": TAC, "nodeName"? _, "message"? _, "kinds"? Kinds, "mixed"? Mixed, "iE-Extensions"? extensions };
-        Counts sequence { "countUL": _, "countDL": _, "iE-Extensions"? extensions };
+        Counts sequence { "countUL": _, "counts"? _, "countDL": _, "iE-Extensions"? extensions };
         CriticalityDiagnostics sequence { "procedureCode"? _, "triggeringMessage"? TriggeringMessage, "procedureCriticality"? Criticality, "iEsCriticalityDiagnostics"? CriticalityDiagnosticsIEList, "iE-Extensions"? extensions };
         CriticalityDiagnosticsIEItem sequence { "iECriticality": Criticality, "iE-ID": _, "typeOfError": TypeOfError, "iE-Extensions"? extensions };
         CriticalityDiagnosticsIEList = [CriticalityDiagnosticsIEItem];

@@ -268,7 +268,6 @@ impl Protocol {
         }
         let of = match shape {
             Shape::Named(name) => name.to_string(),
-            Shape::Message(message) => message.name.to_string(),
             Shape::Pdu(_) => "the tree of a PDU".to_string(),
             Shape::Bits => "a bit string".to_string(),
             Shape::Transfer(_) => "a transfer".to_string(),

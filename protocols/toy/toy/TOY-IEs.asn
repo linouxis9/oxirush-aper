@@ -133,6 +133,7 @@ ContainerBlob-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
 
 Counts ::= SEQUENCE {
 	countUL				INTEGER (0..18446744073709551615),
+	counts				INTEGER (0..255)												OPTIONAL,
 	countDL				INTEGER (0..4000000000000, ...),
 	iE-Extensions		ProtocolExtensionContainer { {Counts-ExtIEs} }	OPTIONAL,
 	...
