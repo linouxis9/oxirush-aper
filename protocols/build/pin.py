@@ -25,6 +25,7 @@ ROOT = pathlib.Path.cwd()
 NAMES = ["oxirush-aper"]
 PLACES = [
     ".github/workflows/ci.yml",
+    ".github/workflows/fuzz.yml",
     ".github/workflows/mutants.yml",
     ".github/workflows/reproduce.yml",
 ]
