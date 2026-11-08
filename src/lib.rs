@@ -118,6 +118,10 @@ mod octets;
 mod oid;
 pub mod protocol;
 mod reader;
+// The lengths and the fragments that the reader and the writer loop on, which the unit
+// tests check before the tests of tests/ run.
+#[cfg(test)]
+mod tests;
 mod writer;
 
 use alloc::vec::Vec;
