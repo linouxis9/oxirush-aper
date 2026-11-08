@@ -177,9 +177,9 @@ struct Written {
     what: &'static str,
     /// The message, as a tree.
     tree: Value,
-    /// The path of a value that is deep in its view.
+    /// The path of a value that is deep in its tree.
     path: &'static str,
-    /// An edit of its view: a path, and the value that it is given.
+    /// An edit of its tree: a path, and the value that it is given.
     edit: (&'static str, Value),
     /// The operations that take the type of the message.
     typed: Typed,
@@ -206,18 +206,17 @@ struct Message {
     name: &'static str,
     octets: Vec<u8>,
     pdu: Pdu,
-    view: Value,
     tree: Value,
-    /// The path of a value that is deep in the view.
+    /// The path of a value that is deep in the tree.
     path: String,
-    /// An edit of the view: a path, and the value that it is given.
+    /// An edit of the tree: a path, and the value that it is given.
     edit: (String, Value),
     typed: Option<Typed>,
 }
 
 impl Message {
     /// The message that `octets` are. Without a path, the path is that of the
-    /// value that is deepest in its view, and without an edit, the edit is
+    /// value that is deepest in its tree, and without an edit, the edit is
     /// one that any message takes.
     fn new(
         octets: Vec<u8>,
@@ -228,18 +227,16 @@ impl Message {
         let pdu = Borrowed::decode(&octets).unwrap().into_owned();
         assert_eq!(pdu.encode().unwrap(), octets);
         let name = message_name(&pdu).unwrap();
-        let view = pdu.to_view().unwrap();
         let tree = pdu.to_tree();
-        let path = path.map_or_else(|| deepest(&view), String::from);
+        let path = path.map_or_else(|| deepest(&tree), String::from);
         let edit = match edit {
             Some((path, value)) => (path.to_string(), value),
-            None => another_criticality(&view),
+            None => another_criticality(&pdu),
         };
         Self {
             name,
             octets,
             pdu,
-            view,
             tree,
             path,
             edit,
@@ -248,27 +245,30 @@ impl Message {
     }
 }
 
-/// The path of the value that is deepest in a view: the first of those that
+/// The path of the value that is deepest in a tree: the first of those that
 /// have the most segments.
-fn deepest(view: &Value) -> String {
-    let paths = inspect::paths(view);
+fn deepest(tree: &Value) -> String {
+    let paths = inspect::paths(tree);
     let depth = |path: &str| path.matches('/').count();
     // The last of the deepest ones, from the end, is the first of them.
     let deepest = paths.iter().rev().max_by_key(|(path, _)| depth(path));
     deepest.map(|(path, _)| path.clone()).unwrap()
 }
 
-/// An edit that the view of any message takes: another criticality for its
+/// An edit that the tree of any message takes: another criticality for its
 /// first IE, or for the PDU when the message has no IE.
-fn another_criticality(view: &Value) -> (String, Value) {
-    let of_the_first_ie = format!("{}/0/criticality", protocol::ROOT);
-    let has_an_ie = inspect::select(view, &of_the_first_ie).is_ok_and(|ie| !ie.is_empty());
-    let path = match has_an_ie {
-        true => of_the_first_ie,
-        false => "/criticality".to_string(),
+fn another_criticality(pdu: &Pdu) -> (String, Value) {
+    use codec::aper::protocol::Field;
+    let ies = pdu.protocol_ies().unwrap();
+    let (path, criticality) = match ies.0.first() {
+        Some(ie) => (
+            format!("{}/0/criticality", protocol::ROOT),
+            ie.criticality(),
+        ),
+        None => ("/criticality".to_string(), pdu.criticality()),
     };
-    let other = match inspect::select(view, &path).unwrap()[0].as_str() {
-        Some("reject") => "ignore",
+    let other = match criticality {
+        codec::aper::Criticality::Reject => "ignore",
         _ => "reject",
     };
     (path, tree!(other))
@@ -373,7 +373,7 @@ pub enum Run<'a> {
     /// The operation needs the message alone.
     Direct(Box<dyn Fn(usize) + 'a>),
     /// The operation is given something that is made first and is no part
-    /// of it, such as the view that `set` edits: this makes it, and returns
+    /// of it, such as the tree that `set` edits: this makes it, and returns
     /// the call.
     Prepared(Box<dyn Fn(usize) -> Call<'a> + 'a>),
 }
@@ -482,22 +482,18 @@ impl Input {
         }
 
         operations.extend([
-            operation("to-view", count, move |at| done(message(at).pdu.to_view())),
             operation("to-tree", count, move |at| {
                 drop(black_box(message(at).pdu.to_tree()))
             }),
             operation("from-tree", count, move |at| {
                 done(Pdu::from_tree(&message(at).tree))
             }),
-            operation("from-view", count, move |at| {
-                done(Pdu::from_view(&message(at).view))
-            }),
             operation("paths", count, move |at| {
-                drop(black_box(inspect::paths(&message(at).view)))
+                drop(black_box(inspect::paths(&message(at).tree)))
             }),
             operation("select", count, move |at| {
                 let message = message(at);
-                let selected = inspect::select(&message.view, &message.path).unwrap();
+                let selected = inspect::select(&message.tree, &message.path).unwrap();
                 assert!(!selected.is_empty(), "{}", message.path);
                 drop(black_box(selected));
             }),
@@ -507,14 +503,8 @@ impl Input {
             }),
             prepared("set", count, move |at| {
                 let (path, value) = &message(at).edit;
-                let (mut view, mut value) = (message(at).view.clone(), Some(value.clone()));
-                move || done(inspect::set(&mut view, path, value.take().unwrap()))
-            }),
-            prepared("with-view", count, move |at| {
-                let message = message(at);
-                let mut view = message.view.clone();
-                inspect::set(&mut view, &message.edit.0, message.edit.1.clone()).unwrap();
-                move || done(message.pdu.with_view(&view))
+                let (mut tree, mut value) = (message(at).tree.clone(), Some(value.clone()));
+                move || done(inspect::set(&mut tree, path, value.take().unwrap()))
             }),
         ]);
         operations
@@ -570,7 +560,7 @@ mod tests {
         for input in inputs() {
             let operations = input.operations();
             let typed = input.messages[0].typed.is_some();
-            assert_eq!(operations.len(), if typed { 17 } else { 14 });
+            assert_eq!(operations.len(), if typed { 14 } else { 11 });
             for operation in operations {
                 assert_eq!(operation.messages, input.messages.len());
                 for mut call in operation.calls() {
@@ -578,9 +568,9 @@ mod tests {
                 }
             }
             for message in &input.messages {
-                let mut view = message.view.clone();
-                inspect::set(&mut view, &message.edit.0, message.edit.1.clone()).unwrap();
-                let edited = message.pdu.with_view(&view).unwrap().encode().unwrap();
+                let mut tree = message.tree.clone();
+                inspect::set(&mut tree, &message.edit.0, message.edit.1.clone()).unwrap();
+                let edited = Pdu::from_tree(&tree).unwrap().encode().unwrap();
                 assert_ne!(edited, message.octets, "{}", message.name);
                 assert_eq!(edited.len(), message.octets.len(), "{}", message.name);
             }

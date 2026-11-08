@@ -22,7 +22,7 @@
 //! to the oracle of its tests, which has the same types with the codec of rasn, another
 //! implementation of aligned PER, and compares what the two make of them: the PDU, the
 //! protocol IEs of its message, the message that `decode_value` reads, and the JSON
-//! form of each value that a view decodes. What one reads the other reads, as a value
+//! form of each value that a tree decodes. What one reads the other reads, as a value
 //! that both write as the same octets, and what one refuses the other refuses. And
 //! what was read is written and read again as the same.
 //!
@@ -112,43 +112,16 @@ pub fn decode(octets: &[u8]) {
     }
 }
 
-/// `value` without what a view keeps of what was received: the members whose name
-/// starts with `_`, at any depth.
-fn written(value: &Value) -> Value {
-    match value {
-        Value::Object(members) => {
-            let kept = members.iter().filter(|(name, _)| !name.starts_with('_'));
-            let kept = kept.map(|(name, value)| (name.clone(), written(value)));
-            Value::Object(kept.collect())
-        }
-        Value::Array(entries) => Value::Array(entries.iter().map(written).collect()),
-        other => other.clone(),
-    }
-}
-
-/// Whether a view has an IE or a transfer that was not read with its type, and is its
-/// octets beside the reason.
-fn undecoded(value: &Value) -> bool {
-    match value {
-        Value::Object(members) => {
-            members.contains_key("_decode_error") || members.values().any(undecoded)
-        }
-        Value::Array(entries) => entries.iter().any(undecoded),
-        _ => false,
-    }
-}
-
-/// What a view decoded as the type that the bindings name `name` is what the oracle
+/// What a tree decoded as the type that the bindings name `name` is what the oracle
 /// reads in the same octets: the same JSON form, or no value for both.
 fn observed(name: &'static str, octets: &[u8], ours: &Result<Value, Error>) {
     let ours = ours.as_ref().map(serde_json::Value::from);
     oracle::same_json(name, octets, ours.as_ref().map_err(ToString::to_string));
 }
 
-/// The JSON forms of a PDU: its view, which gives the PDU back and is written from its
-/// values, its tree, and the paths of its view. Each value that a view shows is
-/// compared with what the JSON Encoding Rules of rasn write of the same octets.
-pub fn view(octets: &[u8]) {
+/// The tree of a PDU, which gives the PDU back, and its paths. Each value that a tree
+/// decodes is compared with what the JSON Encoding Rules of rasn write of the same octets.
+pub fn json(octets: &[u8]) {
     let Ok(pdu) = Borrowed::decode(octets) else {
         return;
     };
@@ -157,83 +130,20 @@ pub fn view(octets: &[u8]) {
     // for, and a message that does not decode, are octets in it.
     let tree = pdu.to_tree();
     assert_eq!(Pdu::from_tree(&tree).as_ref(), Ok(&pdu), "{tree}");
-    let Ok(view) = pdu.to_view() else {
-        // A message that does not decode has no view, and its tree has its octets.
-        assert!(tree.get("octets").is_some(), "{tree}");
-        return;
-    };
 
-    // A view that nothing changed is the PDU, octet for octet.
-    assert_eq!(pdu.with_view(&view).as_ref(), Ok(&pdu), "{view}");
-    assert_eq!(Pdu::from_view(&view).as_ref(), Ok(&pdu), "{view}");
-
-    // Without the octets received, a view in which everything was read with its type
-    // is written from its values, when they are values that their types write: the PDU
-    // that is written has a view, which is written to the same PDU.
-    if !undecoded(&view)
-        && let Ok(first) = Pdu::from_view(&written(&view))
-    {
-        let again = match first.to_view() {
-            Ok(again) => again,
-            Err(error) => panic!("a PDU that a view wrote has no view: {error}: {first:?}"),
-        };
-        let second = Pdu::from_view(&written(&again));
-        assert_eq!(second.as_ref(), Ok(&first), "{view}");
-    }
-
-    // Each path that the view has selects its value: every one, as an alternative of the
+    // Each path that the tree has selects its value: every one, as an alternative of the
     // type NULL deep in a message is among the last that are listed.
-    let paths = inspect::paths(&view);
-    for (path, value) in &paths {
-        assert_eq!(inspect::select(&view, path), Ok(vec![value]), "{path}");
+    for (path, value) in inspect::paths(&tree) {
+        assert_eq!(inspect::select(&tree, &path), Ok(vec![&value]), "{path}");
     }
-
-    // Where the tree has an IE as its octets the view says why, and so does its path
-    // list: octets that do not decode, or that are in another form than the one of X.691,
-    // have a `_decode_error`, and those that a typed value has no place for `_lossy`.
-    let (Some(Value::Array(shown)), Some(Value::Array(viewed))) = (tree.get("ies"), ies_of(&view))
-    else {
-        return;
-    };
-    assert_eq!(shown.len(), viewed.len(), "{tree}");
-    let mut why = 0;
-    for (shown, viewed) in shown.iter().zip(viewed) {
-        let said = says_why(viewed) || viewed.get("value").is_some_and(says_why);
-        assert_eq!(
-            as_octets(shown),
-            said,
-            "{shown} is shown so, and viewed as {viewed}"
-        );
-        why += usize::from(said);
-    }
-    let listed = paths.iter().filter(|(path, _)| {
-        path.starts_with('/') && (path.ends_with("/_decode_error") || path.ends_with("/_lossy"))
-    });
-    assert!(listed.count() >= why, "{view}");
 }
 
-/// Whether the entry of a view says why it is its octets, or has no place for all of them.
-fn says_why(entry: &Value) -> bool {
-    entry.get("_decode_error").is_some() || entry.get("_lossy").is_some()
-}
-
-/// Whether the entry of a tree has its IE as the octets that it was received as.
-fn as_octets(entry: &Value) -> bool {
-    let mut members = entry.as_object().into_iter().flatten();
-    let value = members
-        .find(|(name, _)| *name != "criticality")
-        .map(|(_, value)| value);
-    value
-        .and_then(Value::as_object)
-        .is_some_and(|value| value.len() == 1 && value.contains_key("octets"))
-}
-
-/// The functions that take a path, on the view of a PDU: `select`, `set`, `insert`,
+/// The functions that take a path, on the tree of a PDU: `select`, `set`, `insert`,
 /// `remove`, `open`, `check_path` and `enumerated_at`, with a path and a value of the
-/// octets. No path and no value makes one of them panic, and a view that one of them
+/// octets. No path and no value makes one of them panic, and a tree that one of them
 /// changed is a PDU or an error.
 ///
-/// The first octets say what is done: the function, a path of the view to start from
+/// The first octets say what is done: the function, a path of the tree to start from
 /// and where it is cut, then a length and that many octets to add to the path, and a
 /// length and that many octets of JSON for the value. The rest is the PDU.
 pub fn paths(octets: &[u8]) {
@@ -249,12 +159,10 @@ pub fn paths(octets: &[u8]) {
     let Ok(pdu) = Borrowed::decode(rest) else {
         return;
     };
-    let Ok(mut view) = pdu.to_view() else {
-        return;
-    };
+    let mut tree = pdu.to_tree();
 
-    // A path that the view has, cut short, with what the octets add to it.
-    let known = inspect::paths(&view);
+    // A path that the tree has, cut short, with what the octets add to it.
+    let known = inspect::paths(&tree);
     let start = match known.get(usize::from(pick) % known.len().max(1)) {
         Some((path, _)) => path.as_str(),
         None => ROOT,
@@ -272,11 +180,11 @@ pub fn paths(octets: &[u8]) {
     );
     let name = set.map_or("no message", |set| set.name);
     let changed = match function % 7 {
-        0 => inspect::select(&view, &path).is_err(),
-        1 => inspect::set(&mut view, &path, value).is_ok(),
-        2 => inspect::insert(&mut view, &path, value).is_ok(),
-        3 => inspect::remove(&mut view, &path).is_ok(),
-        4 => inspect::open(&mut view, &path).is_ok(),
+        0 => inspect::select(&tree, &path).is_err(),
+        1 => inspect::set(&mut tree, &path, value).is_ok(),
+        2 => inspect::insert(&mut tree, &path, value).is_ok(),
+        3 => inspect::remove(&mut tree, &path).is_ok(),
+        4 => inspect::open(&mut tree, &path).is_ok(),
         5 => inspect::check_path(name, &path).is_err(),
         _ => inspect::enumerated_at(name, &path).is_err(),
     };
@@ -286,12 +194,11 @@ pub fn paths(octets: &[u8]) {
 
     // What an edit left is a PDU or an error, and a PDU that it is encodes or is an
     // error: an edit may write a value that its type does not have.
-    let _ = inspect::paths(&view);
-    if let Ok(edited) = pdu.with_view(&view) {
-        assert_eq!(Pdu::from_view(&view).as_ref(), Ok(&edited), "{path}");
-        if let Ok(octets) = edited.encode() {
-            assert_eq!(Borrowed::decode(&octets).as_ref(), Ok(&edited), "{path}");
-        }
+    let _ = inspect::paths(&tree);
+    if let Ok(edited) = Pdu::from_tree(&tree)
+        && let Ok(octets) = edited.encode()
+    {
+        assert_eq!(Borrowed::decode(&octets).as_ref(), Ok(&edited), "{path}");
     }
 }
 
@@ -299,17 +206,6 @@ pub fn paths(octets: &[u8]) {
 fn counted(octets: &[u8]) -> Option<(&[u8], &[u8])> {
     let (length, rest) = octets.split_first()?;
     rest.split_at_checked(usize::from(*length))
-}
-
-/// Whether `view` has a member `name`, at any depth.
-fn has_member(value: &Value, name: &str) -> bool {
-    match value {
-        Value::Object(members) => {
-            members.contains_key(name) || members.values().any(|value| has_member(value, name))
-        }
-        Value::Array(entries) => entries.iter().any(|value| has_member(value, name)),
-        _ => false,
-    }
 }
 
 /// What `check` says of a PDU, against what the other ways of reading it say.
@@ -322,9 +218,7 @@ fn has_member(value: &Value, name: &str) -> bool {
 ///
 /// A PDU of protocol IEs of which `check` finds nothing to say is written as X.691
 /// writes it, octet for octet: the codec of the type of its message writes the octets of
-/// its message, and,
-/// when its view read every value and transfer with its type, the PDU that the values of
-/// its view write alone is the PDU.
+/// its message.
 fn checked(pdu: &Borrowed<'_>) {
     let (deviations, structure) = match (pdu.check(), pdu.check_structure()) {
         (Ok(deviations), Ok(structure)) => (deviations, structure),
@@ -376,18 +270,6 @@ fn checked(pdu: &Borrowed<'_>) {
             Err(error) => panic!("check finds nothing, and {name} does not decode: {error}"),
         }
     }
-    let Ok(view) = pdu.to_view() else {
-        return;
-    };
-    if !has_member(&view, "_decode_error") && !has_member(&view, "_lossy") {
-        let alone = Pdu::from_view(&written(&view));
-        assert_eq!(alone.as_ref(), Ok(pdu), "{view}");
-    }
-}
-
-/// The IEs of the message of a view.
-fn ies_of(view: &Value) -> Option<&Value> {
-    view.get("message")?.get("protocolIEs")
 }
 
 /// The octets of a PDU, what `check` says of it and how the crate writes it again.
@@ -437,14 +319,14 @@ pub fn exact(octets: &[u8]) {
 }
 
 /// The PDUs of the fixtures of the protocol, which the targets that build their input
-/// with `arbitrary` start from, and what their trees and views hold.
+/// with `arbitrary` start from, and what their trees hold.
 struct Pool {
     pdus: Vec<Pdu>,
     /// Each IE of the trees, as a tree has it: its name with its value
     ies: Vec<Value>,
-    /// The values of the views, by the last segment of their paths
+    /// The values of the trees, by the last segment of their paths
     values: std::collections::BTreeMap<String, Vec<Value>>,
-    /// Each text of the views: the names of values above all
+    /// Each text of the trees: the names of values above all
     names: Vec<String>,
 }
 
@@ -490,11 +372,11 @@ static POOL: LazyLock<Pool> = LazyLock::new(|| {
     let mut values = std::collections::BTreeMap::<String, Vec<Value>>::new();
     let mut names = Vec::new();
     for pdu in &pdus {
-        if let Some(Value::Array(entries)) = pdu.to_tree().get("ies") {
+        let tree = pdu.to_tree();
+        if let Some(Value::Array(entries)) = tree.get("ies") {
             ies.extend(entries.iter().cloned());
         }
-        let Ok(view) = pdu.to_view() else { continue };
-        for (path, value) in inspect::paths(&view) {
+        for (path, value) in inspect::paths(&tree) {
             let last = path.rsplit('/').next().unwrap_or_default().to_owned();
             if let Value::String(text) = &value {
                 names.push(text.clone());
@@ -526,7 +408,7 @@ pub enum Leaf {
     Hex(Vec<u8>),
     Bool(bool),
     Null,
-    /// A text of a view of the fixtures: the name of a value above all
+    /// A text of a tree of the fixtures: the name of a value above all
     Name(u16),
 }
 
@@ -577,7 +459,7 @@ fn change(value: &mut Value, walk: &[u16], leaf: Value) {
     }
 }
 
-/// What holds of a PDU that the crate wrote, from a view or a tree: it encodes, its
+/// What holds of a PDU that the crate wrote from a tree: it encodes, its
 /// octets decode to it, its tree writes it again, and what `check` says of it agrees
 /// with the other readings ([`checked`]).
 fn written_pdu(pdu: &Borrowed<'_>) {
@@ -591,22 +473,22 @@ fn written_pdu(pdu: &Borrowed<'_>) {
     checked(pdu);
 }
 
-/// A PDU of the fixtures and what is done to its view.
+/// A PDU of the fixtures and what is done to its tree.
 #[derive(Arbitrary, Debug)]
 pub struct Edits {
     base: u16,
     edits: Vec<Edit>,
 }
 
-/// One edit of a view. A path is one of those of `inspect::paths`, which the number
+/// One edit of a tree. A path is one of those of `inspect::paths`, which the number
 /// picks.
 #[derive(Arbitrary, Debug)]
 enum Edit {
     /// A value at the path
     Set { path: u16, to: Leaf },
-    /// The value of another path of the view
+    /// The value of another path of the tree
     Copy { path: u16, from: u16 },
-    /// A value that a path of a view of the fixtures that ends as this one has, with
+    /// A value that a path of a tree of the fixtures that ends as this one has, with
     /// one of its leaves changed or not
     Seen {
         path: u16,
@@ -620,15 +502,30 @@ enum Edit {
     Insert { path: u16 },
 }
 
-/// The IE of the message that a path of a view is under: the position of the IE in a
-/// path of `/message/protocolIEs`, or its name in a path of the root of the protocol.
+/// The IE of the message that a path of a tree is under: its name or its position, after
+/// the root of the protocol.
 fn ie_of(path: &str) -> Option<String> {
     let mut segments = path.split('/').skip(1);
-    match (segments.next(), segments.next(), segments.next()) {
-        (Some("message"), Some("protocolIEs"), Some(position)) => Some(position.to_owned()),
-        (Some(root), Some(name), _) if ROOT.ends_with(root) => Some(name.to_owned()),
+    match (segments.next(), segments.next()) {
+        (Some(root), Some(name)) if ROOT.ends_with(root) => Some(name.to_owned()),
         _ => None,
     }
+}
+
+/// Whether two names are one: their letters and their digits, whatever their case.
+fn same_name(one: &str, other: &str) -> bool {
+    let letters = |name: &str| -> String {
+        let kept = name.chars().filter(char::is_ascii_alphanumeric);
+        kept.map(|letter| letter.to_ascii_lowercase()).collect()
+    };
+    letters(one) == letters(other)
+}
+
+/// The name of the IE that the entry of a list of IEs holds.
+fn held(entry: &Value) -> Option<&str> {
+    let members = entry.as_object()?;
+    let mut names = members.keys().filter(|name| *name != "criticality");
+    names.next().map(String::as_str)
 }
 
 /// The path of the entry of a list that `path` is in, the deepest one.
@@ -640,14 +537,14 @@ fn entry_of(path: &str) -> Option<String> {
     Some(segments[..=last].join("/"))
 }
 
-/// A PDU of the fixtures, edited through its view by the paths that `inspect::paths`
-/// lists, with values that views of the fixtures have, values of the view itself and
+/// A PDU of the fixtures, edited through its tree by the paths that `inspect::paths`
+/// lists, with values that trees of the fixtures have, values of the tree itself and
 /// values of the fuzzer, as a user edits one.
 ///
-/// An edit that the view or the PDU refuses is an error, never a panic. The PDU that
-/// `with_view` writes is the one that `from_view` writes of the same view, and one that
-/// the crate wrote ([`written_pdu`]). Only what was edited changes: each IE of the
-/// message that no path of an edit was under has the entry that it had in the view.
+/// An edit that the tree or the PDU refuses is an error, never a panic, and a PDU that
+/// `from_tree` writes is one that the crate wrote ([`written_pdu`]). Only what was edited
+/// changes: each IE of the message that no path of an edit was under has the entry that
+/// it had in the tree.
 pub fn edit(input: Edits) {
     let pool = &*POOL;
     let Some(pdu) = pool
@@ -656,26 +553,24 @@ pub fn edit(input: Edits) {
     else {
         return;
     };
-    let Ok(before) = pdu.to_view() else {
-        return;
-    };
+    let before = pdu.to_tree();
     let paths = inspect::paths(&before);
     if paths.is_empty() {
         return;
     }
     let pick = |number: u16| paths[usize::from(number) % paths.len()].clone();
-    let mut view = before.clone();
+    let mut tree = before.clone();
     let mut edited = Vec::new();
     for edit in input.edits.iter().take(8) {
         let (path, done) = match edit {
             Edit::Set { path, to } => {
                 let (path, _) = pick(*path);
-                let done = inspect::set(&mut view, &path, to.value()).is_ok();
+                let done = inspect::set(&mut tree, &path, to.value()).is_ok();
                 (path, done)
             }
             Edit::Copy { path, from } => {
                 let ((path, _), (_, value)) = (pick(*path), pick(*from));
-                let done = inspect::set(&mut view, &path, value).is_ok();
+                let done = inspect::set(&mut tree, &path, value).is_ok();
                 (path, done)
             }
             Edit::Seen {
@@ -693,13 +588,13 @@ pub fn edit(input: Edits) {
                 if let Some(to) = to {
                     change(&mut value, walk, to.value());
                 }
-                let done = inspect::set(&mut view, &path, value).is_ok();
+                let done = inspect::set(&mut tree, &path, value).is_ok();
                 (path, done)
             }
             Edit::Remove { path } => {
                 let (path, _) = pick(*path);
                 let parent = path[..path.rfind('/').unwrap_or(0)].to_owned();
-                let done = inspect::remove(&mut view, &parent).is_ok();
+                let done = inspect::remove(&mut tree, &parent).is_ok();
                 (parent, done)
             }
             Edit::Insert { path } => {
@@ -707,13 +602,21 @@ pub fn edit(input: Edits) {
                 let Some(entry) = entry_of(&path) else {
                     continue;
                 };
-                let Some(copy) = inspect::select(&view, &entry)
-                    .ok()
-                    .and_then(|selected| selected.first().map(|value| (*value).clone()))
-                else {
+                // An IE of the message is copied with its name, and any other entry as
+                // the path selects it.
+                let copy = match ie_of(&entry).and_then(|ie| ie.parse::<usize>().ok()) {
+                    Some(position) if entry.matches('/').count() == 2 => tree["ies"]
+                        .as_array()
+                        .and_then(|ies| ies.get(position))
+                        .cloned(),
+                    _ => inspect::select(&tree, &entry)
+                        .ok()
+                        .and_then(|selected| selected.first().map(|value| (*value).clone())),
+                };
+                let Some(copy) = copy else {
                     continue;
                 };
-                let done = inspect::insert(&mut view, &entry, copy).is_ok();
+                let done = inspect::insert(&mut tree, &entry, copy).is_ok();
                 (entry, done)
             }
         };
@@ -722,10 +625,9 @@ pub fn edit(input: Edits) {
         }
     }
 
-    let Ok(changed) = pdu.with_view(&view) else {
+    let Ok(changed) = Pdu::from_tree(&tree) else {
         return;
     };
-    assert_eq!(Pdu::from_view(&view).as_ref(), Ok(&changed), "{view}");
     written_pdu(&changed);
 
     // Only what was edited changes, IE by IE, where the edits kept every IE where it was
@@ -736,23 +638,19 @@ pub fn edit(input: Edits) {
     else {
         return;
     };
-    let (Some(Value::Array(was)), Ok(after)) = (ies_of(&before), changed.to_view()) else {
-        return;
-    };
-    let Some(Value::Array(is)) = ies_of(&after) else {
+    let after = changed.to_tree();
+    let (Some(Value::Array(was)), Some(Value::Array(is))) = (before.get("ies"), after.get("ies"))
+    else {
         return;
     };
     if was.len() != is.len() {
         return;
     }
     for (position, (was, is)) in was.iter().zip(is).enumerate() {
-        let name = was
-            .get("_ie_name")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let name = held(was).unwrap_or_default();
         if touched
             .iter()
-            .any(|ie| *ie == position.to_string() || ie == name)
+            .any(|ie| *ie == position.to_string() || same_name(ie, name))
         {
             continue;
         }

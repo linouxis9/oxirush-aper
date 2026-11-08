@@ -16,6 +16,6 @@
 */
 
 #![no_main]
-//! See `targets::view`.
+//! See `targets::json`.
 
-libfuzzer_sys::fuzz_target!(|octets: &[u8]| targets::view(octets));
+libfuzzer_sys::fuzz_target!(|octets: &[u8]| targets::json(octets));

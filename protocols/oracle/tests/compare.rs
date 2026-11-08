@@ -18,7 +18,7 @@
 //! The crate against its oracle: the same types with the codec of rasn, another
 //! implementation of aligned PER. Each vector of the fixtures, and what a peer
 //! may send in its place, is read and written by both, as a PDU, as its message, and
-//! with the `inspect` feature as each IE and each transfer that a view decodes.
+//! with the `inspect` feature as each IE and each transfer that a tree decodes.
 //!
 //! What both read is the same value, by the octets that each writes of it and by its
 //! JSON form, and what one refuses the other refuses. The bindings differ from the
@@ -26,7 +26,7 @@
 //! INTEGER in 64 bits, where rasn holds a number of any size.
 //!
 //! The tests take the type of a PDU, the message of a PDU as its type and each value
-//! that a view decodes from the module `hooks` of the crate, which it has with the
+//! that a tree decodes from the module `hooks` of the crate, which it has with the
 //! configuration name of its hooks: cargo sets it when it is run from the directory
 //! of this package. oxirush-ngap and oxirush-s1ap take this file from oxirush-aper, and
 //! it names each `codec`.
@@ -297,7 +297,7 @@ mod values {
         static COMPARED: Cell<(usize, usize)> = const { Cell::new((0, 0)) };
     }
 
-    /// What a view decoded as the type that the bindings name `name` is what the
+    /// What a tree decoded as the type that the bindings name `name` is what the
     /// oracle reads in the same octets: the same JSON form, or no value for both.
     fn observed(name: &'static str, octets: &[u8], ours: &Result<Value, codec::Error>) {
         let ours = ours.as_ref().map(serde_json::Value::from);
@@ -307,15 +307,15 @@ mod values {
     }
 
     #[test]
-    fn each_value_of_a_view_is_what_the_oracle_reads() {
+    fn each_value_of_a_tree_is_what_the_oracle_reads() {
         codec::hooks::observe(Some(observed));
-        let mut views = 0;
+        let mut trees = 0;
         for (at, fixture) in fixtures().iter().enumerate() {
-            // A vector has a view, whose values are compared, and which gives its
-            // octets back when no addition of a later release was skipped.
+            // A vector has a tree, whose values are compared, and which gives its
+            // octets back.
             let pdu = BorrowedPdu::decode(fixture).unwrap();
-            let view = pdu.to_view().unwrap();
-            let again = Pdu::from_view(&view).unwrap();
+            let tree = pdu.to_tree();
+            let again = Pdu::from_tree(&tree).unwrap();
             assert_eq!(again.encode().unwrap(), *fixture);
             // What a peer may send in the place of one vector in five: the fuzz
             // targets make the same comparison on every input that they find.
@@ -324,15 +324,15 @@ mod values {
             }
             variants(fixture, |octets| {
                 if let Ok(pdu) = BorrowedPdu::decode(octets) {
-                    views += usize::from(pdu.to_view().is_ok());
+                    trees += usize::from(pdu.to_tree().get("ies").is_some());
                 }
             });
         }
         codec::hooks::observe(None);
         let (compared, read) = COMPARED.get();
         assert!(
-            views > 2_000 && compared > 10_000 && read > 6_000,
-            "{compared} values of {views} views compared, {read} read by both"
+            trees > 2_000 && compared > 10_000 && read > 6_000,
+            "{compared} values of {trees} trees compared, {read} read by both"
         );
     }
 }

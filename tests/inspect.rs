@@ -15,7 +15,7 @@
    limitations under the License.
 */
 
-//! The paths into the views of an application protocol, on the tables of a protocol of
+//! The paths into the trees of an application protocol, on the tables of a protocol of
 //! a few types that stands for those of the protocol crates: a cause, a value that holds
 //! a cause, a transfer that contains one and an extension container, and a message of
 //! two IEs.
@@ -122,140 +122,139 @@ static TEST: Protocol = Protocol {
     any_message: typed,
 };
 
-/// The view of a RELEASE with a cause, and a holder whose transfer contains a cause.
+/// The tree of a RELEASE with a cause, and a holder whose transfer contains a cause.
 fn release() -> Value {
     tree!({
-        "procedure_code": 1,
-        "direction": "InitiatingMessage",
-        "criticality": "reject",
-        "message": {"protocolIEs": [
-            {"id": 15, "criticality": "ignore", "value": {"radioNetwork": "unspecified"}, "_raw_value": "00"},
-            {"id": 16, "criticality": "reject", "value": {
-                "transfer": {"decoded": {"radioNetwork": "user-inactivity"}, "_raw_transfer": "10"},
-            }, "_raw_value": "4010"},
-        ]},
+        "message": "Release",
+        "ies": [
+            {"Cause": {"radioNetwork": "unspecified"}},
+            {"Holder": {"transfer": {"radioNetwork": "user-inactivity"}}},
+        ],
     })
 }
 
 #[test]
-fn a_segment_that_names_no_member_of_a_transfer_is_taken_in_its_decoded_value() {
-    let view = release();
-    let select = |path: &str| inspect::select(&TEST, &view, path);
+fn a_transfer_is_its_decoded_value() {
+    let tree = release();
+    let select = |path: &str| inspect::select(&TEST, &tree, path);
     let transfer = "/test/Holder/transfer";
     assert_eq!(
         select(&format!("{transfer}/radioNetwork")),
         Ok(vec![&tree!("user-inactivity")])
     );
-    assert_eq!(
-        select(&format!("{transfer}/decoded/radioNetwork")),
-        Ok(vec![&tree!("user-inactivity")])
-    );
     assert_eq!(select(&format!("{transfer}/nas")), Ok(vec![]));
-    // What the transfer has itself comes first.
-    assert_eq!(
-        select(&format!("{transfer}/octets")),
-        Ok(vec![&tree!("10")])
-    );
-    // A name that neither has is refused with the members of both, with a view and
+    // A name that the type does not have is refused with its members, with a tree and
     // without one.
     let refused = select(&format!("{transfer}/misspelled")).unwrap_err();
     assert_eq!(refused.kind(), ErrorKind::Path);
     assert_eq!(
         refused.to_string(),
         "\"misspelled\" is not a member of Cause, which has radioNetwork, nas, misc, \
-         choice-Extensions; a transfer itself has decoded, octets, at \
-         /test/Holder/transfer/misspelled"
+         choice-Extensions, at /test/Holder/transfer/misspelled"
     );
     let checked = inspect::check_path(&TEST, "Release", &format!("{transfer}/misspelled"));
     assert_eq!(checked, Err(refused));
     let names = inspect::enumerated_at(&TEST, "Release", &format!("{transfer}/nas"));
     assert_eq!(names, Ok(Some(&["normal-release", "deregister"][..])));
-    // An edit is made in the decoded value, whose octets are then others.
-    let mut edited = view.clone();
+    // An edit is made in the decoded value, where an alternative takes the place of the
+    // one there.
+    let mut edited = tree.clone();
     let path = format!("{transfer}/nas");
     inspect::set(&TEST, &mut edited, &path, tree!("deregister")).unwrap();
-    let transfer = &edited["message"]["protocolIEs"][1]["value"]["transfer"];
-    assert_eq!(transfer["decoded"], tree!({"nas": "deregister"}));
-    assert_eq!(transfer[inspect::EDITED], tree!(true));
-    assert_eq!(
-        edited["message"]["protocolIEs"][1][inspect::EDITED],
-        tree!(true)
-    );
+    let holder = tree!({"Holder": {"transfer": {"nas": "deregister"}}});
+    assert_eq!(edited["ies"][1], holder);
 }
 
 #[test]
-fn a_transfer_that_did_not_decode_or_that_is_its_octets_has_no_decoded_value() {
-    let mut view = release();
-    let holder = &mut view["message"]["protocolIEs"][1]["value"];
-    holder["transfer"] = tree!({"_raw_transfer": "ff", "_decode_error": "why"});
+fn a_value_that_is_its_octets_has_nothing_under_it() {
+    let mut tree = release();
+    tree["ies"][1]["Holder"]["transfer"] = tree!({"octets": "ff"});
     let path = "/test/Holder/transfer/radioNetwork";
-    let error = inspect::select(&TEST, &view, path).unwrap_err();
+    let error = inspect::select(&TEST, &tree, path).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::UndecodableIe);
     assert_eq!(
         error.to_string(),
-        "the transfer did not decode: why, at /test/Holder/transfer/radioNetwork"
+        "\"radioNetwork\" is in no value here: the value is its octets, as it did not decode \
+         or is written as it is sent, at /test/Holder/transfer/radioNetwork"
     );
+    let octets = inspect::select(&TEST, &tree, "/test/Holder/transfer/octets");
+    assert_eq!(octets, Ok(vec![&tree!("ff")]));
     // An edit changes nothing there.
-    let before = view.clone();
-    let error = inspect::set(&TEST, &mut view, path, tree!("unspecified")).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Path);
-    assert_eq!(view, before);
-    // A transfer that an edit replaced by its octets: what its type has selects nothing.
-    view["message"]["protocolIEs"][1]["value"]["transfer"] = tree!("00");
-    assert_eq!(inspect::select(&TEST, &view, path), Ok(vec![]));
-    let misspelled = inspect::select(&TEST, &view, "/test/Holder/transfer/misspelled");
-    assert_eq!(misspelled.unwrap_err().kind(), ErrorKind::Path);
+    let before = tree.clone();
+    let error = inspect::set(&TEST, &mut tree, path, tree!("unspecified")).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::UndecodableIe);
+    assert_eq!(tree, before);
+    // The value of an IE is set as its octets as any other value, and is then they.
+    inspect::set(&TEST, &mut tree, "/test/Cause", tree!({"octets": "40"})).unwrap();
+    assert_eq!(tree["ies"][0], tree!({"Cause": {"octets": "40"}}));
+    let octets = inspect::select(&TEST, &tree, "/test/Cause/octets");
+    assert_eq!(octets, Ok(vec![&tree!("40")]));
+    // Its name stays on it, as on any value of an IE.
+    let named = inspect::select(&TEST, &tree, "/test/0/Cause/octets");
+    assert_eq!(named, Ok(vec![&tree!("40")]));
 }
 
 #[test]
 fn an_edit_that_one_place_refuses_is_done_at_none() {
     // The cause takes the edit, the holder, after it, has no `radioNetwork`.
-    let mut view = release();
-    let before = view.clone();
-    let everywhere = "/test/*/value/radioNetwork";
-    assert_eq!(inspect::select(&TEST, &view, everywhere).unwrap().len(), 1);
-    let error = inspect::set(&TEST, &mut view, everywhere, tree!("user-inactivity")).unwrap_err();
+    let mut tree = release();
+    let before = tree.clone();
+    let everywhere = "/test/*/radioNetwork";
+    assert_eq!(inspect::select(&TEST, &tree, everywhere).unwrap().len(), 1);
+    let error = inspect::set(&TEST, &mut tree, everywhere, tree!("user-inactivity")).unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Path);
     assert!(
         error.to_string().contains("is not a member of Holder"),
         "{error}"
     );
-    assert_eq!(view, before);
+    assert_eq!(tree, before);
     // A CHOICE has one alternative: another takes its place, and none is taken out.
-    inspect::set(&TEST, &mut view, "/test/Cause/nas", tree!("deregister")).unwrap();
-    let cause = &view["message"]["protocolIEs"][0];
-    assert_eq!(cause["value"], tree!({"nas": "deregister"}));
-    let refused = inspect::remove(&TEST, &mut view, "/test/Cause/nas").unwrap_err();
+    inspect::set(&TEST, &mut tree, "/test/Cause/nas", tree!("deregister")).unwrap();
+    assert_eq!(tree["ies"][0], tree!({"Cause": {"nas": "deregister"}}));
+    let refused = inspect::remove(&TEST, &mut tree, "/test/Cause/nas").unwrap_err();
     assert_eq!(refused.kind(), ErrorKind::Value);
-    // The value of an IE is not taken out, and its octets are set in its place.
-    let refused = inspect::remove(&TEST, &mut view, "/test/Cause/value").unwrap_err();
-    assert_eq!(refused.kind(), ErrorKind::Value);
-    inspect::set(&TEST, &mut view, "/test/Cause/octets", tree!("40")).unwrap();
-    let cause = &view["message"]["protocolIEs"][0];
-    assert_eq!(
-        cause,
-        &tree!({"id": 15, "criticality": "ignore", "_raw_value": "40"})
-    );
-    let refused = inspect::set(&TEST, &mut view, "/test/Cause/octets", tree!(64)).unwrap_err();
-    assert_eq!(refused.kind(), ErrorKind::Value);
+    // An IE that the message does not have is inserted, not set.
+    tree["ies"].as_array_mut().unwrap().pop();
+    let before = tree.clone();
+    let holder = tree!({"cause": {"misc": null}});
+    let refused = inspect::set(&TEST, &mut tree, "/test/Holder", holder.clone()).unwrap_err();
+    assert_eq!(refused.kind(), ErrorKind::Path);
+    assert!(refused.to_string().contains("at /test/-"), "{refused}");
+    assert_eq!(tree, before);
+    let entry = tree!({"Holder": holder});
+    inspect::insert(&TEST, &mut tree, "/test/-", entry.clone()).unwrap();
+    assert_eq!(tree["ies"][1], entry);
+    // An IE goes out with its criticality, and a member of its value alone.
+    inspect::remove(&TEST, &mut tree, "/test/Holder/cause").unwrap();
+    assert_eq!(tree["ies"][1], tree!({"Holder": {}}));
+    inspect::remove(&TEST, &mut tree, "/test/Cause").unwrap();
+    assert_eq!(tree["ies"], tree!([{"Holder": {}}]));
 }
 
 #[test]
 fn the_segment_after_the_root_selects_among_the_ies() {
-    let view = release();
-    for path in ["/test/NoSuchIe/value", "/test/value"] {
-        let error = inspect::select(&TEST, &view, path).unwrap_err();
+    let tree = release();
+    for path in ["/test/NoSuchIe", "/test/value"] {
+        let error = inspect::select(&TEST, &tree, path).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::UnknownIe, "{path}");
     }
-    // Without the root, the list has positions.
-    let error = inspect::select(&TEST, &view, "/message/protocolIEs/Cause").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Path);
-    assert_eq!(
-        inspect::select(&TEST, &view, "/message/protocolIEs/0/id"),
-        Ok(vec![&tree!(15)])
-    );
-    // An IE that the object set has and the view has not selects nothing, and one that
-    // the set has not is refused without a view.
+    // The root is short for the IEs of the message, which a path may say.
+    for path in [
+        "/test/Cause",
+        "/test/0",
+        "/ies/Cause",
+        "/ies/0",
+        "/test/@id=15",
+    ] {
+        let selected = inspect::select(&TEST, &tree, path);
+        assert_eq!(
+            selected,
+            Ok(vec![&tree!({"radioNetwork": "unspecified"})]),
+            "{path}"
+        );
+    }
+    // An IE that the object set has and the tree has not selects nothing, and one that
+    // the set has not is refused without a tree.
     let checked = |path: &str| inspect::check_path(&TEST, "Release", path);
     assert_eq!(checked("/test/Holder/cause/nas"), Ok(()));
     let error = checked("/test/ExtendedCause").unwrap_err();
@@ -272,12 +271,15 @@ fn the_segment_after_the_root_selects_among_the_ies() {
 fn the_ies_that_a_value_holds_are_written_by_name_and_read_back() {
     // An IE of an extension container, which has the type that the type it extends
     // gives it, and whose criticality no table has: it is written beside its name.
-    let mut view = release();
-    let holder = &mut view["message"]["protocolIEs"][1]["value"];
-    holder["iE-Extensions"] = tree!([
+    let mut ies = tree!([
+        {"id": 15, "criticality": "ignore", "value": {"radioNetwork": "unspecified"}, "_raw_value": "00"},
+        {"id": 16, "criticality": "reject", "value": {
+            "transfer": {"decoded": {"radioNetwork": "user-inactivity"}, "_raw_transfer": "10"},
+        }, "_raw_value": "4010"},
+    ]);
+    ies[1]["value"]["iE-Extensions"] = tree!([
         {"id": 17, "criticality": "ignore", "extensionValue": {"nas": "deregister"}},
     ]);
-    let ies = view["message"]["protocolIEs"].clone();
     let shown = inspect::named_ies(&TEST, "Release", ies).unwrap();
     assert_eq!(
         shown,
@@ -302,6 +304,15 @@ fn the_ies_that_a_value_holds_are_written_by_name_and_read_back() {
             }},
         ])
     );
+    // A path goes into the IEs of an extension container by their names.
+    let mut tree = release();
+    tree["ies"] = shown;
+    let path = "/test/Holder/iE-Extensions/ExtendedCause/nas";
+    assert_eq!(
+        inspect::select(&TEST, &tree, path),
+        Ok(vec![&tree!("deregister")])
+    );
+    assert_eq!(inspect::check_path(&TEST, "Release", path), Ok(()));
     // An entry of the extension container that does not say its criticality is refused.
     let unsaid = tree!([{"Holder": {"iE-Extensions": [{"ExtendedCause": {"nas": "deregister"}}]}}]);
     let error = inspect::listed_ies(&TEST, "Release", &unsaid).unwrap_err();
@@ -320,31 +331,76 @@ fn the_ies_that_a_value_holds_are_written_by_name_and_read_back() {
 }
 
 #[test]
-fn the_paths_of_a_view_name_the_ies_and_select_their_values() {
-    let view = release();
-    let paths = inspect::paths(&TEST, &view);
+fn the_paths_of_a_tree_name_the_ies_and_select_their_values() {
+    let mut tree = release();
+    tree["ies"][1]["criticality"] = tree!("ignore");
+    let paths = inspect::paths(&TEST, &tree);
     let listed: Vec<String> = paths.iter().map(|(path, _)| path.clone()).collect();
     assert_eq!(
         listed,
         [
-            "/procedure_code",
-            "/direction",
-            "/criticality",
-            "/test/Cause/id",
-            "/test/Cause/criticality",
-            "/test/Cause/value/radioNetwork",
-            "/test/Holder/id",
+            "/test/Cause/radioNetwork",
+            "/test/Holder/transfer/radioNetwork",
             "/test/Holder/criticality",
-            "/test/Holder/value/transfer/decoded/radioNetwork",
         ]
     );
     for (path, value) in &paths {
         assert_eq!(
-            inspect::select(&TEST, &view, path),
+            inspect::select(&TEST, &tree, path),
             Ok(vec![value]),
             "{path}"
         );
     }
+    // An IE that is there twice goes by its position.
+    let cause = tree["ies"][0].clone();
+    tree["ies"].as_array_mut().unwrap().push(cause);
+    let listed: Vec<String> = inspect::paths(&TEST, &tree)
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            "/test/0/radioNetwork",
+            "/test/Holder/transfer/radioNetwork",
+            "/test/Holder/criticality",
+            "/test/2/radioNetwork",
+        ]
+    );
+}
+
+#[test]
+fn the_criticality_of_an_ie_is_beside_its_value() {
+    let mut tree = release();
+    // A tree writes it where it is not the one that the message assigns.
+    let criticality = |tree: &Value, path: &str| inspect::select(&TEST, tree, path).unwrap().len();
+    assert_eq!(criticality(&tree, "/test/Cause/criticality"), 0);
+    assert_eq!(
+        inspect::check_path(&TEST, "Release", "/test/Cause/criticality"),
+        Ok(())
+    );
+    inspect::set(&TEST, &mut tree, "/test/Cause/criticality", tree!("reject")).unwrap();
+    assert_eq!(
+        tree["ies"][0],
+        tree!({"Cause": {"radioNetwork": "unspecified"}, "criticality": "reject"})
+    );
+    assert_eq!(
+        inspect::select(&TEST, &tree, "/test/0/Cause/criticality"),
+        Ok(vec![&tree!("reject")])
+    );
+    assert_eq!(criticality(&tree, "/test/*/criticality"), 1);
+    // The value stays when the criticality goes, and the reverse.
+    inspect::remove(&TEST, &mut tree, "/test/Cause/criticality").unwrap();
+    assert_eq!(
+        tree["ies"][0],
+        tree!({"Cause": {"radioNetwork": "unspecified"}})
+    );
+    // Beside a value that is its octets too.
+    tree["ies"][1] = tree!({"Holder": {"octets": "00"}, "criticality": "ignore"});
+    assert_eq!(
+        inspect::select(&TEST, &tree, "/test/Holder/criticality"),
+        Ok(vec![&tree!("ignore")])
+    );
 }
 
 /// The first finding of the review of the move of the paths to oxirush-utils: an
@@ -352,23 +408,23 @@ fn the_paths_of_a_view_name_the_ies_and_select_their_values() {
 /// selected it.
 #[test]
 fn an_alternative_of_the_type_null_is_a_value() {
-    let mut view = release();
-    view["message"]["protocolIEs"][0]["value"] = tree!({"misc": null});
+    let mut tree = release();
+    tree["ies"][0]["Cause"] = tree!({"misc": null});
     assert_eq!(
-        inspect::select(&TEST, &view, "/test/Cause/misc"),
+        inspect::select(&TEST, &tree, "/test/Cause/misc"),
         Ok(vec![&Value::Null])
     );
     assert_eq!(
-        inspect::select(&TEST, &view, "/test/Cause/value/*"),
+        inspect::select(&TEST, &tree, "/test/Cause/*"),
         Ok(vec![&Value::Null])
     );
-    let paths = inspect::paths(&TEST, &view);
+    let paths = inspect::paths(&TEST, &tree);
     assert!(
-        paths.contains(&("/test/Cause/value/misc".to_string(), Value::Null)),
+        paths.contains(&("/test/Cause/misc".to_string(), Value::Null)),
         "{paths:?}"
     );
     // An alternative that is not there selects nothing, as before.
-    assert_eq!(inspect::select(&TEST, &view, "/test/Cause/nas"), Ok(vec![]));
+    assert_eq!(inspect::select(&TEST, &tree, "/test/Cause/nas"), Ok(vec![]));
     assert_eq!(
         inspect::check_path(&TEST, "Release", "/test/Cause/misc"),
         Ok(())
@@ -376,13 +432,7 @@ fn an_alternative_of_the_type_null_is_a_value() {
     // `null` set there is that alternative, in the place of the one there.
     let mut edited = release();
     inspect::set(&TEST, &mut edited, "/test/Cause/misc", Value::Null).unwrap();
-    assert_eq!(
-        edited["message"]["protocolIEs"][0]["value"],
-        tree!({"misc": null})
-    );
-    // And a name of a tree, which shows it as a view does.
-    let shown = inspect::named_ies(&TEST, "Release", view["message"]["protocolIEs"].clone());
-    assert_eq!(shown.unwrap()[0], tree!({"Cause": {"misc": null}}));
+    assert_eq!(edited["ies"][0], tree!({"Cause": {"misc": null}}));
 }
 
 /// The review of the release candidate found the first finding of the review of the move
@@ -391,27 +441,27 @@ fn an_alternative_of_the_type_null_is_a_value() {
 /// selection did not take. Its IEs have the shapes of their identifiers there too.
 #[test]
 fn an_alternative_of_the_type_null_is_a_value_in_a_procedure_that_the_tables_lack() {
-    let mut view = release();
-    view["procedure_code"] = tree!(254);
-    view["message"]["protocolIEs"][0]["value"] = tree!({"misc": null});
-    let paths = inspect::paths(&TEST, &view);
+    let mut tree = release();
+    let tree = tree.as_object_mut().unwrap();
+    tree.shift_remove("message");
+    tree.insert("procedure_code".into(), tree!(254));
+    tree.insert("direction".into(), tree!("InitiatingMessage"));
+    tree["ies"][0]["Cause"] = tree!({"misc": null});
+    let tree = Value::Object(tree.clone());
+    let paths = inspect::paths(&TEST, &tree);
     assert!(
-        paths.contains(&("/test/Cause/value/misc".to_string(), Value::Null)),
+        paths.contains(&("/test/Cause/misc".to_string(), Value::Null)),
         "{paths:?}"
     );
     for (path, value) in &paths {
         assert_eq!(
-            inspect::select(&TEST, &view, path),
+            inspect::select(&TEST, &tree, path),
             Ok(vec![value]),
             "{path}"
         );
     }
     assert_eq!(
-        inspect::select(&TEST, &view, "/test/Cause/misc"),
-        Ok(vec![&Value::Null])
-    );
-    assert_eq!(
-        inspect::select(&TEST, &view, "/test/Holder/value/transfer/radioNetwork"),
+        inspect::select(&TEST, &tree, "/test/Holder/transfer/radioNetwork"),
         Ok(vec![&tree!("user-inactivity")])
     );
 }
@@ -421,18 +471,13 @@ fn an_alternative_of_the_type_null_is_a_value_in_a_procedure_that_the_tables_lac
 /// takes those that have it.
 #[test]
 fn open_takes_what_each_place_has_as_a_selection_does() {
-    let mut view = release();
-    let before = view.clone();
+    let mut tree = release();
+    let before = tree.clone();
     // The Cause has no transfer, the Holder has one: nothing to open in either.
-    assert_eq!(
-        inspect::open(&TEST, &mut view, "/test/*/value/transfer"),
-        Ok(())
-    );
-    assert_eq!(view, before);
-    assert_eq!(inspect::open(&TEST, &mut view, "/test/*/transfer"), Ok(()));
-    assert_eq!(view, before);
+    assert_eq!(inspect::open(&TEST, &mut tree, "/test/*/transfer"), Ok(()));
+    assert_eq!(tree, before);
     // A name that no place has is still refused.
-    let error = inspect::open(&TEST, &mut view, "/test/*/value/misspelled").unwrap_err();
+    let error = inspect::open(&TEST, &mut tree, "/test/*/misspelled").unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Path);
 }
 
@@ -441,34 +486,16 @@ fn open_takes_what_each_place_has_as_a_selection_does() {
 /// tree, which gives them back.
 #[test]
 fn what_a_typed_value_has_no_place_for_keeps_its_octets_in_a_tree() {
-    let mut view = release();
-    view["message"]["protocolIEs"][0]["_lossy"] = tree!(true);
-    let transfer = &mut view["message"]["protocolIEs"][1]["value"]["transfer"];
-    transfer["_lossy"] = tree!(true);
-    let shown = inspect::named_ies(&TEST, "Release", view["message"]["protocolIEs"].clone());
+    let ies = tree!([
+        {"id": 15, "criticality": "ignore", "value": {"radioNetwork": "unspecified"}, "_raw_value": "00", "_lossy": true},
+        {"id": 16, "criticality": "reject", "value": {
+            "transfer": {"decoded": {"radioNetwork": "user-inactivity"}, "_raw_transfer": "10", "_lossy": true},
+        }, "_raw_value": "4010"},
+    ]);
+    let shown = inspect::named_ies(&TEST, "Release", ies);
     assert_eq!(
         shown.unwrap(),
         tree!([{"Cause": {"octets": "00"}}, {"Holder": {"transfer": {"octets": "10"}}}])
-    );
-    // A view keeps the typed value beside it, which a path selects, and its path list
-    // says why the tree has the octets in its place.
-    assert_eq!(
-        inspect::select(&TEST, &view, "/test/Cause/radioNetwork"),
-        Ok(vec![&tree!("unspecified")])
-    );
-    let lossy: Vec<_> = inspect::paths(&TEST, &view)
-        .into_iter()
-        .filter(|(path, _)| path.contains("lossy"))
-        .collect();
-    assert_eq!(
-        lossy,
-        [
-            ("/test/Cause/_lossy".to_string(), tree!(true)),
-            (
-                "/test/Holder/value/transfer/_lossy".to_string(),
-                tree!(true)
-            ),
-        ]
     );
 }
 

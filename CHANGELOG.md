@@ -6,6 +6,15 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Changed
 
+- The paths of `inspect` read the tree of a PDU, the family `Trees` on the engine of
+  oxirush-utils: an IE goes by its name, its position or `@id=N` to its value, as in a
+  NAS message, `criticality` after the value is the criticality beside it, the IEs of
+  a container go by name in its place, and an IE that a value holds alone by its
+  name after the member that holds it. The view is the codec of a tree, which the
+  protocol crates no longer show: `tree_parts` writes a tree, and `tree_of_jer` reads
+  the values of a PDU that another implementation wrote in the JSON Encoding Rules.
+  A tree has a transfer as its value or as `{"octets": "…"}` alone, and no other form.
+- oxirush-utils 0.2.1, whose `Next::entry_member` and `Next::beside` the trees take.
 - `Criticality` is the type of the bindings too: for the `Criticality` of the
   ASN.1 of a protocol, the generator writes `pub use oxirush_aper::Criticality`,
   and this crate gives it its codec, its tree and its serde. `Display` and
@@ -74,6 +83,8 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Removed
 
+- The family of the paths of a view and the functions of a view that only the
+  protocol crates called: `view_parts`, `of_the_pdu` and `view_of_jer`.
 - `json::to_value(&x)`, which is `x.to_tree()`.
 - `protocol::CriticalityOf`, the associated type `check::Diagnostics::Criticality`,
   the parameter of `protocol::ObjectSet` and the conversions between two

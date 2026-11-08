@@ -47,10 +47,11 @@ determinant. And the members before the additions end an octet: pycrate pads bef
 the first addition from the place before the count and the bitmap of the additions, and
 writes an octet too many where they do not.
 
-With `--values FILE` the script also writes each vector of `vectors.tsv` as the JSON
-view of its PDU, a line for each with its name: the values in the JSON encoding of
-ASN.1, as pycrate has them. A test of `tests/vectors.rs` writes a PDU from each view
-and compares its octets with the vector.
+With `--values FILE` the script also writes the values of each vector of `vectors.tsv`,
+a line for each with its name: its procedure code, its direction, its criticality and
+its message in the JSON encoding of ASN.1, as pycrate has them. A test of
+`tests/vectors.rs` reads each as a tree, writes the PDU of the tree and compares its
+octets with the vector.
 """
 
 import argparse
@@ -872,7 +873,7 @@ def later_release(protocol, module, texts, directory):
 
 
 def to_json(obj, value):
-    """A value in the JSON encoding of ASN.1 (ITU-T X.697), as a view takes it."""
+    """A value in the JSON encoding of ASN.1 (ITU-T X.697), as pycrate has it."""
     kind = obj.TYPE
     if kind == "NULL":
         return None
@@ -924,8 +925,8 @@ def member_to_json(component, value, row):
     return to_json(row[key], inner)
 
 
-def view(protocol, module, value):
-    """The view of a PDU: its procedure code, its direction, its criticality and its
+def values(protocol, module, value):
+    """The values of a PDU: its procedure code, its direction, its criticality and its
     message."""
     alternative, members = value
     obj = pdu_type(protocol, module)._cont[alternative]
@@ -951,7 +952,7 @@ def summary(keys):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="compare, and write nothing")
-    parser.add_argument("--values", help="write the view of each vector into this file")
+    parser.add_argument("--values", help="write the values of each vector into this file")
     arguments = parser.parse_args()
     protocol = next(name for name in PROTOCOLS if pathlib.Path(name).is_dir())
     with tempfile.TemporaryDirectory() as directory:
@@ -959,14 +960,14 @@ def main():
         module = compile_modules(texts, directory, protocol)
         pdu = pdu_type(protocol, module)
         files = {"messages.tsv": minimal(protocol, module)}
-        keys, lines, views = set(), [], []
+        keys, lines, written = set(), [], []
         for made in (covering(protocol, module, keys), sized(protocol, module)):
             for name, value in made:
                 pdu.set_val(value)
                 code, alternative = value[1]["procedureCode"], ALTERNATIVES.index(value[0])
                 lines.append(f"{name}\t{pdu.to_aper().hex()}\t{code}\t{alternative}")
                 if arguments.values:
-                    views.append(f"{name}\t{json.dumps(view(protocol, module, value))}")
+                    written.append(f"{name}\t{json.dumps(values(protocol, module, value))}")
         header = [
             f"# {PROTOCOLS[protocol]['specification']}; pycrate 0.8.1 vectors with content, which",
             "# oxirush-aper/protocols/tests/fixtures/generate.py writes. The vectors of the passes hold",
@@ -986,7 +987,7 @@ def main():
             path.write_text(text)
             print(f"{path}: {len(text.splitlines())} lines, {len(text)} octets")
     if arguments.values:
-        pathlib.Path(arguments.values).write_text("\n".join(views) + "\n")
+        pathlib.Path(arguments.values).write_text("\n".join(written) + "\n")
     sys.exit(1 if failed else 0)
 
 

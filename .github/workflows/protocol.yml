@@ -254,7 +254,7 @@ jobs:
       # 30 minutes from the PDUs alone did not show, shows in 9 seconds from them.
       - run: ../oxirush-aper/protocols/fuzz/seed.sh
       - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
-      - run: cargo fuzz run view -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
+      - run: cargo fuzz run json -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
       - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096
       - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
       # These two take the PDUs of tests/fixtures themselves, and edit them or write them

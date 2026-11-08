@@ -6,8 +6,8 @@
 //! `"208-93"` for a PLMN identity, which their trees show and are read in as well. A
 //! string of decimal digits is never read as octets there: octets whose hexadecimal has
 //! no letter are written after `0x`. In the JSON Encoding Rules such a string is octets,
-//! and a view that another implementation wrote in them is read as a view of the crate
-//! has it through `inspect::view_of_jer`.
+//! and the values of a PDU that another implementation wrote in them are read as a tree
+//! has them through `inspect::tree_of_jer`.
 //!
 //! | ASN.1 | JSON |
 //! | --- | --- |
@@ -23,7 +23,7 @@
 //! | `SEQUENCE` | An object with a member for each component, by the name that ASN.1 gives it, in the order of the components, and none for a component that is absent |
 //! | `SEQUENCE OF` | A list |
 //! | `CHOICE` | An object with one member: the name of the alternative, with its value |
-//! | An open type | Its octets in hexadecimal: X.697 §41 has the value that the octets hold, which the views of the bindings show beside them |
+//! | An open type | Its octets in hexadecimal: X.697 §41 has the value that the octets hold, which the trees of the bindings show in their place |
 //!
 //! Hexadecimal is written in lower case and read in either, and the members of an
 //! object keep the order in which they are written: the forms are those of

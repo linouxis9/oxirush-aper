@@ -44,35 +44,22 @@ exclude_re = [
     'src/json\.rs:\d+:45: replace && with \|\| in Form::write$',
     # The value of NULL, which the default value is.
     'src/lib\.rs:.*: replace <impl Decode<.a> for \(\)>::decode ',
-    # The paths and the trees of a view:
+    # The paths of a tree:
     # - `fault` is given the kind NoSuchMember alone;
     'src/inspect/paths\.rs:.*: delete match arm ErrorKind::(Path|Limit) in fault$',
-    # - the engine raises an error of these kinds without a code of the views only in the
-    #   readings of members, which the views do not use, and for a family that opens a value
+    # - the engine raises an error of these kinds without a code of the trees only in the
+    #   readings of members, which the trees do not use, and for a family that opens a value
     #   where the edit is not to open one or goes through members without an end, which the
-    #   views never do;
+    #   trees never do;
     'src/inspect/paths\.rs:.*: delete match arm tree::ErrorKind::(Value|Refused) in error$',
     # - every list of IEs of a type is its member protocolIEs, and `transfer` gives none for
     #   a type that is no transfer of protocol IEs;
     'src/inspect/paths\.rs:.*: replace match guard \*member == IES with true in Protocol::members$',
-    # - octets that contain one of several types have no member that an IE is named as;
-    'src/inspect/paths\.rs:.*: replace match guard !contained\.is_empty\(\) with true in Protocol::stays_on$',
     # - a transfer and an IE always have the member that holds their value, in which a
     #   segment that names none of their members is taken: none reaches these arms;
     'src/inspect/paths\.rs:.*: delete match arm Shape::(Transfer|Ie)\(.* in Protocol::no_member$',
     # - the arm for any list gives an entry of a list of IEs of an extension the same shape;
     'src/inspect/paths\.rs:.*: delete match arm Shape::List\(Shape::Extension\(.* in element$',
-    # - a member that is not there gives no place to an edit that goes deeper, nor to a
-    #   removal or an insertion, which the engine makes at what is there alone;
-    'src/inspect/paths\.rs:\d+:29: replace && with \|\| in Views<._>::object$',
-    # - what a view does not have is read without an edit, and the one segment that such a
-    #   reading refuses, an identifier that is no number, is refused before it;
-    'src/inspect/paths\.rs:.*: delete match arm tree::ErrorKind::Refused in Views<._>::(typed|scalar)$',
-    # - the arm of a value without members and the arm after it say the same;
-    'src/inspect/paths\.rs:.*: delete match arm Shape::Plain in Views<._>::scalar$',
-    # - the protocolIEs of a view are a list: an object there, of nothing but the octets
-    #   that it was received as, is no view's;
-    'src/inspect/paths\.rs:.*: replace match guard value\.is_some_and\(Value::is_array\) with true in <impl Family for Paths>::member$',
     # - a type whose one member is a list of IEs, a message, has members of the same shapes
     #   listed or made: `members` gives the list the object set of the transfer of that
     #   name, which a message has none of.

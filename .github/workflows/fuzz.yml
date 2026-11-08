@@ -136,13 +136,13 @@ jobs:
           - { target: fields, max_len: 512 }
           - { target: value, max_len: 512 }
           - { protocol: ngap, target: decode, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
-          - { protocol: ngap, target: view, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
+          - { protocol: ngap, target: json, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
           - { protocol: ngap, target: paths, max_len: 4096 }
           - { protocol: ngap, target: exact, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
           - { protocol: ngap, target: edit, max_len: 1024, flags: -len_control=0 }
           - { protocol: ngap, target: tree, max_len: 1024, flags: -len_control=0 }
           - { protocol: s1ap, target: decode, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
-          - { protocol: s1ap, target: view, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
+          - { protocol: s1ap, target: json, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
           - { protocol: s1ap, target: paths, max_len: 4096 }
           - { protocol: s1ap, target: exact, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
           - { protocol: s1ap, target: edit, max_len: 1024, flags: -len_control=0 }

@@ -8,7 +8,7 @@
 #
 #     ../oxirush-aper/protocols/fuzz/seed.sh
 set -eu
-mkdir -p fuzz/corpus/decode fuzz/corpus/view fuzz/corpus/paths fuzz/corpus/exact
+mkdir -p fuzz/corpus/decode fuzz/corpus/json fuzz/corpus/paths fuzz/corpus/exact
 number=0
 grep -hv '^#' tests/fixtures/messages.tsv tests/fixtures/vectors.tsv tests/fixtures/later.tsv \
     tests/fixtures/captured.tsv tests/fixtures/fuzzed.tsv |
@@ -16,16 +16,16 @@ grep -hv '^#' tests/fixtures/messages.tsv tests/fixtures/vectors.tsv tests/fixtu
         [ "${#octets}" -le 8192 ] || continue
         number=$((number + 1))
         printf '%s' "$octets" | xxd -r -p > "fuzz/corpus/decode/$number"
-        cp "fuzz/corpus/decode/$number" "fuzz/corpus/view/$number"
+        cp "fuzz/corpus/decode/$number" "fuzz/corpus/json/$number"
         cp "fuzz/corpus/decode/$number" "fuzz/corpus/exact/$number"
         # The same PDU under a procedure code that the specification does not have, 254,
         # whose message the crate reads as a container of IEs.
         { head -c 1 "fuzz/corpus/decode/$number"; printf '\376'; tail -c +3 "fuzz/corpus/decode/$number"; } \
-            > "fuzz/corpus/view/$number-254"
-        cp "fuzz/corpus/view/$number-254" "fuzz/corpus/decode/$number-254"
-        cp "fuzz/corpus/view/$number-254" "fuzz/corpus/exact/$number-254"
+            > "fuzz/corpus/json/$number-254"
+        cp "fuzz/corpus/json/$number-254" "fuzz/corpus/decode/$number-254"
+        cp "fuzz/corpus/json/$number-254" "fuzz/corpus/exact/$number-254"
         # Before its PDU, the target of the paths takes what is done with it: here
-        # `select`, with the first path of the view, whole, and nothing more.
+        # `select`, with the first path of the tree, whole, and nothing more.
         { printf '\000\000\377\000\000'; cat "fuzz/corpus/decode/$number"; } \
             > "fuzz/corpus/paths/$number"
     done

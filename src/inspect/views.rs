@@ -15,9 +15,10 @@
    limitations under the License.
 */
 
-//! The views and the trees of the PDUs of an application protocol: each IE and each
+//! The trees of the PDUs of an application protocol, through their views: each IE and each
 //! transfer of a message as its type is decoded, beside the octets that it was received
-//! as, and the message that a view or a tree writes encoded again.
+//! as, which the tree has where its value has no place for them, and the message that a
+//! tree writes encoded again.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -294,19 +295,17 @@ impl Protocol {
                     };
                     if let Some(transfer) = transfer {
                         // The decoded value, as the object itself when it has no member
-                        // of a transfer or as its `decoded` member, or the `octets`.
-                        let alone = |member| members.get(member).filter(|_| members.len() == 1);
+                        // of a transfer, or the `octets` alone.
+                        let octets = members.get("octets").filter(|_| members.len() == 1);
                         let wire = if !members.keys().any(|name| of_a_transfer(name)) {
                             Value::String(hex(&(transfer.encode)(child)?))
-                        } else if let Some(written) = alone("decoded") {
-                            Value::String(hex(&(transfer.encode)(written)?))
-                        } else if let Some(octets) = alone("octets") {
+                        } else if let Some(octets) = octets {
                             octets.clone()
                         } else {
                             return Err(Error::new(
                                 ErrorKind::Value,
                                 format!(
-                                    "{key} is written with its decoded value alone, or as its octets"
+                                    "{key} is written as its decoded value, or as its octets alone"
                                 ),
                             ));
                         };
@@ -416,7 +415,7 @@ impl Protocol {
             *written = self.carried_octets(written, id)?;
         }
         let typed = |id: u16| {
-            let octets = format!("give its octets as _raw_value, without {field}");
+            let octets = "write its value as its octets, {\"octets\": \"…\"}";
             self.ie_type(id, shape)
                 .map_err(|error| error.reworded(|what| format!("{what}: {octets}")))
         };
@@ -541,6 +540,29 @@ pub fn tree(
     criticality: Value,
     raw: &[u8],
 ) -> Value {
+    // The view is taken: its IEs are moved into the tree, and not copied.
+    let ies = view(protocol, direction, code, Value::Null, raw)
+        .ok()
+        .filter(|view| view.get(LOSSY).is_none())
+        .and_then(|mut view| {
+            let message = view.get_mut("message")?;
+            message.get_mut("protocolIEs").map(core::mem::take)
+        });
+    tree_of(protocol, direction, code, criticality, ies, || {
+        hex(raw).into()
+    })
+}
+
+/// The tree of the PDU of `protocol` of a direction, a procedure code and a criticality,
+/// whose message has the entries `ies` of a view, or the octets that `octets` gives.
+fn tree_of(
+    protocol: &'static Protocol,
+    direction: Direction,
+    code: u8,
+    criticality: Value,
+    ies: Option<Value>,
+    octets: impl FnOnce() -> Value,
+) -> Value {
     let name = protocol.message_name_of(direction, code);
     let mut tree = Map::new();
     match name {
@@ -553,19 +575,12 @@ pub fn tree(
         }
     }
     let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
-    // The view is taken: its IEs are moved into the tree, and not copied.
-    let ies = view(protocol, direction, code, Value::Null, raw)
-        .ok()
-        .filter(|view| view.get(LOSSY).is_none())
-        .and_then(|mut view| {
-            let message = view.get_mut("message")?;
-            message.get_mut("protocolIEs").map(core::mem::take)
-        })
+    let ies = ies
         .filter(Value::is_array)
         .and_then(|listed| protocol.by_name(listed, Shape::Ies(sent)).ok());
     match ies {
         Some(ies) => tree.insert("ies".into(), ies),
-        None => tree.insert("octets".into(), hex(raw).into()),
+        None => tree.insert("octets".into(), octets()),
     };
     let assigned = name.and_then(|name| protocol.message_criticality(name));
     if assigned.is_none() || criticality.as_str() != assigned {
@@ -595,33 +610,15 @@ fn direction_of(direction: &str) -> Result<Direction, Error> {
 }
 
 /// The octets of the message of a direction and a procedure code of `protocol` that
-/// `message`, the message of a view, writes, which was received as the octets
-/// `received` when the view has them: those received for a message that was not
-/// edited.
+/// `message`, the message of a view, writes.
 fn message_octets(
     protocol: &'static Protocol,
     direction: Direction,
     code: u8,
     mut message: Value,
-    received: Option<&Value>,
 ) -> Result<Vec<u8>, Error> {
     protocol.collapse(&mut message, "", 0, protocol.message_shape(direction, code))?;
-    let typed = protocol.message_typed(direction, code);
-    let Some(original) = received else {
-        return (typed.encode)(&message);
-    };
-    let original = unhex(original)?;
-    let (decoded, ..) = (typed.decode)(&original)?;
-    if decoded == message {
-        return Ok(original);
-    }
-    if (typed.encode)(&decoded)? != original {
-        return Err(Error::new(
-            ErrorKind::Value,
-            "the message does not encode back to the octets received",
-        ));
-    }
-    (typed.encode)(&message)
+    (protocol.message_typed(direction, code).encode)(&message)
 }
 
 /// The parts of the PDU of `protocol` that a tree writes: a message by its name, or by
@@ -737,11 +734,9 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
         (Some(listed), None) if listed.is_array() => {
             let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
             let mut message = Map::new();
-            message.insert(
-                "protocolIEs".into(),
-                protocol.written(listed, Shape::Ies(sent), 0)?,
-            );
-            message_octets(protocol, direction, code, Value::Object(message), None)?
+            let entries = protocol.written(listed, Shape::Ies(sent), 0)?;
+            message.insert("protocolIEs".into(), entries);
+            message_octets(protocol, direction, code, Value::Object(message))?
         }
         (None, Some(octets)) => unhex(octets)?,
         _ => return Err(form()),
@@ -754,66 +749,16 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
     })
 }
 
-/// The parts of the PDU of `protocol` that a view writes, as [`view`] gives one and the
-/// edits leave it, with the octets received for what was not edited. A view that is
-/// written by hand, without what a view keeps of what was received, is encoded from its
-/// values.
+/// The tree of a view of a PDU of `protocol` whose values another implementation wrote in
+/// the JSON Encoding Rules (ITU-T X.697), as pycrate writes them: the IEs of its message
+/// with the values that [`Protocol::from_jer`] makes of theirs, or the octets of a message
+/// without IEs.
 ///
 /// # Errors
 ///
-/// What is no view, and a value that does not encode as its type.
-pub fn view_parts(protocol: &'static Protocol, view: &Value) -> Result<Parts, Error> {
-    const MEMBERS: [&str; 6] = [
-        "procedure_code",
-        "direction",
-        "criticality",
-        "message",
-        "_raw_message",
-        LOSSY,
-    ];
-    const FORM: &str =
-        "a view has its procedure_code, its direction, its criticality and its message";
-    let members = view
-        .as_object()
-        .ok_or_else(|| Error::new(ErrorKind::Value, FORM))?;
-    if let Some(other) = members.keys().find(|key| !MEMBERS.contains(&key.as_str())) {
-        return Err(Error::new(
-            ErrorKind::Value,
-            format!("{other:?} is no member of a view: {FORM}"),
-        ));
-    }
-    let code = view["procedure_code"]
-        .as_u64()
-        .and_then(|c| u8::try_from(c).ok())
-        .ok_or_else(|| {
-            Error::new(
-                ErrorKind::Value,
-                "the procedure_code of a view is a number from 0 to 255",
-            )
-        })?;
-    let direction = direction_of(view["direction"].as_str().ok_or_else(no_direction)?)?;
-    let message = view
-        .get("message")
-        .ok_or_else(|| Error::new(ErrorKind::Value, FORM))?;
-    let received = view.get("_raw_message");
-    let message = message_octets(protocol, direction, code, message.clone(), received)?;
-    Ok(Parts {
-        direction,
-        code,
-        criticality: view["criticality"].clone(),
-        message,
-    })
-}
-
-/// `view`, a view of a PDU of `protocol` whose values another implementation wrote in the
-/// JSON Encoding Rules (ITU-T X.697), as a view has them: what
-/// [`Protocol::from_jer`] makes of its message, which `from_view` of the PDU reads.
-///
-/// # Errors
-///
-/// A view without its procedure code or its direction.
-pub fn view_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, Error> {
-    let mut view = view.clone();
+/// A view without its procedure code or its direction, and a message without IEs that
+/// does not encode.
+pub fn tree_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, Error> {
     let code = view["procedure_code"]
         .as_u64()
         .and_then(|c| u8::try_from(c).ok())
@@ -825,47 +770,15 @@ pub fn view_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, E
         })?;
     let direction = direction_of(view["direction"].as_str().ok_or_else(no_direction)?)?;
     let shape = protocol.message_shape(direction, code);
-    if let Some(message) = view.get_mut("message") {
-        protocol.from_jer(message, shape);
-    }
-    Ok(view)
-}
-
-/// Whether `view` is a view of the PDU of `protocol` of a direction and a procedure
-/// code, where it says which message it is of.
-///
-/// # Errors
-///
-/// An error of the kind `Form` when the view is of another message.
-pub fn of_the_pdu(
-    protocol: &'static Protocol,
-    view: &Value,
-    direction: Direction,
-    code: u8,
-) -> Result<(), Error> {
-    let of = view["direction"].as_str().and_then(Direction::named);
-    let of = (of, view["procedure_code"].as_u64());
-    // A view that does not say which message it is of is refused as any view is.
-    let (Some(of), Some(procedure)) = of else {
-        return Ok(());
+    let mut message = view["message"].clone();
+    protocol.from_jer(&mut message, shape);
+    let ies = message.get("protocolIEs").cloned();
+    let octets = match ies {
+        Some(_) => Value::Null,
+        None => hex(&message_octets(protocol, direction, code, message)?).into(),
     };
-    if (of, procedure) == (direction, u64::from(code)) {
-        return Ok(());
-    }
-    let message = |direction: Direction, code: u64| {
-        let known = u8::try_from(code).ok();
-        match known.and_then(|code| protocol.message_name_of(direction, code)) {
-            Some(name) => name.to_string(),
-            None => format!("the {direction} of procedure {code}"),
-        }
-    };
-    Err(Error::new(
-        ErrorKind::Value,
-        format!(
-            "this view is of {}, and the PDU is {}: with_view takes a view of the PDU itself, and \
-         from_view any view",
-            message(of, procedure),
-            message(direction, code.into()),
-        ),
-    ))
+    let criticality = view["criticality"].clone();
+    Ok(tree_of(protocol, direction, code, criticality, ies, || {
+        octets
+    }))
 }

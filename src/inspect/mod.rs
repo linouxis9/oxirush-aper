@@ -16,17 +16,16 @@
 */
 
 //! What the bindings of the application protocols of 3GPP share with the `inspect`
-//! feature: the paths into the view of a PDU, read against the types and the object
-//! sets of the protocol, on the engine of `oxirush_utils::tree`.
+//! feature: the tree of a PDU, the paths into it, read against the types and the object
+//! sets of the protocol on the engine of `oxirush_utils::tree`, and the view that the
+//! tree is decoded and encoded through, which keeps the octets received.
 //!
 //! A protocol crate gives its tables, which its generator writes, as a [`Protocol`],
 //! and its own calls take it: `select`, `check_path`, `enumerated_at`, `paths`, `set`,
 //! `remove`, `insert` and `open` of `oxirush-ngap` and of `oxirush-s1ap` are these
-//! functions with the tables of the protocol. The rules are those of a view: the root
-//! is short for the IEs of the message, an IE goes by its name, its position or
-//! `@id=N`, a segment that names no member of an IE is taken in its value and one that
-//! names no member of a transfer in its decoded value, and the name of an IE stays on
-//! the entry that it is.
+//! functions with the tables of the protocol. The root is short for the IEs of the
+//! message, and an IE goes by its name, its position or `@id=N` to its value, as the IEs
+//! of a NAS message do; the IEs of a container go by name in its place.
 //!
 //! It is the plumbing of the generated crates, which takes their tables as they are
 //! written today: hidden from the documentation, and no part of the API that a version
@@ -34,6 +33,7 @@
 //! oxirush-s1ap, which are.
 
 mod paths;
+mod trees;
 mod views;
 
 use alloc::vec::Vec;
@@ -43,10 +43,10 @@ use crate::{Error, ErrorKind};
 
 pub use crate::json::Form;
 pub use paths::{
-    EDITED, Members, check_path, enumerated_at, extended, insert, listed_ies, member_shape,
-    named_ies, of_a_transfer, open, paths, remove, select, set, written_ie,
+    EDITED, Members, extended, listed_ies, member_shape, named_ies, of_a_transfer, written_ie,
 };
-pub use views::{Parts, of_the_pdu, tree, tree_parts, view, view_of_jer, view_parts};
+pub use trees::{check_path, enumerated_at, insert, open, paths, remove, select, set};
+pub use views::{Parts, tree, tree_of_jer, tree_parts, view};
 
 /// What a type of a protocol makes of octets: the JSON form of their value, whether that
 /// value encodes back to them, and why a reader that takes the one encoding of X.691
@@ -151,15 +151,15 @@ pub struct Protocol {
     pub any_message: fn() -> Typed,
 }
 
-/// What a value of a view is, as its ASN.1 type has it: what a path can select in it.
+/// What a value of a tree is, as its ASN.1 type has it: what a path can select in it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Shape {
-    /// A value that the tables do not describe: it has the members that the view has.
+    /// A value that the tables do not describe: it has the members that the tree has.
     #[default]
     Unknown,
     /// The octets of a value that did not decode: nothing is selected in them.
     Undecoded,
-    /// The view of a PDU, of this message when the tables have it.
+    /// The tree of a PDU, of this message when the tables have it.
     Pdu(Option<Sent>),
     /// The message of a PDU.
     Message(Sent),
@@ -172,7 +172,7 @@ pub enum Shape {
     /// which is a value at a place of this shape, where it is the absence of a value
     /// elsewhere.
     Null,
-    /// A bit string whose size varies: its `value` and its `length`, unless the view
+    /// A bit string whose size varies: its `value` and its `length`, unless the tree
     /// shows it as it is usually written.
     Bits,
     /// A SEQUENCE or a CHOICE, or a type that is a list or a bit string, by the name
@@ -209,7 +209,7 @@ pub enum Shape {
 #[cfg(feature = "std")]
 static REGISTERED: std::sync::RwLock<Vec<&'static Protocol>> = std::sync::RwLock::new(Vec::new());
 
-/// Register `protocol`, so that the trees, the views and the paths of another protocol
+/// Register `protocol`, so that the trees and the paths of another protocol
 /// read and write the types of `protocol` that the octets of its IEs carry, as its
 /// [`foreign`](Protocol::foreign) IEs have them. A protocol that is registered again is
 /// registered once. Without the feature `std`, which has the register, it does nothing.

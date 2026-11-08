@@ -15,17 +15,16 @@
    limitations under the License.
 */
 
-//! The values of a view by their paths, and the IEs of a tree by their names, as the
-//! family of the views of an application protocol on the engine of
-//! `oxirush_utils::tree`.
+//! What the tables of an application protocol say of the values of its trees, the errors
+//! of their paths, and the IEs of a tree by their names: what the paths of `trees` and
+//! the codec of `views` read.
 
-use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use oxirush_utils::tree::{self, Edit, Family, Key, Listed, Next, Place, Root, Step};
+use oxirush_utils::tree::{self, Edit};
 use oxirush_utils::tree::{Map, Value};
 
 use super::views::LOSSY;
@@ -68,28 +67,19 @@ fn code(kind: ErrorKind) -> u16 {
 
 /// Why a segment selects nothing at a place, which another place may make up for: the
 /// path is refused when no place has what it selects.
-fn fault(kind: ErrorKind, reason: impl Into<String>) -> tree::Error {
+pub(super) fn fault(kind: ErrorKind, reason: impl Into<String>) -> tree::Error {
     tree::Error::new(tree::ErrorKind::NoSuchMember, "", reason).with_code(code(kind))
 }
 
 /// Why a path is refused at a place, whatever the others have: the value there cannot
 /// be read, or the edit cannot be done.
-fn refusal(kind: ErrorKind, reason: impl Into<String>) -> tree::Error {
+pub(super) fn refusal(kind: ErrorKind, reason: impl Into<String>) -> tree::Error {
     tree::Error::new(tree::ErrorKind::Refused, "", reason).with_code(code(kind))
-}
-
-/// The same error, with the reason that `reword` makes of the one that it has.
-fn reworded(error: tree::Error, reword: impl FnOnce(&str) -> String) -> tree::Error {
-    let again = tree::Error::new(error.kind(), error.at(), reword(error.reason()));
-    match error.code() {
-        Some(code) => again.with_code(code),
-        None => again,
-    }
 }
 
 /// The error of the crate that an error of the engine is: of the kind that the family
 /// gave it, and otherwise of the kind that says the same.
-fn error(error: tree::Error) -> Error {
+pub(super) fn error(error: tree::Error) -> Error {
     let kind = match error.code() {
         Some(code) => KINDS.get(usize::from(code)).copied(),
         None => None,
@@ -105,7 +95,7 @@ fn error(error: tree::Error) -> Error {
 
 /// The position that a segment is: a number as decimal writes it, without a sign and
 /// without a zero before it.
-fn position(part: &str) -> Option<usize> {
+pub(super) fn position(part: &str) -> Option<usize> {
     tree::position(part)
 }
 
@@ -114,32 +104,6 @@ impl Protocol {
     pub fn ie_name_of(&self, id: u16) -> Option<&'static str> {
         let at = self.ie_names.binary_search_by_key(&id, |(known, _)| *known);
         at.ok().map(|at| self.ie_names[at].1)
-    }
-
-    /// The name that ASN.1 gives the IE of an identifier, or `@id=` and its number.
-    fn ie_name(&self, id: u16) -> String {
-        match self.ie_name_of(id) {
-            Some(name) => name.to_string(),
-            None => format!("@id={id}"),
-        }
-    }
-
-    /// The identifier of an entry of a list of IEs: its number, or the name of its IE as
-    /// an edit may write it.
-    fn entry_id(&self, entry: &Value) -> Option<u64> {
-        match entry.get("id")? {
-            Value::String(name) => (self.ie_id)(name).map(u64::from),
-            id => id.as_u64(),
-        }
-    }
-
-    /// Whether a segment selects among the IEs of a message: a name, a position,
-    /// `@id=N`, `*`, or `-` for their end.
-    fn selects_ies(&self, part: &str) -> bool {
-        matches!(part, "*" | "-")
-            || part.starts_with("@id=")
-            || position(part).is_some()
-            || (self.ie_id)(part).is_some()
     }
 
     /// The message of a direction and a procedure code, or of a name.
@@ -151,19 +115,6 @@ impl Protocol {
             ty: type_name(ty),
             ies: set.ies.unwrap_or_default(),
         })
-    }
-
-    /// The shape of a view: that of a PDU, of the message that its direction and its
-    /// procedure code say.
-    fn pdu(&self, view: &Value) -> Shape {
-        let code = view.get("procedure_code").and_then(Value::as_u64);
-        let direction = view.get("direction").and_then(Value::as_str);
-        let direction = direction.and_then(Direction::named);
-        Shape::Pdu(
-            self.sent(|of, procedure, _| {
-                Some(of) == direction && Some(u64::from(procedure)) == code
-            }),
-        )
     }
 
     /// The names of the values of the ENUMERATED that the bindings name `name`.
@@ -322,102 +273,8 @@ impl Protocol {
         })
     }
 
-    /// The identifier of the IE that `entry` is, when a value of `shape` is an IE: an
-    /// entry of a list of IEs, or an IE that a value holds alone.
-    fn ie_of(&self, entry: &Value, shape: Shape) -> Option<u16> {
-        match shape {
-            Shape::Ie(_) | Shape::Extension(..) => {
-                self.entry_id(entry).and_then(|id| id.try_into().ok())
-            }
-            _ => None,
-        }
-    }
-
-    /// Whether `part`, a segment under the IE `id`, names that IE, and so stays on it: a
-    /// path may say which IE an entry is. A member of its value that is named as the IE
-    /// is that member, as a path had it before an IE could be named so, unless the
-    /// segment spells the name as ASN.1 spells that of the IE. `extended` is the name of
-    /// the type that the container of the IE extends, when it is an extension.
-    pub fn stays_on(&self, id: u16, extended: &str, part: &str) -> bool {
-        if (self.ie_id)(part) != Some(id) {
-            return false;
-        }
-        let value = match self.resolved(self.ie_value(Some(id), extended)) {
-            Shape::Transfer(contained) if !contained.is_empty() => Shape::Named(contained),
-            value => value,
-        };
-        let of_the_value = self.members(value, None).unwrap_or_default();
-        member(&of_the_value, part).is_none() || self.ie_name(id) == part
-    }
-
-    /// Whether a member of some value has the name `part` and another type than the
-    /// value of the IE `id`, which extends the type that the bindings name `extended`
-    /// when it is an extension: where an IE is not known, such a segment is not taken
-    /// for its name.
-    fn names_another_type(&self, part: &str, id: u16, extended: &str) -> bool {
-        // A type that is another one names it a few times at most.
-        let settled = |mut shape: Shape| {
-            for _ in 0..16 {
-                match shape {
-                    Shape::Named(name) => match (self.kind_of)(name) {
-                        Some(Kind::Is(is)) => shape = *is,
-                        _ => break,
-                    },
-                    _ => break,
-                }
-            }
-            shape
-        };
-        let of_the_ie = settled(self.ie_value(Some(id), extended));
-        self.types.iter().any(|(_, kind)| match kind {
-            Kind::Sequence(members) | Kind::Choice(members) => (members.iter())
-                .any(|(name, shape, _)| same_name(name, part) && settled(*shape) != of_the_ie),
-            Kind::Is(_) => false,
-        })
-    }
-
-    /// The IE that a segment stays on when it names the IE that a value of `shape` is,
-    /// for a value that a view does not have: a path may say which IE an entry is. An
-    /// entry whose IE is not known is the one that the segment names, unless some value
-    /// has a member of that name and of another type, which the segment may be.
-    pub fn named_ie(&self, shape: Shape, part: &str, named: bool) -> Option<Shape> {
-        let id = (self.ie_id)(part).filter(|_| named)?;
-        let (known, extension) = match shape {
-            Shape::Ie(known) => (known, None),
-            Shape::Extension(known, extended) => (known, Some(extended)),
-            _ => return None,
-        };
-        let extended = extended(shape);
-        let stays = match known {
-            Some(known) => known == id && self.stays_on(id, extended, part),
-            None => !self.names_another_type(part, id, extended),
-        };
-        stays.then_some(match extension {
-            Some(extended) => Shape::Extension(Some(id), extended),
-            None => Shape::Ie(Some(id)),
-        })
-    }
-
-    /// Why a segment that names an IE selects nothing under another IE, `this`: which IE
-    /// that one is, then `reason`, why its value has no such member either. `None` for a
-    /// segment that names no IE, or the IE itself.
-    fn another_ie(
-        &self,
-        this: Option<u16>,
-        part: &str,
-        named: bool,
-        reason: &tree::Error,
-    ) -> Option<tree::Error> {
-        let other = (self.ie_id)(part).filter(|_| named)?;
-        let this = this.filter(|this| *this != other)?;
-        let (this, other) = (self.ie_name(this), self.ie_name(other));
-        Some(reworded(reason.clone(), |reason| {
-            format!("this IE is {this}, not {other}: {reason}")
-        }))
-    }
-
     /// Why a segment selects nothing in a value of `shape`: the type has no such member.
-    fn no_member(&self, shape: Shape, members: &[Member], part: &str) -> tree::Error {
+    pub(super) fn no_member(&self, shape: Shape, members: &[Member], part: &str) -> tree::Error {
         // The root stands for the IEs of a message, which a private message has none of.
         if let (Shape::Message(message), IES) = (shape, part) {
             let has: Vec<_> = members.iter().map(|(name, ..)| *name).collect();
@@ -437,7 +294,7 @@ impl Protocol {
             Shape::AnyMessage => {
                 "the message of a procedure that the tables do not have".to_string()
             }
-            Shape::Pdu(_) => "a view".to_string(),
+            Shape::Pdu(_) => "the tree of a PDU".to_string(),
             Shape::Bits => "a bit string".to_string(),
             Shape::Transfer(_) => "a transfer".to_string(),
             Shape::Ie(_) | Shape::Extension(..) => "an IE".to_string(),
@@ -485,7 +342,7 @@ impl Protocol {
     }
 
     /// The message that ASN.1 names `name`, taken as a path takes a name.
-    fn message_of(&self, name: &str) -> Result<Sent, Error> {
+    pub(super) fn message_of(&self, name: &str) -> Result<Sent, Error> {
         let known = self.sent(|_, _, known| same_name(known, name));
         known.ok_or_else(|| {
             Error::new(
@@ -549,23 +406,12 @@ pub fn extended(shape: Shape) -> &'static str {
 
 /// The member of `members` that a segment names. A member that starts with `_` is named
 /// as it is.
-fn member<'m>(members: &'m [Member], part: &str) -> Option<&'m Member> {
+pub(super) fn member<'m>(members: &'m [Member], part: &str) -> Option<&'m Member> {
     let exact = members.iter().find(|(name, ..)| *name == part);
     exact.or_else(|| {
         let mut named = members.iter().filter(|(name, ..)| !name.starts_with('_'));
         named.find(|(name, ..)| same_name(name, part))
     })
-}
-
-/// The member of the entry of a view that a segment names, where no table says what
-/// the entry has.
-fn key<'e>(entry: &'e Map, part: &str) -> Option<&'e str> {
-    let exact = entry.get_key_value(part).map(|(name, _)| name);
-    let named = || {
-        let mut names = entry.keys().filter(|name| !name.starts_with('_'));
-        names.find(|name| same_name(name, part))
-    };
-    exact.or_else(named).map(String::as_str)
 }
 
 /// Whether a value of `shape` is an IE or a transfer: it has `octets`.
@@ -600,20 +446,8 @@ fn names(shape: Shape, members: &[Member]) -> Vec<&'static str> {
     names
 }
 
-/// `reason`, why a segment selects nothing in the value of an IE or of a transfer of
-/// `shape`, with the members that the IE or the transfer has itself: the segment may be
-/// one of them, written wrong.
-fn or_its_own(reason: tree::Error, shape: Shape, members: &[Member]) -> tree::Error {
-    let of = match shape {
-        Shape::Transfer(_) => "a transfer",
-        _ => "an IE",
-    };
-    let own = names(shape, members).join(", ");
-    reworded(reason, |reason| format!("{reason}; {of} itself has {own}"))
-}
-
 /// Why a segment that is no position selects no entry of a list.
-fn no_position(part: &str) -> tree::Error {
+pub(super) fn no_position(part: &str) -> tree::Error {
     fault(
         ErrorKind::Path,
         format!(
@@ -623,16 +457,8 @@ fn no_position(part: &str) -> tree::Error {
     )
 }
 
-/// Why a segment that names an IE selects no entry of a list whose entries are no IEs.
-fn no_ie_there(part: &str) -> tree::Error {
-    fault(
-        ErrorKind::Path,
-        format!("{part:?} selects an IE, and the entries of this list go by position"),
-    )
-}
-
 /// Why a segment that starts with `@id=` selects no IE.
-fn not_an_id(part: &str) -> tree::Error {
+pub(super) fn not_an_id(part: &str) -> tree::Error {
     refusal(
         ErrorKind::Path,
         format!(
@@ -644,7 +470,11 @@ fn not_an_id(part: &str) -> tree::Error {
 
 /// The identifier that a segment `@id=N` gives, or the IE that it names when IEs are
 /// selected by name; `None` for a segment that is neither.
-fn segment_id(protocol: &Protocol, part: &str, named: bool) -> Result<Option<u16>, tree::Error> {
+pub(super) fn segment_id(
+    protocol: &Protocol,
+    part: &str,
+    named: bool,
+) -> Result<Option<u16>, tree::Error> {
     match part.strip_prefix("@id=") {
         Some(id) => id.parse::<u16>().map(Some).map_err(|_| not_an_id(part)),
         None => Ok((protocol.ie_id)(part).filter(|_| named)),
@@ -652,7 +482,7 @@ fn segment_id(protocol: &Protocol, part: &str, named: bool) -> Result<Option<u16
 }
 
 /// The shape of an entry of a list of `shape`.
-fn element(shape: Shape) -> Shape {
+pub(super) fn element(shape: Shape) -> Shape {
     match shape {
         Shape::Ies(_) | Shape::List(Shape::Ie(_)) => Shape::Ie(None),
         Shape::Extensions(extended) => Shape::Extension(None, extended),
@@ -664,7 +494,7 @@ fn element(shape: Shape) -> Shape {
 
 /// The shape of the IE of an identifier in a list of `shape`; `None` for a list whose
 /// entries are no IEs.
-fn element_of(shape: Shape, id: u16) -> Option<Shape> {
+pub(super) fn element_of(shape: Shape, id: u16) -> Option<Shape> {
     match element(shape) {
         Shape::Ie(_) => Some(Shape::Ie(Some(id))),
         Shape::Extension(_, extended) => Some(Shape::Extension(Some(id), extended)),
@@ -680,12 +510,6 @@ fn shown(name: &str) -> bool {
     !name.starts_with('_') || name == "_decode_error" || name == LOSSY
 }
 
-/// The octets that an IE or a transfer was received as.
-fn received(entry: &Map) -> Option<(&'static str, &Value)> {
-    let member = received_member(entry)?;
-    Some((member, &entry[member]))
-}
-
 /// The member of an entry that holds the octets it was received as.
 fn received_member(entry: &Map) -> Option<&'static str> {
     ["_raw_value", "_raw_transfer"]
@@ -693,682 +517,37 @@ fn received_member(entry: &Map) -> Option<&'static str> {
         .find(|member| entry.contains_key(member))
 }
 
-// ── The family of the views ─────────────────────────────────────────────────
+// ── The protocol of a place ─────────────────────────────────────────────────
 
 /// The protocol whose tables read a place, by its name, where it is another than the one
-/// of the view: in the type of another protocol that the octets of an IE carry, which is
+/// of the tree: in the type of another protocol that the octets of an IE carry, which is
 /// registered.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Owner(Option<&'static str>);
+pub(super) struct Owner(Option<&'static str>);
 
 impl Owner {
-    /// The protocol of a place of a view of `protocol`.
-    fn or(self, protocol: &'static Protocol) -> &'static Protocol {
+    /// The tables of `protocol`, which read the places under this one.
+    pub(super) fn of(protocol: &'static Protocol) -> Self {
+        Self(Some(protocol.name))
+    }
+
+    /// The protocol of a place of a tree of `protocol`.
+    pub(super) fn or(self, protocol: &'static Protocol) -> &'static Protocol {
         self.0.and_then(registered).unwrap_or(protocol)
     }
 }
 
-/// What the family knows of a place of a view.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct At {
-    /// What the value there is, as its type has it.
-    shape: Shape,
-    /// The protocol whose tables have the type, where it is not that of the view.
-    owner: Owner,
-    /// Whether the IEs on the way are selected by their names: the path starts with the
-    /// root.
-    named: bool,
-    /// How many segments of the path were taken to the place: the root is short for
-    /// two, and the segment after it selects among the IEs of the message.
-    taken: u8,
-    /// The place is an alternative of a CHOICE, which an edit puts in the place of the
-    /// one there.
-    alternative: bool,
-    /// The place is the octets that an IE or a transfer is sent as, which an edit sets
-    /// in the place of its value.
-    octets: bool,
-}
-
-impl At {
-    /// A place of `shape` that the segment at this place selects.
-    fn of(self, shape: Shape) -> Self {
-        Self {
-            shape,
-            owner: self.owner,
-            named: self.named,
-            taken: self.taken.saturating_add(1),
-            ..Self::default()
-        }
-    }
-
-    /// A place of `shape` in which the segment at this place is taken, as if the name
-    /// of the place stood before it.
-    fn inside(self, shape: Shape) -> Self {
-        Self {
-            shape,
-            owner: self.owner,
-            named: self.named,
-            taken: self.taken,
-            ..Self::default()
-        }
-    }
-
-    /// The place itself, read by the tables of another protocol where the octets carry
-    /// a type of it: the transfer of that type, or why that protocol cannot read it.
-    fn owned(self) -> Result<Self, tree::Error> {
-        let Shape::Foreign(name, protocol) = self.shape else {
-            return Ok(self);
-        };
-        let other =
-            foreign(name, protocol).map_err(|error| refusal(error.kind(), error.reason()))?;
-        Ok(Self {
-            shape: other.carried_shape(name),
-            owner: Owner(Some(other.name)),
-            ..self
-        })
-    }
-}
-
-/// What makes, of octets and of the name of a type that they may carry, the value that a
-/// view shows.
-type Opener<'e> = &'e dyn Fn(Value, &str) -> Value;
-
-/// The views of a protocol, as a family of the engine: the rules of its paths.
-struct Views<'e> {
-    protocol: &'static Protocol,
-    /// The message that a path is read against where no view is given.
-    message: Option<Sent>,
-    /// Whether what an edit sets is text, which the octets of an IE are.
-    written_text: bool,
-    /// What makes, of octets and of the name of a type that they may carry, the value
-    /// that a view shows: for `open`.
-    opens: Option<Opener<'e>>,
-}
-
-impl<'e> Views<'e> {
-    fn new(protocol: &'static Protocol) -> Self {
-        Self {
-            protocol,
-            message: None,
-            written_text: false,
-            opens: None,
-        }
-    }
-}
-
-impl Family for Views<'_> {
-    type Shape = At;
-
-    fn root(&self) -> Root<'_> {
-        Root::new(self.protocol.root, &[MESSAGE, IES], false)
-    }
-
-    fn start(&self, tree: &Value, rooted: bool) -> At {
-        let shape = match self.message {
-            Some(message) => Shape::Pdu(Some(message)),
-            None => self.protocol.pdu(tree),
-        };
-        At {
-            shape,
-            named: rooted,
-            ..At::default()
-        }
-    }
-
-    fn step<'v>(
-        &self,
-        place: &Place<'v, At>,
-        part: &str,
-        next: &mut Next<'v, At>,
-    ) -> Result<Step<At>, tree::Error> {
-        let taken = self.take(place, part, next);
-        // An edit is done at each place that its path selects, or at none: a place that
-        // cannot take it refuses the edit, where a selection takes what the others have.
-        // An opening is a selection that opens what it finds on its way.
-        match (taken, next.edit()) {
-            (Err(reason), Some(edit))
-                if edit != Edit::Open && reason.kind() != tree::ErrorKind::Refused =>
-            {
-                let again = refusal(ErrorKind::Path, reason.reason());
-                Err(match reason.code() {
-                    Some(code) => again.with_code(code),
-                    None => again,
-                })
-            }
-            (taken, _) => taken.map(|()| Step::Taken),
-        }
-    }
-
-    fn null_is_value(&self, at: &At) -> bool {
-        at.owner.or(self.protocol).resolved(at.shape) == Shape::Null
-    }
-
-    fn edited(&self, tree: &mut Value, keys: &[Key], at: &At, edit: Edit) {
-        let Some((last, before)) = keys.split_last() else {
-            return;
-        };
-        // Each value of an IE or of a transfer that the edit changed something under is
-        // no longer what its octets say.
-        let mark = |entry: &mut Map, name: &str| {
-            if VALUES.contains(&name) && received_member(entry).is_some() {
-                entry.insert(EDITED.into(), true.into());
-            }
-        };
-        let mut holder = &mut *tree;
-        for key in before {
-            if let (Key::Name(name), Value::Object(entry)) = (key, &mut *holder) {
-                mark(entry, name);
-            }
-            holder = match (key, holder) {
-                (Key::Name(name), Value::Object(entry)) => match entry.get_mut(name.as_str()) {
-                    Some(value) => value,
-                    None => return,
-                },
-                (Key::Position(position), Value::Array(entries)) => {
-                    match entries.get_mut(*position) {
-                        Some(value) => value,
-                        None => return,
-                    }
-                }
-                _ => return,
-            };
-        }
-        let (Key::Name(name), Value::Object(entry)) = (last, holder) else {
-            return;
-        };
-        if edit != Edit::Set {
-            return;
-        }
-        mark(entry, name);
-        // The octets of an IE or of a transfer are sent in the place of its value, and
-        // those of a transfer written as its decoded value itself in the place of its
-        // members.
-        if at.octets {
-            if name == "_raw_transfer" {
-                entry.retain(|member, _| of_a_transfer(member));
-            }
-            for value in VALUES.into_iter().chain(["_decode_error", EDITED]) {
-                entry.shift_remove(value);
-            }
-        }
-        // A CHOICE has one alternative.
-        if at.alternative {
-            entry.retain(|member, _| member == name);
-        }
-    }
-}
-
-impl Views<'_> {
-    /// What `part` selects at `place`, by the rules of the views: [`Family::step`] with
-    /// the errors of a selection, which a member that a segment is taken in words as its
-    /// own.
-    fn take<'v>(
-        &self,
-        place: &Place<'v, At>,
-        part: &str,
-        next: &mut Next<'v, At>,
-    ) -> Result<(), tree::Error> {
-        let at = place.shape().owned()?;
-        let protocol = at.owner.or(self.protocol);
-        // An identifier that is no number is no path, wherever it is.
-        if let Some(id) = part.strip_prefix("@id=")
-            && id.parse::<u16>().is_err()
-        {
-            return Err(not_an_id(part));
-        }
-        if at.named && at.taken == 2 && !protocol.selects_ies(part) {
-            let nearest = protocol.nearest_ie(part);
-            return Err(refusal(
-                ErrorKind::UnknownIe,
-                format!("{part:?} is not an IE of {}{nearest}", protocol.name),
-            ));
-        }
-        let shape = protocol.resolved(at.shape);
-        match place.value() {
-            Some(whole @ Value::Object(entry)) => {
-                self.object(place, whole, entry, at, shape, part, next)?
-            }
-            Some(Value::Array(entries)) => self.list(entries, at, shape, part, next)?,
-            // A value that is not there, by what its type says.
-            Some(Value::Null) | None => {
-                if next.edit().is_none() {
-                    self.typed(at, shape, part, next)?;
-                }
-            }
-            Some(value) => self.scalar(place, value, at, shape, part, next)?,
-        }
-        Ok(())
-    }
-
-    /// What `part` selects in an object of a view: a member of the value, the IEs of a
-    /// message that it holds, the octets of an IE, or a member of its value.
-    #[allow(clippy::too_many_arguments)]
-    fn object<'v>(
-        &self,
-        place: &Place<'v, At>,
-        whole: &'v Value,
-        entry: &'v Map,
-        at: At,
-        shape: Shape,
-        part: &str,
-        next: &mut Next<'v, At>,
-    ) -> Result<(), tree::Error> {
-        let protocol = at.owner.or(self.protocol);
-        // A transfer that is written as its decoded value itself is that value, but for
-        // its octets.
-        if let Shape::Transfer(contained) = shape
-            && !contained.is_empty()
-            && !same_name(part, "octets")
-            && !entry.keys().any(|name| of_a_transfer(name))
-        {
-            let of = Shape::Named(contained);
-            let at = at.inside(of);
-            return self.object(place, whole, entry, at, protocol.resolved(of), part, next);
-        }
-        let (edit, last, named) = (next.edit(), next.is_last(), at.named);
-        let members = protocol.members(shape, Some(entry));
-        // The IEs of a message that the view contains are selected in its place.
-        if named
-            && protocol.selects_ies(part)
-            && !entry.contains_key(part)
-            && let Some(Value::Array(_)) = entry.get(IES)
-        {
-            let of = members.as_deref().and_then(|members| member(members, IES));
-            let ies = at.inside(of.map_or(Shape::Ies(None), |(_, shape, _)| *shape));
-            return next.through(place, IES, ies, |inside, next| {
-                self.take(inside, part, next)
-            });
-        }
-        if part == "*" {
-            if edit.is_some_and(|edit| edit != Edit::Open) {
-                return Err(refusal(
-                    ErrorKind::Path,
-                    format!("{part:?} selects among the entries of a list, and this is no list"),
-                ));
-            }
-            for (name, value) in entry.iter().filter(|(name, _)| shown(name)) {
-                let known = members.as_deref().and_then(|members| member(members, name));
-                let of = known.map_or(Shape::Unknown, |(_, shape, _)| *shape);
-                next.member(name, value, at.of(of));
-            }
-            return Ok(());
-        }
-        // The value of an IE or of a transfer, in which a segment that names none of its
-        // members is taken, as if the member that holds it stood before.
-        let held = value_member(shape);
-        if part.starts_with("@id=") && held.is_none() {
-            return Err(fault(
-                ErrorKind::Path,
-                format!("{part:?} selects among the IEs of a list, and this is no list"),
-            ));
-        }
-        // `octets` is what an IE or a transfer was received as, and what an edit sends in
-        // the place of its value.
-        if same_name(part, "octets") {
-            if let Some(edit) = edit {
-                let raw = received_member(entry).or(match shape {
-                    Shape::Ie(_) | Shape::Extension(..) => Some("_raw_value"),
-                    Shape::Transfer(_) => Some("_raw_transfer"),
-                    _ => None,
-                });
-                if let Some(raw) = raw.filter(|_| last) {
-                    let octets = At {
-                        octets: true,
-                        ..at.of(Shape::Plain)
-                    };
-                    match (edit, self.written_text) {
-                        (Edit::Set, true) => match entry.get(raw) {
-                            Some(value) => next.member(raw, value, octets),
-                            None => next.absent(raw, octets),
-                        },
-                        (Edit::Open, _) => {}
-                        _ => {
-                            return Err(refusal(
-                                ErrorKind::Value,
-                                "octets are set, in hexadecimal",
-                            ));
-                        }
-                    }
-                    return Ok(());
-                }
-            } else if has_octets(shape) || received(entry).is_some() {
-                if entry.contains_key(EDITED) {
-                    return Err(refusal(
-                        ErrorKind::Value,
-                        "the value was edited since these octets were received",
-                    ));
-                }
-                match received(entry) {
-                    Some((name, octets)) => next.member(name, octets, at.of(Shape::Plain)),
-                    None => next.absent_once(part, at.of(Shape::Plain)),
-                }
-                return Ok(());
-            }
-        }
-        let Some(members) = members else {
-            // No table says what the value can have: it has what the view has.
-            let name = key(entry, part);
-            if let Some(edit) = edit
-                && last
-            {
-                refuse(edit, name.unwrap_or(part), entry, false, true)?;
-            }
-            return match name {
-                Some(name) => {
-                    next.member(name, &entry[name], at.of(Shape::Unknown));
-                    Ok(())
-                }
-                None if edit.is_some() && last => {
-                    next.absent(part, at.of(Shape::Unknown));
-                    Ok(())
-                }
-                None => Err(fault(
-                    ErrorKind::Path,
-                    format!("{part:?} is not a member of this value"),
-                )),
-            };
-        };
-        let own = member(&members, part);
-        // The name of the IE that the entry is stays on the entry: a path may say which
-        // IE an entry is, before it goes into it.
-        let this = protocol
-            .ie_of(whole, shape)
-            .filter(|_| named && own.is_none());
-        if this.is_some_and(|this| protocol.stays_on(this, extended(shape), part)) {
-            next.stay(place, at);
-            return Ok(());
-        }
-        let held = held.and_then(|held| member(&members, held));
-        let Some((name, of, optional)) = own.or(held).copied() else {
-            return Err(protocol.no_member(shape, &members, part));
-        };
-        let value = match entry.get(name) {
-            // An edit changes nothing in what did not decode.
-            None if name == "decoded" && entry.contains_key("_decode_error") && edit.is_some() => {
-                return Ok(());
-            }
-            None if name == "decoded" && entry.contains_key("_decode_error") => {
-                let error = entry["_decode_error"].as_str().unwrap_or_default();
-                return Err(refusal(
-                    ErrorKind::UndecodableIe,
-                    format!("the transfer did not decode: {error}"),
-                ));
-            }
-            value => value,
-        };
-        if own.is_some() {
-            let alternative = matches!(shape, Shape::Named(name) if matches!((protocol.kind_of)(name), Some(Kind::Choice(_))));
-            if let Some(edit) = edit
-                && last
-            {
-                refuse(edit, name, entry, alternative, optional)?;
-            }
-            let child = At {
-                alternative,
-                ..at.of(of)
-            };
-            match value {
-                Some(value) => next.member(name, value, child),
-                // A member that an edit sets is added; one that is not there is nothing
-                // to go into.
-                None if edit.is_some() => {
-                    if last && edit == Some(Edit::Set) {
-                        next.absent(name, child);
-                    }
-                }
-                None => next.absent_once(name, child),
-            }
-            return Ok(());
-        }
-        let taken = next.through(place, name, at.inside(of), |inside, next| {
-            self.take(inside, part, next)
-        });
-        taken.map_err(|reason| match reason.kind() {
-            tree::ErrorKind::Refused => reason,
-            _ => match protocol.another_ie(this, part, named, &reason) {
-                Some(another) => another,
-                None => or_its_own(reason, shape, &members),
-            },
-        })
-    }
-
-    /// What `part` selects in a list of a view: an entry by its position, an IE by its
-    /// name or `@id=N`, each entry, or the end of the list for an insertion.
-    fn list<'v>(
-        &self,
-        entries: &'v [Value],
-        at: At,
-        shape: Shape,
-        part: &str,
-        next: &mut Next<'v, At>,
-    ) -> Result<(), tree::Error> {
-        let protocol = at.owner.or(self.protocol);
-        let of = at.of(element(shape));
-        if part == "*" {
-            for (index, entry) in entries.iter().enumerate() {
-                next.entry(index, entry, of);
-            }
-            return Ok(());
-        }
-        if part == "-" && next.edit() == Some(Edit::Insert) && next.is_last() {
-            next.end(of);
-            return Ok(());
-        }
-        if let Some(id) = segment_id(protocol, part, at.named)? {
-            let Some(absent) = element_of(shape, id) else {
-                return Err(no_ie_there(part));
-            };
-            let mut found = false;
-            for (index, entry) in entries.iter().enumerate() {
-                if protocol.entry_id(entry) == Some(u64::from(id)) {
-                    next.entry(index, entry, of);
-                    found = true;
-                }
-            }
-            // An IE that is not there: what follows is still one of its paths.
-            if !found && next.edit().is_none() {
-                next.absent_once(part, at.of(absent));
-            }
-            return Ok(());
-        }
-        let Some(index) = position(part) else {
-            return Err(no_position(part));
-        };
-        if let Some(entry) = entries.get(index) {
-            next.entry(index, entry, of);
-        }
-        Ok(())
-    }
-
-    /// What `part` selects in a value of `shape` that a view does not have: the places
-    /// of the values that it could have.
-    fn typed(
-        &self,
-        at: At,
-        shape: Shape,
-        part: &str,
-        next: &mut Next<'_, At>,
-    ) -> Result<(), tree::Error> {
-        let protocol = at.owner.or(self.protocol);
-        let named = at.named;
-        match shape {
-            Shape::Unknown | Shape::Undecoded => next.absent_once(part, at.of(Shape::Unknown)),
-            Shape::List(_) | Shape::Ies(_) | Shape::Extensions(_) => {
-                if let Some(id) = segment_id(protocol, part, named)? {
-                    let Some(of) = element_of(shape, id) else {
-                        return Err(no_ie_there(part));
-                    };
-                    // A name is that of an IE of the object set, where the tables have it.
-                    if let Shape::Ies(Some(message)) = shape
-                        && !part.starts_with("@id=")
-                        && !message.ies.iter().any(|(known, ..)| *known == id)
-                    {
-                        let ies: Vec<_> = (message.ies.iter())
-                            .map(|(id, ..)| protocol.ie_name(*id))
-                            .collect();
-                        return Err(fault(
-                            ErrorKind::Path,
-                            format!(
-                                "{part:?} is not an IE of {}, which has {}",
-                                message.name,
-                                ies.join(", ")
-                            ),
-                        ));
-                    }
-                    next.absent_once(part, at.of(of));
-                } else if matches!(part, "*" | "-") || position(part).is_some() {
-                    match shape {
-                        Shape::Ies(Some(message)) => {
-                            for (id, ..) in message.ies {
-                                next.absent_once(part, at.of(Shape::Ie(Some(*id))));
-                            }
-                        }
-                        shape => next.absent_once(part, at.of(element(shape))),
-                    }
-                } else {
-                    return Err(no_position(part));
-                }
-            }
-            shape => {
-                let members = protocol.members(shape, None).unwrap_or_default();
-                // The IEs of a message that a value contains go in its place.
-                if named
-                    && protocol.selects_ies(part)
-                    && member(&members, part).is_none()
-                    && let Some((_, ies, _)) = member(&members, IES)
-                {
-                    return self.typed(at, *ies, part, next);
-                }
-                if part == "*" {
-                    for (name, of, _) in members.iter().filter(|(name, ..)| shown(name)) {
-                        next.absent_once(name, at.of(*of));
-                    }
-                } else if same_name(part, "octets") && has_octets(shape) {
-                    next.absent_once(part, at.of(Shape::Plain));
-                } else if let Some((name, of, _)) = member(&members, part) {
-                    next.absent_once(name, at.of(*of));
-                } else if let Some(ie) = protocol.named_ie(shape, part, named) {
-                    // The name of the IE that the entry is stays on the entry.
-                    next.absent_once(part, at.of(ie));
-                } else if let Some((_, of, _)) =
-                    value_member(shape).and_then(|held| member(&members, held))
-                {
-                    // What names no member of an IE or of a transfer is one of its value.
-                    let this = match shape {
-                        Shape::Ie(known) | Shape::Extension(known, _) => known,
-                        _ => None,
-                    };
-                    let taken = self.typed(at, protocol.resolved(*of), part, next);
-                    return taken.map_err(|reason| match reason.kind() {
-                        tree::ErrorKind::Refused => reason,
-                        _ => match protocol.another_ie(this, part, named, &reason) {
-                            Some(another) => another,
-                            None => or_its_own(reason, shape, &members),
-                        },
-                    });
-                } else {
-                    return Err(protocol.no_member(shape, &members, part));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// What `part` selects in a value without members: nothing, but for a transfer that
-    /// is its octets and octets that may carry a type.
-    fn scalar<'v>(
-        &self,
-        place: &Place<'v, At>,
-        value: &'v Value,
-        at: At,
-        shape: Shape,
-        part: &str,
-        next: &mut Next<'v, At>,
-    ) -> Result<(), tree::Error> {
-        let protocol = at.owner.or(self.protocol);
-        match shape {
-            // An edit changes nothing in what did not decode.
-            Shape::Undecoded if next.edit().is_some() => {}
-            Shape::Undecoded => {
-                return Err(refusal(ErrorKind::UndecodableIe, "the IE did not decode"));
-            }
-            // A value without members has none to select.
-            _ if part == "*" => {}
-            // A bit string that the view shows as it is usually written.
-            Shape::Bits if ["value", "length"].contains(&part) => {}
-            // A transfer that an edit replaced by its octets.
-            Shape::Transfer(_) if same_name(part, "octets") => {
-                next.stay(place, at.of(Shape::Plain));
-            }
-            Shape::Transfer(_) if same_name(part, "decoded") => {}
-            // What is no member of a transfer is one of the decoded value, which a
-            // transfer that is its octets has not.
-            Shape::Transfer(contained) if !contained.is_empty() => {
-                if next.edit().is_none() {
-                    let taken = self.typed(at, Shape::Named(contained), part, next);
-                    let own = protocol.members(shape, None).unwrap_or_default();
-                    taken.map_err(|reason| match reason.kind() {
-                        tree::ErrorKind::Refused => reason,
-                        _ => or_its_own(reason, shape, &own),
-                    })?;
-                }
-            }
-            // Octets that may carry a type are that type once they are opened.
-            Shape::Carrier(_) => {
-                let carried = protocol.members(shape, None).unwrap_or_default();
-                return match member(&carried, part) {
-                    Some((name, ..)) => match (next.edit(), self.opens, value) {
-                        (Some(Edit::Open), Some(decode), Value::String(_)) => {
-                            let mut opened = Map::new();
-                            opened.insert(name.to_string(), decode(value.clone(), name));
-                            next.open(place, Value::Object(opened));
-                            Ok(())
-                        }
-                        _ => Err(refusal(
-                            ErrorKind::Path,
-                            format!("the octets are not shown as a {name}: open decodes them"),
-                        )),
-                    },
-                    None => Err(protocol.no_member(shape, &carried, part)),
-                };
-            }
-            Shape::Plain => return Err(protocol.no_member(shape, &[], part)),
-            _ => {
-                return Err(fault(
-                    ErrorKind::Path,
-                    format!("{part:?} is not a member of this value, which has none"),
-                ));
-            }
-        }
-        Ok(())
-    }
-}
-
-/// Why an edit at the member `name` of `entry` is refused: what holds the value of an IE
-/// or of a transfer, an alternative of a CHOICE and a member that its type always has
-/// are not taken out, and insert adds to a list.
-fn refuse(
+/// Why an edit at the member `name` of a value is refused: an alternative of a CHOICE
+/// and a member that its type always has are not taken out, and insert adds to a list.
+pub(super) fn refuse(
     edit: Edit,
     name: &str,
-    entry: &Map,
     alternative: bool,
     optional: bool,
 ) -> Result<(), tree::Error> {
     let refused = |reason: String| Err(refusal(ErrorKind::Value, reason));
     match edit {
         Edit::Remove => {
-            // Without the value the octets received would be sent, and the edit would
-            // change nothing.
-            let value = match name {
-                "value" | "extensionValue" => entry.contains_key("id"),
-                "decoded" => entry.contains_key("_raw_transfer"),
-                _ => false,
-            };
-            if value {
-                return refused(format!(
-                    "{name} is not taken out: remove what has it, or set its octets"
-                ));
-            }
             if alternative {
                 return refused(format!(
                     "{name} is not taken out: a CHOICE has one alternative, set another in \
@@ -1383,288 +562,6 @@ fn refuse(
         Edit::Insert => refused("insert adds to a list".to_string()),
         _ => Ok(()),
     }
-}
-
-// ── The calls ───────────────────────────────────────────────────────────────
-
-/// The values at `path` in `view`, a view of a PDU of `protocol`, in the order of the
-/// view.
-///
-/// An IE that the message does not have selects nothing, and so does a member that its
-/// type can have and the value does not have: an OPTIONAL member that is absent, or
-/// another alternative of a CHOICE. A name that the type of the value cannot have is an
-/// error, which says the members that it has. `*` is each entry of a list or each member
-/// of a value, without those that start with `_`; after it, a segment is an error when
-/// none of the values can have it.
-///
-/// A segment that names no member of an IE is taken in its value, and one that names no
-/// member of a transfer in its decoded value, as if `value` or `decoded` stood before
-/// it. A name that neither has is an error, which says the members of both.
-///
-/// After an IE, a segment that is the name of that IE stays on it: a path may say which
-/// IE an entry is, as `0/Cause` for the first IE of a list, and one that ends so selects
-/// the IE. The name of another IE, where the value has no such member, is an error that
-/// says which IE the entry is.
-///
-/// The `octets` of an IE or of a transfer are what it was received as: those of one whose
-/// value [`set`], [`remove`] or [`insert`] edited since are an error, as the view has yet
-/// to give it others. So is a path into a value that did not decode.
-///
-/// # Errors
-///
-/// What the path cannot select, as said above, and a path that is not well formed.
-pub fn select<'v>(
-    protocol: &'static Protocol,
-    view: &'v Value,
-    path: &str,
-) -> Result<Vec<&'v Value>, Error> {
-    tree::select_in(&Views::new(protocol), view, path).map_err(error)
-}
-
-/// Whether `path` can select a value in a message of `protocol` that ASN.1 names
-/// `message`: what [`select`] says of a path without a view to select in.
-///
-/// The name is taken whatever its case and what is between its letters. Under the root,
-/// the name of an IE has to be that of an IE of the object set of the message; under an
-/// IE, each segment has to be a member that the type of the value has, through the
-/// lists, the alternatives of a CHOICE and the decoded value of a transfer. A position
-/// or `*` stands for each entry that a list could have, and `-` for the end of a list.
-///
-/// An IE of an extension container is read against the type that the type which the
-/// container extends gives it, where its identifier alone does not say its type.
-///
-/// What is not known is not refused: the value of an IE selected by `@id=N` when the
-/// identifier is unknown or has no type where it is, the entries of a container that is
-/// not that of the message when they are selected by position, a segment under such an
-/// IE, which may name a member of its value, and whether a position is within the bounds
-/// of its list. Such an entry is the IE that the next segment names, and the path is
-/// then read against the type of that IE: unless some value has a member of that name
-/// and of another type, which the segment may be.
-///
-/// # Errors
-///
-/// A message that the protocol does not have, and what [`select`] refuses.
-pub fn check_path(protocol: &'static Protocol, message: &str, path: &str) -> Result<(), Error> {
-    let message = protocol.message_of(message)?;
-    let views = Views {
-        message: Some(message),
-        ..Views::new(protocol)
-    };
-    let places = tree::places_in(&views, &Value::Null, path).map_err(error)?;
-    if !places.is_empty() {
-        return Ok(());
-    }
-    // The first segment after which nothing is selected: a value before it has no
-    // members.
-    let parts = tree::segments(path).map_err(error)?;
-    for end in 1..=parts.len() {
-        let prefix: String = parts[..end]
-            .iter()
-            .map(|part| format!("/{}", tree::escape(part)))
-            .collect();
-        let selected = tree::places_in(&views, &Value::Null, &prefix).map_err(error)?;
-        if selected.is_empty() {
-            return Err(Error::new(
-                ErrorKind::Path,
-                format!(
-                    "{path} selects nothing in a message {}: a value before {:?} has no members",
-                    message.name,
-                    parts[end - 1]
-                ),
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// The names that the value at `path` can have in a message of `protocol` that ASN.1
-/// names `message`, when its type is an ENUMERATED: the names of its values as the
-/// specification spells them, in the order of its definition. A name is compared as
-/// [`select`] compares one, whatever its case and whatever is between its letters. A
-/// name that is not one of them is never the value of a message, so a caller can refuse
-/// it before it compares one.
-///
-/// `None` for a value of another type, and for one whose type is not known: what
-/// [`check_path`] does not refuse for that reason.
-///
-/// # Errors
-///
-/// What [`check_path`] refuses.
-pub fn enumerated_at(
-    protocol: &'static Protocol,
-    message: &str,
-    path: &str,
-) -> Result<Option<&'static [&'static str]>, Error> {
-    let message = protocol.message_of(message)?;
-    let views = Views {
-        message: Some(message),
-        ..Views::new(protocol)
-    };
-    let places = tree::places_in(&views, &Value::Null, path).map_err(error)?;
-    // The value is of one type, wherever the path finds it.
-    let mut names = None;
-    for place in places {
-        let (mut shape, protocol) = (place.shape().shape, place.shape().owner.or(protocol));
-        // A type that is another one names it a few times at most.
-        for _ in 0..16 {
-            match shape {
-                Shape::Named(name) => match (protocol.kind_of)(name) {
-                    Some(Kind::Is(is)) => shape = *is,
-                    _ => break,
-                },
-                _ => break,
-            }
-        }
-        let Shape::Named(name) = shape else {
-            return Ok(None);
-        };
-        match (protocol.enumeration(name), names) {
-            (Some(of), None) => names = Some(of),
-            (Some(of), Some(other)) if of == other => {}
-            _ => return Ok(None),
-        }
-    }
-    Ok(names)
-}
-
-// ── Paths ───────────────────────────────────────────────────────────────────
-
-/// What the listing of the paths of a view knows of a place.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-enum Listing {
-    /// Another value.
-    #[default]
-    Other,
-    /// The view of the PDU.
-    View,
-    /// The message of the PDU, whose IEs go under the root.
-    Message,
-    /// A list of IEs, which go by their names.
-    Ies,
-    /// An IE or a transfer that has the octets that it was received as and no value
-    /// beside them: they are listed as its `octets`.
-    Octets,
-}
-
-/// The paths of the views of a protocol.
-struct Paths(&'static Protocol);
-
-/// What the listing knows of a place, and the protocol whose tables name its IEs where
-/// it is another than the one of the view: in the type of another protocol that the
-/// octets of an IE carry.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Spot {
-    listing: Listing,
-    owner: Owner,
-}
-
-impl Paths {
-    fn of(value: Option<&Value>) -> Listing {
-        match value.and_then(Value::as_object) {
-            Some(entry)
-                if received(entry).is_some()
-                    && !VALUES.iter().any(|value| entry.contains_key(value)) =>
-            {
-                Listing::Octets
-            }
-            _ => Listing::Other,
-        }
-    }
-}
-
-impl Family for Paths {
-    type Shape = Spot;
-
-    fn root(&self) -> Root<'_> {
-        Root::new(self.0.root, &[MESSAGE, IES], false)
-    }
-
-    fn start(&self, _tree: &Value, _rooted: bool) -> Spot {
-        Spot {
-            listing: Listing::View,
-            owner: Owner::default(),
-        }
-    }
-
-    fn member(&self, shape: &Spot, name: &str, value: Option<&Value>) -> Spot {
-        let listing = match (shape.listing, name) {
-            (Listing::View, MESSAGE) => Listing::Message,
-            (_, IES) if value.is_some_and(Value::is_array) => Listing::Ies,
-            _ => Self::of(value),
-        };
-        // The octets of an IE opened as a type of another protocol, whose tables name
-        // the IEs in it.
-        let protocol = shape.owner.or(self.0);
-        let other = protocol
-            .foreign_type(name)
-            .filter(|_| value.is_some_and(Value::is_object));
-        let other = other.and_then(|(name, protocol)| foreign(name, protocol).ok());
-        Spot {
-            listing,
-            owner: other.map_or(shape.owner, |other| Owner(Some(other.name))),
-        }
-    }
-
-    fn entry(&self, shape: &Spot, value: Option<&Value>) -> Spot {
-        Spot {
-            listing: Self::of(value),
-            owner: shape.owner,
-        }
-    }
-
-    /// A view has `null` for the alternatives of the type NULL alone: what is absent is
-    /// left out.
-    fn null_is_value(&self, _shape: &Spot) -> bool {
-        true
-    }
-
-    fn listed(&self, shape: &Spot, name: &str) -> Listed {
-        match (shape.listing, name) {
-            (Listing::Octets, "_raw_value" | "_raw_transfer") => Listed::As("octets"),
-            (_, name) if !shown(name) => Listed::Hidden,
-            // The IEs of a message go by name: under the root for the message of the
-            // PDU, and in the place of a message that the view contains.
-            (Listing::Message, IES) => Listed::Root,
-            (_, IES) => Listed::Through,
-            _ => Listed::Member,
-        }
-    }
-
-    fn entry_names(&self, shape: &Spot, list: &[Value]) -> Option<Vec<Option<String>>> {
-        if shape.listing != Listing::Ies {
-            return None;
-        }
-        let protocol = shape.owner.or(self.0);
-        // The list is read once, whatever its length: the identifiers are counted for
-        // all of its IEs, not for each.
-        let ids: Vec<Option<u64>> = list.iter().map(|ie| protocol.entry_id(ie)).collect();
-        let mut times: BTreeMap<u64, usize> = BTreeMap::new();
-        for id in ids.iter().flatten() {
-            *times.entry(*id).or_default() += 1;
-        }
-        let name = |id: &Option<u64>| {
-            let id = (*id)?;
-            let known = u16::try_from(id).ok().filter(|_| times[&id] == 1)?;
-            protocol.ie_name_of(known).map(str::to_string)
-        };
-        Some(ids.iter().map(name).collect())
-    }
-}
-
-/// Each value of `view`, a view of a PDU of `protocol`, with the path that selects it,
-/// in the order of the view. A list of plain values is one value. The IEs of the
-/// message go by name under the root, and those of a message that the view contains by
-/// name in its place; an IE goes by its position when it has no name or its identifier
-/// is there twice.
-///
-/// The members that start with `_` repeat what was received and are left out, except
-/// `_decode_error`. The `octets` of an IE or of a transfer are listed when it has no
-/// value beside them: those of a value repeat it, and are selected all the same.
-///
-/// What is nested deeper than a path has segments, 64, is one value at the deepest
-/// path, so every path that is listed is one that [`select`] takes.
-pub fn paths(protocol: &'static Protocol, view: &Value) -> Vec<(String, Value)> {
-    tree::paths_in(&Paths(protocol), view)
 }
 
 // ── Edits ───────────────────────────────────────────────────────────────────
@@ -1697,88 +594,6 @@ pub fn written_ie(protocol: &'static Protocol, entry: &mut Map) -> Result<(), Er
         entry.insert("_raw_value".into(), octets);
     }
     Ok(())
-}
-
-/// The value of an edit, with the IE that it may be written as the view has it.
-fn as_viewed(protocol: &'static Protocol, mut value: Value) -> Result<Value, Error> {
-    if let Some(entry) = value.as_object_mut() {
-        written_ie(protocol, entry)?;
-    }
-    Ok(value)
-}
-
-/// Give the member or the list entry at `path` the value `value`, in `view`, a view of a
-/// PDU of `protocol`. `null` takes an optional member out. An IE is written as
-/// `{id, criticality, value}` with its typed value, or with its `octets` in hexadecimal
-/// in place of `value`; its `id` is a number or the name of the IE. The `octets` of an
-/// IE or of a transfer are set in place of its value. An alternative of a CHOICE takes
-/// the place of the one that is there.
-///
-/// # Errors
-///
-/// A path that selects nothing, and the view is then as it was. So is a name that the
-/// type of a value cannot have, a member that its type always has and that would be
-/// taken out, and an edit that would send nothing else: the value of an IE or the
-/// decoded value of a transfer is not taken out, as the octets received would go out in
-/// its place.
-pub fn set(
-    protocol: &'static Protocol,
-    view: &mut Value,
-    path: &str,
-    value: Value,
-) -> Result<(), Error> {
-    let value = as_viewed(protocol, value)?;
-    let views = Views {
-        written_text: value.is_string(),
-        ..Views::new(protocol)
-    };
-    tree::set_in(&views, view, path, value).map_err(error)
-}
-
-/// Take the member or the list entries at `path` out of `view`, a view of a PDU of
-/// `protocol`.
-///
-/// # Errors
-///
-/// A path that selects nothing, and a member that its type always has.
-pub fn remove(protocol: &'static Protocol, view: &mut Value, path: &str) -> Result<(), Error> {
-    tree::remove_in(&Views::new(protocol), view, path).map_err(error)
-}
-
-/// Add `value` to a list of `view`, a view of a PDU of `protocol`: before each entry
-/// that `path` selects, or at the end for a path that ends with `-`. An IE is written as
-/// [`set`] takes it.
-///
-/// # Errors
-///
-/// A path that selects nothing, and one that ends at a member.
-pub fn insert(
-    protocol: &'static Protocol,
-    view: &mut Value,
-    path: &str,
-    value: Value,
-) -> Result<(), Error> {
-    let value = as_viewed(protocol, value)?;
-    tree::insert_in(&Views::new(protocol), view, path, value).map_err(error)
-}
-
-/// Decode, in `view`, a view of a PDU of `protocol`, the octets that `path` takes as a
-/// type that they may carry: those of an IE whose content the specification gives by
-/// reference, where the segment after the IE or its `value` is the name that ASN.1 gives
-/// one of these types. The IE then has, in place of its octets, the transfer of that type
-/// under that name: its decoded value beside the octets, or why they are not of that
-/// type. A path that goes through no such name changes nothing.
-///
-/// # Errors
-///
-/// What [`select`] refuses: the view is then as it was.
-pub fn open(protocol: &'static Protocol, view: &mut Value, path: &str) -> Result<(), Error> {
-    let opened = |raw: Value, name: &str| protocol.opened(raw, name);
-    let views = Views {
-        opens: Some(&opened),
-        ..Views::new(protocol)
-    };
-    tree::open_in(&views, view, path).map_err(error)
 }
 
 // ── Trees ───────────────────────────────────────────────────────────────────
@@ -1936,8 +751,8 @@ impl Protocol {
     }
 
     /// `value`, a value of `shape` of a tree, as a view has it: each IE of a container
-    /// as the entry that [`entry_of`](Self::entry_of) gives it. A transfer keeps the form
-    /// that it is written in, its decoded value alone or as its `decoded` member.
+    /// as the entry that [`entry_of`](Self::entry_of) gives it. A transfer is its decoded
+    /// value, or its `octets` alone.
     pub(crate) fn written(
         &self,
         value: &Value,
@@ -1962,14 +777,10 @@ impl Protocol {
                     let members = self.members(shape, None).unwrap_or_default();
                     let decoded = member(&members, "decoded");
                     let decoded = decoded.map_or(Shape::Unknown, |(_, of, _)| *of);
-                    if !entry.keys().any(|name| of_a_transfer(name)) {
-                        return self.written(value, decoded, depth + 1);
+                    match entry.len() == 1 && entry.contains_key("octets") {
+                        true => Ok(value.clone()),
+                        false => self.written(value, decoded, depth + 1),
                     }
-                    let mut entry = entry.clone();
-                    if let Some(value) = entry.get_mut("decoded") {
-                        *value = self.written(value, decoded, depth + 1)?;
-                    }
-                    Ok(Value::Object(entry))
                 }
                 // An IE that a value holds alone.
                 Shape::Ie(_) | Shape::Extension(..) => self.entry_of(value, shape, shape, depth),
@@ -1999,8 +810,7 @@ impl Protocol {
     /// which a tree writes as its name with its value: the name that ASN.1 gives the IE
     /// or its identifier in digits, and `{"octets": "…"}` for the octets that it is sent
     /// as. Its `criticality` is the one beside its name, or the one that the
-    /// specification assigns it there. An entry that is written as a view has it, with
-    /// its `id`, stays as it is, and the IEs that its value holds are read the same way.
+    /// specification assigns it there.
     fn entry_of(
         &self,
         ie: &Value,
@@ -2013,14 +823,6 @@ impl Protocol {
         let entry = ie
             .as_object()
             .ok_or_else(|| Error::new(ErrorKind::Value, IE))?;
-        if entry.contains_key("id") {
-            let id = self.entry_id(ie).and_then(|id| u16::try_from(id).ok());
-            let mut entry = entry.clone();
-            if let Some(value) = entry.get_mut(field) {
-                *value = self.written(value, self.ie_value(id, extended(shape)), depth + 1)?;
-            }
-            return Ok(Value::Object(entry));
-        }
         let mut members = entry.iter().filter(|(member, _)| *member != "criticality");
         let (Some((name, value)), None) = (members.next(), members.next()) else {
             return Err(Error::new(ErrorKind::Value, IE));

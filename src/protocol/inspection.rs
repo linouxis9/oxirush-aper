@@ -1,5 +1,5 @@
 //! The macros of the inspection of the protocol crates, written once: the tables of their
-//! trees and their views, and the functions that read them.
+//! trees, and the functions that read them.
 
 /// The shape that the list of the types of a protocol writes.
 #[doc(hidden)]
@@ -119,7 +119,7 @@ macro_rules! __names {
     };
 }
 
-/// The functions of a type of the bindings of a protocol for its trees and its views,
+/// The functions of a type of the bindings of a protocol for its trees,
 /// which is written with the lifetime `'a` when it borrows, or without one in a function.
 #[doc(hidden)]
 #[macro_export]
@@ -181,7 +181,7 @@ macro_rules! __carried {
     };
 }
 
-/// The tables of a protocol for its trees, its views and their paths, and the functions of
+/// The tables of a protocol for its trees and their paths, and the functions of
 /// its module `inspect` that read them, written once: the protocol calls it in that module,
 /// with the module of its bindings, the type of its PDU, the cfg of its hooks, and a
 /// message that is a container of protocol IEs and nothing else.
@@ -211,7 +211,7 @@ use crate::inspect_registry::{
 use crate::registry::EXTENSION_TYPES;
 // The transfers of protocol IEs, with their object sets.
 use crate::registry::TRANSFERS;
-/// A tree and a view: the JSON values of `oxirush-utils`.
+/// A tree: the JSON value of `oxirush-utils`.
 pub use $crate::json::Value;
 
 /// The tables of the protocol, as the paths read them.
@@ -281,50 +281,33 @@ fn kind_of(name: &str) -> Option<&'static Kind> {
     KINDS.get(name).copied()
 }
 
-/// The values at `path` in `view`, in the order of the view.
+/// The values at `path` in `tree`, the tree of a PDU, in the order of the tree. See
+/// [Paths](self#paths).
 ///
 /// An IE that the message does not have selects nothing, and so does a member that its
 /// type can have and the value does not have: an OPTIONAL member that is absent, or
 /// another alternative of a CHOICE. A name that the type of the value cannot have is an
 /// error, which says the members that it has. `*` is each entry of a list or each member
-/// of a value, without those that start with `_`; after it, a segment is an error when
-/// none of the values can have it.
+/// of a value; after it, a segment is an error when none of the values can have it.
 ///
-/// A segment that names no member of an IE is taken in its value, and one that names no
-/// member of a transfer in its decoded value, as if `value` or `decoded` stood before
-/// it. A name that neither has is an error, which says the members of both.
-///
-/// After an IE, a segment that is the name of that IE stays on it: a path may say which
-/// IE an entry is, as `0/Cause` for the first IE of a list, and one that ends so selects
-/// the IE. The name of another IE, where the value has no such member, is an error that
-/// says which IE the entry is.
-///
-/// The `octets` of an IE or of a transfer are what it was received as: those of one whose
-/// value [`set`], [`remove`] or [`insert`] edited since are an error, as `from_view` of
-/// the PDU has yet to give it others. So is a path into a value that did not decode.
-pub fn select<'a>(view: &'a Value, path: &str) -> Result<Vec<&'a Value>, Error> {
-    shared::select(&TABLES, view, path)
+/// After an IE, its name selects its value again: `0/Cause` is the first IE when it is a
+/// Cause. A value that is its `octets`, as one that did not decode, has nothing under it.
+pub fn select<'a>(tree: &'a Value, path: &str) -> Result<Vec<&'a Value>, Error> {
+    shared::select(&TABLES, tree, path)
 }
 
 /// Whether `path` can select a value in a message that ASN.1 names `message`: what
-/// [`select`] says of a path without a view to select in.
+/// [`select`] says of a path without a tree to select in.
 ///
 /// The name is taken as [`message_named`](crate::inspect::message_named) takes it. Under
 /// the root, the name of an IE has to be that of an IE of the object set of the message;
 /// under an IE, each segment has to be a member that the type of the value has, through
-/// the lists, the alternatives of a CHOICE and the decoded value of a transfer. A position
-/// or `*` stands for each entry that a list could have, and `-` for the end of a list.
-///
-/// An IE of an extension container is read against the type that the type which the
-/// container extends gives it, where its identifier alone does not say its type.
+/// the lists, the alternatives of a CHOICE and the transfers. A position or `*` stands for
+/// each entry that a list could have, and `-` for the end of a list.
 ///
 /// What is not known is not refused: the value of an IE selected by `@id=N` when the
-/// identifier is unknown or has no type where it is, the entries of a container that is
-/// not that of the message when they are selected by position, a segment under such an
-/// IE, which may name a member of its value, and whether a position is within the bounds
-/// of its list. Such an entry is the IE that the next segment names, and the path is
-/// then read against the type of that IE: unless some value has a member of that name
-/// and of another type, which the segment may be.
+/// identifier is unknown or has no type where it is, a segment under it, and whether a
+/// position is within the bounds of its list.
 pub fn check_path(message: &str, path: &str) -> Result<(), Error> {
     shared::check_path(&TABLES, message, path)
 }
@@ -342,47 +325,43 @@ pub fn enumerated_at(message: &str, path: &str) -> Result<Option<&'static [&'sta
     shared::enumerated_at(&TABLES, message, path)
 }
 
-/// Each value of `view` with the path that selects it, in the order of the view. A list
-/// of plain values is one value. The IEs of the message go by name under the root, and
-/// those of a message that the view contains by name in its place; an IE goes by its
-/// position when it has no name or its identifier is there twice.
-///
-/// The members that start with `_` repeat what was received and are left out, except
-/// `_decode_error`. The `octets` of an IE or of a transfer are listed when it has no
-/// value beside them: those of a value repeat it, and are selected all the same.
+/// Each value of `tree`, the tree of a PDU, with the path that selects it, in the order
+/// of the tree. A list of plain values is one value. The IEs of the message go by name
+/// under the root, and those of a container by name in its place; an IE goes by its
+/// position when its name is there twice.
 ///
 /// What is nested deeper than 64 levels, the most segments that a path has, is one
-/// value at the deepest path, whatever it holds: no view of a PDU is that deep, and
-/// every path that is listed is one that [`select`] takes.
-pub fn paths(view: &Value) -> Vec<(String, Value)> {
-    shared::paths(&TABLES, view)
+/// value at the deepest path, whatever it holds: every path that is listed is one that
+/// [`select`] takes.
+pub fn paths(tree: &Value) -> Vec<(String, Value)> {
+    shared::paths(&TABLES, tree)
 }
 
-/// Give the member or the list entry at `path` the value `value`. `null` takes an
-/// optional member out. An IE is written as `{id, criticality, value}` with its typed
-/// value, or with its `octets` in hexadecimal in place of `value`; its `id` is a number
-/// or the name of the IE. The `octets` of an IE or of a transfer are set in place of
-/// its value. An alternative of a CHOICE takes the place of the one that is there.
+/// Give the value at `path` in `tree` the value `value`. `null` takes an optional member
+/// out, and an alternative of a CHOICE takes the place of the one that is there. A value
+/// is written as a tree writes it, and the value of an IE may be its `octets` in
+/// hexadecimal: `{"octets": "…"}`.
 ///
-/// A path that selects nothing is an error, and the view is then as it was. So is a
-/// name that the type of a value cannot have, a member that its type always has and
-/// that would be taken out, and an edit that would send nothing else: the value of an IE
-/// or the decoded value of a transfer is not taken out, as the octets received would go
-/// out in its place.
-pub fn set(view: &mut Value, path: &str, value: Value) -> Result<(), Error> {
-    shared::set(&TABLES, view, path, value)
+/// A path that selects nothing is an error, and the tree is then as it was: an IE that
+/// the message does not have is inserted at `/<root>/-`, as `{"<IE>": value}`. So is a
+/// name that the type of a value cannot have, and a member that its type always has and
+/// that would be taken out.
+pub fn set(tree: &mut Value, path: &str, value: Value) -> Result<(), Error> {
+    shared::set(&TABLES, tree, path, value)
 }
 
-/// Take the member or the list entries at `path` out of `view`. A path that selects
-/// nothing is an error, and so is a member that its type always has.
-pub fn remove(view: &mut Value, path: &str) -> Result<(), Error> {
-    shared::remove(&TABLES, view, path)
+/// Take the values at `path` out of `tree`: an IE with its criticality, a member or the
+/// entries of a list. A path that selects nothing is an error, and so is a member that
+/// its type always has.
+pub fn remove(tree: &mut Value, path: &str) -> Result<(), Error> {
+    shared::remove(&TABLES, tree, path)
 }
 
-/// Add `value` to a list of `view`: before each entry that `path` selects, or at the end
-/// for a path that ends with `-`. An IE is written as [`set`] takes it.
-pub fn insert(view: &mut Value, path: &str, value: Value) -> Result<(), Error> {
-    shared::insert(&TABLES, view, path, value)
+/// Add `value` to a list of `tree`: before each entry that `path` selects, or at the end
+/// for a path that ends with `-`. An IE is written as the tree writes it, `{"<IE>":
+/// value}`, with its `"criticality"` where it is not the one that the tables assign.
+pub fn insert(tree: &mut Value, path: &str, value: Value) -> Result<(), Error> {
+    shared::insert(&TABLES, tree, path, value)
 }
 
 /// The entry shape of a list of `shape`, which the tests of the tables read.
@@ -408,15 +387,11 @@ fn listed_ies(message: &str, ies: &Value) -> Result<Value, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use $crate::inspect::{EDITED, Member, type_name};
+    use $crate::inspect::{Member, type_name};
     use oxirush_utils::tree;
 
-    /// The member of a view that holds the message of the PDU, and the member of a
-    /// message that holds its IEs.
-    const MESSAGE: &str = "message";
+    /// The member of a message or of a container that holds its IEs.
     const IES: &str = "protocolIEs";
-    /// The members that hold the value of an IE or of a transfer.
-    const VALUES: [&str; 3] = ["value", "extensionValue", "decoded"];
 
     /// Every member and every alternative of every type of the list.
     fn all_members() -> impl Iterator<Item = (&'static str, &'static [Member])> {
@@ -430,11 +405,6 @@ mod tests {
     fn member<'m>(members: &'m [Member], part: &str) -> Option<&'m Member> {
         let exact = members.iter().find(|(name, ..)| *name == part);
         exact.or_else(|| members.iter().find(|(name, ..)| same_name(name, part)))
-    }
-
-    /// The name that ASN.1 gives the IE of an identifier.
-    fn ie_name(id: u16) -> String {
-        TABLES.ie_name_of(id).unwrap().to_string()
     }
 
     #[test]
@@ -485,23 +455,20 @@ mod tests {
         let names = |message: &str, path: &str| enumerated_at(message, &format!("/{ROOT}/{path}"));
         let release = |path: &str| names("UEContextReleaseCommand", path).unwrap();
         // An alternative of a CHOICE, however the path is written.
-        let nas = release("Cause/value/nas").expect("an ENUMERATED");
+        let nas = release("Cause/nas").expect("an ENUMERATED");
         assert!(nas.contains(&"normal-release") && !nas.contains(&"unspecified-failure"));
-        assert_eq!(release("cause/VALUE/Nas"), Some(nas));
-        // The value of the IE may be left out of the path.
-        assert_eq!(release("Cause/nas"), Some(nas));
-        // A CHOICE, and the identifier of an IE.
-        assert_eq!(release("Cause/value"), None);
-        assert_eq!(release("Cause/id"), None);
+        assert_eq!(release("cause/Nas"), Some(nas));
+        // A CHOICE.
+        assert_eq!(release("Cause"), None);
         // A member of the entries of a list, through an optional member.
         let error = names(
             "ErrorIndication",
-            "CriticalityDiagnostics/value/iEsCriticalityDiagnostics/0/typeOfError",
+            "CriticalityDiagnostics/iEsCriticalityDiagnostics/0/typeOfError",
         );
         assert_eq!(error.unwrap(), Some(&["not-understood", "missing"][..]));
         // What `check_path` refuses is refused.
-        assert!(names("UEContextReleaseCommand", "Cause/value/nsa").is_err());
-        assert!(names("NoSuchMessage", "Cause/value/nas").is_err());
+        assert!(names("UEContextReleaseCommand", "Cause/nsa").is_err());
+        assert!(names("NoSuchMessage", "Cause/nas").is_err());
     }
 
     #[test]
@@ -519,8 +486,8 @@ mod tests {
         distinct("the IEs", &mut IE_NAMES.iter().map(|(_, name)| *name));
         let mut messages = MESSAGES.iter().map(|(set, ..)| set.name);
         distinct("the messages", &mut messages);
-        // The names of an IE and of a member do not meet: a message that a view contains
-        // has its IEs alone.
+        // The names of an IE and of a member do not meet: a message that a container
+        // holds has its IEs alone.
         for (name, members) in all_members() {
             if members.iter().any(|(member, ..)| *member == IES) {
                 assert_eq!(members.len(), 1, "{name}");
@@ -547,185 +514,79 @@ mod tests {
         }
     }
 
-    /// The view of a message that ASN.1 names `name` and that has `ies` for IEs.
-    fn view_of(name: &str, ies: Value) -> Value {
-        let mut messages = MESSAGES.iter();
-        let (set, ..) = messages.find(|(set, ..)| set.name == name).unwrap();
-        tree!({
-            "direction": set.direction.name(),
-            "procedure_code": set.procedure_code,
-            "criticality": "reject",
-            MESSAGE: {IES: ies},
-        })
+    /// The tree of a message that ASN.1 names `name` and that has `ies` for IEs.
+    fn tree_of(name: &str, ies: Value) -> Value {
+        tree!({"message": name, "ies": ies})
     }
 
     #[test]
-    fn a_segment_that_names_no_member_of_an_ie_is_taken_in_its_value() {
-        let cause = ie_id("Cause").expect("an IE of the protocol");
+    fn the_name_of_an_ie_selects_its_value() {
         let value = tree!({"radioNetwork": "unspecified"});
-        let entry = tree!({"id": cause, "criticality": "ignore", "value": &value});
-        let mut view = view_of("UEContextReleaseCommand", tree!([&entry]));
+        let entry = tree!({"Cause": &value, "criticality": "reject"});
+        let mut tree = tree_of("UEContextReleaseCommand", tree!([&entry]));
         let path = |rest: &str| format!("/{ROOT}/Cause/{rest}");
-        // The path that leaves `value` out selects what the one that has it selects.
-        let short = select(&view, &path("radioNetwork")).unwrap();
-        assert_eq!(short, [&tree!("unspecified")]);
-        assert_eq!(short, select(&view, &path("value/radioNetwork")).unwrap());
-        assert!(select(&view, &path("nas")).unwrap().is_empty());
-        // What the IE has itself comes first, and `*` is each of its members.
-        assert_eq!(select(&view, &path("value")).unwrap(), [&value]);
-        assert_eq!(select(&view, &path("id")).unwrap(), [&tree!(cause)]);
-        assert_eq!(select(&view, &path("*")).unwrap().len(), 3);
-        // A name that neither has is refused with the members of both, with a view and
+        assert_eq!(select(&tree, &format!("/{ROOT}/Cause")).unwrap(), [&value]);
+        assert_eq!(select(&tree, &path("radioNetwork")).unwrap(), [&tree!("unspecified")]);
+        assert!(select(&tree, &path("nas")).unwrap().is_empty());
+        // A name that the value cannot have is refused with its members, with a tree and
         // without one.
-        let refused = select(&view, &path("misspelled")).unwrap_err();
+        let refused = select(&tree, &path("misspelled")).unwrap_err();
         assert_eq!(refused.kind(), crate::ErrorKind::Path);
         let text = refused.to_string();
-        assert!(text.contains("is not a member of Cause, which has radioNetwork"));
-        assert!(text.contains("; an IE itself has id, criticality, value, octets, at /"));
+        assert!(text.contains("is not a member of Cause, which has radioNetwork"), "{text}");
         let checked = |rest: &str| check_path("UEContextReleaseCommand", &path(rest));
         assert_eq!(checked("misspelled"), Err(refused.clone()));
         assert_eq!(checked("nas"), Ok(()));
         let deeper = checked("radioNetwork/deeper").unwrap_err().to_string();
-        assert!(deeper.contains("which has none") && !deeper.contains("itself"));
-        // An edit takes the same path, and marks the value that it changed.
-        view[MESSAGE][IES][0]["_raw_value"] = tree!("0000");
-        set(&mut view, &path("nas"), tree!("normal-release")).unwrap();
-        let edited = &view[MESSAGE][IES][0];
-        assert_eq!(edited["value"], tree!({"nas": "normal-release"}));
-        assert_eq!(edited[EDITED], tree!(true));
-        let before = view.clone();
-        assert_eq!(set(&mut view, &path("misspelled"), tree!(1)), Err(refused));
-        let kept = remove(&mut view, &path("nas")).unwrap_err();
+        assert!(deeper.contains("which has none"), "{deeper}");
+        // An edit takes the same path: the value changes, and its criticality stays.
+        set(&mut tree, &path("nas"), tree!("normal-release")).unwrap();
+        let edited = tree!({"Cause": {"nas": "normal-release"}, "criticality": "reject"});
+        assert_eq!(tree["ies"][0], edited);
+        let before = tree.clone();
+        assert_eq!(set(&mut tree, &path("misspelled"), tree!(1)), Err(refused));
+        let kept = remove(&mut tree, &path("nas")).unwrap_err();
         assert_eq!(kept.kind(), crate::ErrorKind::Value);
-        assert!(
-            kept.to_string().contains("a CHOICE has one alternative"),
-            "{kept}"
-        );
-        assert_eq!(view, before);
+        assert!(kept.to_string().contains("a CHOICE has one alternative"), "{kept}");
+        assert_eq!(tree, before);
+        // An IE goes out whole, and one that the message does not have is inserted.
+        remove(&mut tree, &format!("/{ROOT}/Cause")).unwrap();
+        assert_eq!(tree["ies"], tree!([]));
+        insert(&mut tree, &format!("/{ROOT}/-"), entry.clone()).unwrap();
+        assert_eq!(tree["ies"], tree!([&entry]));
     }
 
     #[test]
-    fn the_name_of_the_ie_that_an_entry_is_stays_on_the_entry() {
-        let cause = ie_id("Cause").expect("an IE of the protocol");
+    fn the_name_of_the_ie_stays_after_its_position() {
         let value = tree!({"radioNetwork": "unspecified"});
-        let entry = tree!({"id": cause, "criticality": "ignore", "value": &value});
-        let mut view = view_of("UEContextReleaseCommand", tree!([&entry]));
+        let entry = tree!({"Cause": &value});
+        let mut tree = tree_of("UEContextReleaseCommand", tree!([&entry]));
         let path = |rest: &str| format!("/{ROOT}/{rest}");
         // After its position, and after its name, which selects it already.
-        for named in ["0/Cause", "0/cause", "Cause/Cause", "*/Cause"] {
-            assert_eq!(select(&view, &path(named)).unwrap(), [&entry], "{named}");
-            let member = select(&view, &path(&format!("{named}/radioNetwork"))).unwrap();
+        for named in ["0", "0/Cause", "0/cause", "Cause/Cause", "*/Cause"] {
+            assert_eq!(select(&tree, &path(named)).unwrap(), [&value], "{named}");
+            let member = select(&tree, &path(&format!("{named}/radioNetwork"))).unwrap();
             assert_eq!(member, [&tree!("unspecified")], "{named}");
-            let whole = select(&view, &path(&format!("{named}/value"))).unwrap();
-            assert_eq!(whole, [&value], "{named}");
         }
-        // The name of another IE says which IE the entry is, with a view and without.
-        let other = IE_NAMES.iter().find(|(id, _)| *id != cause);
-        let other = path(&format!("0/{}/value", other.unwrap().1));
-        let refused = select(&view, &other).unwrap_err();
-        let text = refused.to_string();
-        assert!(text.starts_with("this IE is Cause, not "), "{refused}");
-        assert!(text.contains("is not a member of Cause, which has radioNetwork"));
+        // The name of another IE is no member of its value.
+        let other = IE_NAMES.iter().find(|(id, _)| Some(*id) != ie_id("Cause"));
+        let other = path(&format!("0/{}", other.unwrap().1));
+        let refused = select(&tree, &other).unwrap_err();
+        assert!(refused.to_string().contains("is not a member of Cause"), "{refused}");
         let checked = |rest: &str| check_path("UEContextReleaseCommand", &path(rest));
         assert_eq!(checked("Cause/Cause/nas"), Ok(()));
         assert!(checked("Cause/Cause/misspelled").is_err());
         let names = |rest: &str| enumerated_at("UEContextReleaseCommand", &path(rest));
-        assert_eq!(names("*/Cause/nas"), names("Cause/value/nas"));
+        assert_eq!(names("*/Cause/nas"), names("Cause/nas"));
         assert!(names("*/Cause/nas").unwrap().is_some());
-        // An edit takes the same path, and the entry itself where the path ends with
-        // its name.
-        assert_eq!(set(&mut view, &other, tree!(1)), Err(refused));
-        set(&mut view, &path("0/Cause/nas"), tree!("normal-release")).unwrap();
-        let edited = select(&view, &path("Cause/value")).unwrap();
+        // An edit takes the same path, and an insertion or a removal the entry.
+        set(&mut tree, &path("0/Cause/nas"), tree!("normal-release")).unwrap();
+        let edited = select(&tree, &path("Cause")).unwrap();
         assert_eq!(edited, [&tree!({"nas": "normal-release"})]);
-        insert(&mut view, &path("0/Cause"), entry.clone()).unwrap();
-        assert_eq!(select(&view, &path("*/Cause")).unwrap().len(), 2);
-        remove(&mut view, &path("1/Cause")).unwrap();
-        assert_eq!(select(&view, &path("*/Cause")).unwrap(), [&entry]);
-    }
-
-    #[test]
-    fn an_entry_that_is_not_known_is_the_ie_that_a_segment_names_where_no_member_is() {
-        // Where a view is not there to say which IE an entry is, a segment that names
-        // an IE is taken for it, and the path goes on in the type of that IE: unless a
-        // value has a member of that name and of another type, which it may be.
-        let cause = ie_id("Cause").expect("an IE of the protocol");
-        for (shape, stays) in [
-            (Shape::Ie(None), Shape::Ie(Some(cause))),
-            (
-                Shape::Extension(None, ""),
-                Shape::Extension(Some(cause), ""),
-            ),
-        ] {
-            assert_eq!(TABLES.named_ie(shape, "cause", true), Some(stays));
-            assert_eq!(TABLES.named_ie(shape, "cause", false), None);
-        }
-        assert_eq!(
-            TABLES.named_ie(Shape::Ie(Some(cause + 1)), "Cause", true),
-            None
-        );
-        assert_eq!(TABLES.named_ie(Shape::Plain, "Cause", true), None);
-        let (mut taken, mut left, mut spelled) = (0, 0, 0);
-        for (of, members) in all_members() {
-            for (member, shape, _) in members {
-                let Some(id) = ie_id(member) else {
-                    continue;
-                };
-                // A member of the value of an IE that is named as the IE itself is
-                // spelled otherwise, which is how a path tells the two.
-                let own = match TABLES.resolved(TABLES.ie_value(Some(id), "")) {
-                    Shape::Transfer(contained) => Shape::Named(contained),
-                    own => own,
-                };
-                if own == Shape::Named(of) {
-                    assert_ne!(*member, ie_name(id), "{of}.{member}");
-                    assert!(
-                        !TABLES.stays_on(id, "", member) && TABLES.stays_on(id, "", &ie_name(id))
-                    );
-                    spelled += 1;
-                }
-                let own = TABLES.resolved(TABLES.ie_value(Some(id), ""));
-                match TABLES.named_ie(Shape::Ie(None), member, true) {
-                    Some(_) => {
-                        let same = TABLES.resolved(*shape) == own;
-                        assert!(same, "{of}.{member}");
-                        taken += 1;
-                    }
-                    None => left += 1,
-                }
-            }
-        }
-        assert!(taken > 0 && left > 0, "{taken} {left}");
-        // TS 36.413 has one such member, and TS 38.413 none.
-        assert!(spelled <= 1, "{spelled}");
-    }
-
-    #[test]
-    fn only_a_string_of_bits_names_a_member_as_the_ie_that_holds_it_does() {
-        // A segment under an IE that names a member of the IE is that member, and under
-        // a transfer one of the transfer: of the values that they hold, a string of
-        // bits whose size varies alone has a member of such a name, its `value`, which
-        // a path reaches after the `value` of the IE.
-        let mut bits = 0;
-        // Each IE with the type of its identifier, and with the one that each type which
-        // it extends gives it.
-        let of_their_own = IE_TYPES.iter().map(|(id, ..)| (id, ""));
-        let extensions = EXTENSION_TYPES
-            .iter()
-            .map(|(id, extended, _)| (id, *extended));
-        for (id, extended) in of_their_own.chain(extensions) {
-            let mut shape = TABLES.resolved(TABLES.ie_value(Some(*id), extended));
-            if let Shape::Transfer(contained) = shape {
-                shape = TABLES.resolved(Shape::Named(contained));
-            }
-            let members = TABLES.members(shape, None).unwrap_or_default();
-            for own in VALUES.into_iter().chain(["id", "criticality", "octets"]) {
-                let same = members.iter().any(|(name, ..)| same_name(name, own));
-                assert_eq!(same, shape == Shape::Bits && own == "value", "{id}: {own}");
-            }
-            bits += usize::from(shape == Shape::Bits);
-        }
-        assert!(bits > 0);
+        insert(&mut tree, &path("0"), entry.clone()).unwrap();
+        assert_eq!(select(&tree, &path("*/Cause")).unwrap().len(), 2);
+        remove(&mut tree, &path("1")).unwrap();
+        assert_eq!(select(&tree, &path("Cause")).unwrap(), [&value]);
     }
 
     #[test]
@@ -757,9 +618,6 @@ mod tests {
             let value = TABLES.members(extension, None).unwrap();
             let (_, value, _) = member(&value, "extensionValue").unwrap();
             assert_eq!(*value, Shape::Named(type_name(ty)), "{id} in {extended}");
-            // Its name stays on it, as that of any IE does.
-            let named = TABLES.named_ie(Shape::Extension(None, extended), &ie_name(*id), true);
-            assert_eq!(named, Some(extension));
         }
     }
 
@@ -787,8 +645,6 @@ mod tests {
         assert_eq!(refused.kind(), crate::ErrorKind::Value);
         let text = refused.to_string();
         assert!(text.contains("says its \"criticality\""), "{refused}");
-        // An entry that is written as a view has it stays as it is.
-        assert_eq!(listed_ies("no message", &listed), Ok(listed));
         // One that did not decode has its octets, which are sent as they are.
         let mut undecoded = entry(true);
         undecoded["value"] = tree!("0000");
@@ -850,27 +706,6 @@ mod tests {
         let found = paths(&shallow);
         assert_eq!(found.len(), 1);
         assert!(found[0].0.ends_with("/0/a") && found[0].1 == tree!(1));
-    }
-
-    #[test]
-    fn an_entry_of_a_list_of_ies_is_known_by_its_members() {
-        // An IE is written with a number or a name as its `id`: no type has a member of
-        // that name with such a value, nor one named as the members of an IE or of a
-        // transfer in a view.
-        for (name, members) in all_members() {
-            for (member, shape, _) in members {
-                assert!(
-                    !["octets", "decoded", "extensionValue"].contains(member),
-                    "{name}.{member}"
-                );
-                if *member == "id" {
-                    assert!(
-                        matches!(TABLES.resolved(*shape), Shape::Named(_)),
-                        "{name}.id"
-                    );
-                }
-            }
-        }
     }
 }
 
@@ -944,28 +779,24 @@ pub(crate) use $crate::inspect::Form;
 /// The functions of a type of the registry.
 pub(crate) use $crate::inspect::Typed;
 
-/// Decode, in `view`, the octets that `path` takes as a type that they may carry: those
+/// Decode, in `tree`, the octets that `path` takes as a type that they may carry: those
 /// of an IE whose content the specification gives by reference, as the transparent
-/// container of a handover, where the segment after the IE or its `value` is the name
-/// that ASN.1 gives one of these types. See
-/// [Octets that carry a type](self#octets-that-carry-a-type).
+/// container of a handover, where the segment after the IE is the name that ASN.1 gives
+/// one of these types. See [Octets that carry a type](self#octets-that-carry-a-type).
 ///
-/// The IE then has, in place of its octets, the transfer of that type under that name,
-/// which [`select`], [`paths`] and the edits go into and
-/// `from_view` of the PDU takes back: its decoded value beside the octets, or
-/// why they are not of that type. Nothing in a message says which type octets carry, so
-/// `to_view` leaves them as they are, and nothing but this function
-/// decodes them: on octets that were not opened, a path through the name of a type is an
-/// error that says so.
+/// The IE then has, in place of its octets, that type under that name, which [`select`],
+/// [`paths`] and the edits go into and `with_tree` of the PDU encodes back. Nothing in a
+/// message says which type octets carry, so `to_tree` leaves them as they are, and a path
+/// through the name of a type on octets that were not opened is an error that says so.
 ///
 /// A path that goes through no such name changes nothing. A name that the type of a
-/// value cannot have is an error, and the view is then as it was.
-pub fn open(view: &mut Value, path: &str) -> Result<(), Error> {
-    shared::open(&TABLES, view, path)
+/// value cannot have is an error, and the tree is then as it was.
+pub fn open(tree: &mut Value, path: &str) -> Result<(), Error> {
+    shared::open(&TABLES, tree, path)
 }
 
-/// Register the tables of this protocol, so that the trees, the views and the paths of
-/// the other protocol of the family read and write the handover containers of this one
+/// Register the tables of this protocol, so that the trees and the paths of the other
+/// protocol of the family read and write the handover containers of this one
 /// that the messages of that protocol carry: those of a handover between 5GS and EPS. A
 /// program that has them calls it once; a call after the first changes nothing.
 ///
@@ -975,14 +806,12 @@ pub fn register() {
     shared::register(&TABLES);
 }
 
-/// The view, as `to_view` writes views, of a view whose values another implementation
-/// wrote in the JSON Encoding Rules of ITU-T X.697, as pycrate writes them: `from_view` of
-/// the PDU reads what it gives, where it would refuse a string of decimal digits that is
-/// octets in those rules and a number or digits in a view. The tests read the values of
-/// their reference with it.
+/// The tree of a view whose values another implementation wrote in the JSON Encoding
+/// Rules of ITU-T X.697, as pycrate writes them: `from_tree` of the PDU reads it. The tests
+/// read the values of their reference with it.
 #[doc(hidden)]
-pub fn __view_of_jer(view: &Value) -> Result<Value, Error> {
-    shared::view_of_jer(&TABLES, view)
+pub fn __tree_of_jer(view: &Value) -> Result<Value, Error> {
+    shared::tree_of_jer(&TABLES, view)
 }
     };
 }
@@ -1008,7 +837,7 @@ macro_rules! __hooks {
      Both compare what the crate does with what the codec of rasn does, which the oracle \
      has. The oracle is no dependency of the crate, so the comparison is in them: this \
      module gives them what needs the type of a message, which no function gives from a \
-     PDU, each value that a view decodes, and the two ways in which the crate writes a \
+     PDU, each value that a tree decodes, and the two ways in which the crate writes a \
      message."
         )]
         pub mod hooks {
@@ -1025,7 +854,7 @@ macro_rules! __hooks {
             /// The name of the type of a PDU in the bindings.
             pub const PDU_TYPE: &str = stringify!($pdu);
 
-            /// The root of the paths of a view, which the module of the bindings names.
+            /// The root of the paths of a tree, which the module of the bindings names.
             pub const ROOT: &str = concat!("/", stringify!($bindings));
 
             /// The octets of the message of `pdu`.
@@ -1044,11 +873,11 @@ macro_rules! __hooks {
                 Some((name, crate::registry::message_read_and_written(pdu)?))
             }
 
-            /// What is told of each value that a view decodes.
+            /// What is told of each value that a tree decodes.
             #[cfg(feature = "inspect")]
             pub type Observer = fn(&'static str, &[u8], &Result<$crate::json::Value, Error>);
 
-            /// From here on, `observer` is told of each value that a view of this thread decodes
+            /// From here on, `observer` is told of each value that a tree of this thread decodes
             /// as a type of the registry: the name of the type in the bindings, the octets, and
             /// the value in the form of the JSON Encoding Rules, which the oracle writes, or why
             /// the octets are none. `None` ends it.

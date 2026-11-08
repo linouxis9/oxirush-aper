@@ -18,7 +18,7 @@
 //! Where an operation allocates.
 //!
 //! ```sh
-//! cargo bench --bench heap -- to-view/fixtures
+//! cargo bench --bench heap -- to-tree/fixtures
 //! cargo bench --bench heap -- decode/paging 12   # the 12 first sites
 //! ```
 //!
@@ -67,7 +67,7 @@ fn main() {
         None => 8,
     };
     if words.is_empty() {
-        eprintln!("which benchmark? for instance: cargo bench --bench heap -- to-view/fixtures");
+        eprintln!("which benchmark? for instance: cargo bench --bench heap -- to-tree/fixtures");
         return;
     }
     for input in inputs() {

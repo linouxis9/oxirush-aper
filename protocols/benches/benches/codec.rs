@@ -20,13 +20,13 @@
 //! ```sh
 //! cargo bench --bench codec                     # every operation on every input
 //! cargo bench --bench codec -- decode/          # those whose name has "decode/"
-//! cargo bench --bench codec -- --profile-time 10 to-view/fixtures
-//! go tool pprof -top target/criterion/to-view/fixtures/profile/profile.pb
+//! cargo bench --bench codec -- --profile-time 10 to-tree/fixtures
+//! go tool pprof -top target/criterion/to-tree/fixtures/profile/profile.pb
 //! ```
 //!
 //! A benchmark is `operation/input`, and its time is that of one pass over
 //! the messages of the input: criterion also gives it per message, as
-//! elements per second. What an operation is given, such as the view that
+//! elements per second. What an operation is given, such as the tree that
 //! `set` edits, is made before the pass and dropped after it, and is no part
 //! of its time. With `--profile-time`, criterion runs the benchmark for that
 //! many seconds under pprof, which samples the program a thousand times a
