@@ -13,7 +13,8 @@
 # without its feature, a mutant of that code would build without it and pass.
 all_features = true
 
-# Mutants that no test can tell from the code, each with why.
+# Mutants that no test can tell from the code, each with why, named by their function. A
+# column tells apart the mutants of the same name in one function.
 exclude_re = [
     # Fields of distinct bits: `^` joins them as `|` does. The bits of a number that is read
     # or written octet by octet, eight at a time, a length of 14 bits and its two high bits,
@@ -21,89 +22,89 @@ exclude_re = [
     # under its first bit, the septets of an arc of an object identifier and the bit that
     # says that more follow, the bits of the ninth octet of a long field after those of the
     # eight before, and two digits of TBCD.
-    'src/reader\.rs:(220:43|356:50|439:59|480:61): replace \| with \^ ',
-    'src/writer\.rs:(357:43|362:33|621:43): replace \| with \^ ',
-    'src/oid\.rs:(72:69|87:34): replace \| with \^ ',
-    'src/json\.rs:272:87: replace \| with \^ in Form::write$',
-    'src/protocol/read\.rs:(245:49|292:45): replace \| with \^ ',
-    'src/protocol/pdu\.rs:100:54: replace \| with \^ in message_octets$',
+    'src/reader\.rs:.*: replace \| with \^ in Reader<.a>::(bits_near_the_end|offset_with_length|whole_number|length)$',
+    'src/writer\.rs:.*: replace \| with \^ in Writer<.a>::(length|long_open_type)$',
+    'src/oid\.rs:.*: replace \| with \^ in ObjectIdentifier::(to|from)_contents$',
+    'src/json\.rs:.*: replace \| with \^ in Form::write$',
+    'src/protocol/read\.rs:.*: replace \| with \^ in (field|skip)$',
+    'src/protocol/pdu\.rs:.*: replace \| with \^ in message_octets$',
     # A range of 256 values in the case of a length: a length of no bit, then one octet,
     # aligned, as the arm of that range reads and writes it.
-    'src/reader\.rs:333:13: delete match arm 255 in Reader<.a>::offset$',
-    'src/writer\.rs:205:13: delete match arm 255 in Writer<.a>::offset$',
+    'src/reader\.rs:.*: delete match arm 255 in Reader<.a>::offset$',
+    'src/writer\.rs:.*: delete match arm 255 in Writer<.a>::offset$',
     # A bitmap of no addition, which the check after it refuses with the same words.
-    'src/reader\.rs:561:17: delete match arm 0 in Reader<.a>::addition_bitmap$',
+    'src/reader\.rs:.*: delete match arm 0 in Reader<.a>::addition_bitmap$',
     # A bit-field of 64 bits at most: those of a bit string of one size of 16 bits at most,
     # and the bitmap of 64 additions at most. A field that the loop for longer ones reads is
     # kept as the same string of 64 bits or fewer.
-    'src/reader\.rs:(881:18|886:20|888:43|888:49|889:18): replace ',
+    'src/reader\.rs:.*: replace (<= with >|> with (==|<|>=)|<< with >>|-=? with (\+|/)=?) in Reader<.a>::bit_field$',
     # The first octet of a number of 64 bits, or of 65 for a semi-constrained one, written
     # in 16 octets, is the 7th at least: `>= 0` holds where `> 0` does.
-    'src/writer\.rs:313:28: replace > with >= in Writer<.a>::whole_number$',
+    'src/writer\.rs:.*: replace > with >= in Writer<.a>::whole_number$',
     # Digits that Plmn::new refuses, as either part that is not digits.
-    'src/json\.rs:222:45: replace && with \|\| in Form::write$',
+    'src/json\.rs:\d+:45: replace && with \|\| in Form::write$',
     # The value of NULL, which the default value is.
-    'src/lib\.rs:211:9: replace <impl Decode<.a> for \(\)>::decode ',
+    'src/lib\.rs:.*: replace <impl Decode<.a> for \(\)>::decode ',
     # The paths and the trees of a view:
     # - `fault` is given the kind NoSuchMember alone;
-    'src/inspect/paths\.rs:(79|80):9: delete match arm ErrorKind::(Path|Limit) in fault$',
+    'src/inspect/paths\.rs:.*: delete match arm ErrorKind::(Path|Limit) in fault$',
     # - the engine raises an error of these kinds without a code of the views only in the
     #   readings of members, which the views do not use, and for a family that opens a value
     #   where the edit is not to open one or goes through members without an end, which the
     #   views never do;
-    'src/inspect/paths\.rs:(112|113):9: delete match arm tree::ErrorKind::(Value|Refused) in error$',
+    'src/inspect/paths\.rs:.*: delete match arm tree::ErrorKind::(Value|Refused) in error$',
     # - every list of IEs of a type is its member protocolIEs, and `transfer` gives none for
     #   a type that is no transfer of protocol IEs;
-    'src/inspect/paths\.rs:292:45: replace match guard \*member == IES with true in Protocol::members$',
+    'src/inspect/paths\.rs:.*: replace match guard \*member == IES with true in Protocol::members$',
     # - octets that contain one of several types have no member that an IE is named as;
-    'src/inspect/paths\.rs:355:43: replace match guard !contained\.is_empty\(\) with true in Protocol::stays_on$',
+    'src/inspect/paths\.rs:.*: replace match guard !contained\.is_empty\(\) with true in Protocol::stays_on$',
     # - a transfer and an IE always have the member that holds their value, in which a
     #   segment that names none of their members is taken: none reaches these arms;
-    'src/inspect/paths\.rs:(451|452):13: delete match arm Shape::(Transfer|Ie)',
+    'src/inspect/paths\.rs:.*: delete match arm Shape::(Transfer|Ie)\(.* in Protocol::no_member$',
     # - the arm for any list gives an entry of a list of IEs of an extension the same shape;
-    'src/inspect/paths\.rs:677:9: delete match arm Shape::List\(Shape::Extension',
+    'src/inspect/paths\.rs:.*: delete match arm Shape::List\(Shape::Extension\(.* in element$',
     # - a member that is not there gives no place to an edit that goes deeper, nor to a
     #   removal or an insertion, which the engine makes at what is there alone;
-    'src/inspect/paths\.rs:1097:29: replace && with \|\| in Views<._>::object$',
+    'src/inspect/paths\.rs:\d+:29: replace && with \|\| in Views<._>::object$',
     # - what a view does not have is read without an edit, and the one segment that such a
     #   reading refuses, an identifier that is no number, is refused before it;
-    'src/inspect/paths\.rs:(1245|1293):25: delete match arm tree::ErrorKind::Refused ',
+    'src/inspect/paths\.rs:.*: delete match arm tree::ErrorKind::Refused in Views<._>::(typed|scalar)$',
     # - the arm of a value without members and the arm after it say the same;
-    'src/inspect/paths\.rs:1317:13: delete match arm Shape::Plain in Views<._>::scalar$',
+    'src/inspect/paths\.rs:.*: delete match arm Shape::Plain in Views<._>::scalar$',
     # - the protocolIEs of a view are a list: an object there, of nothing but the octets
     #   that it was received as, is no view's;
-    'src/inspect/paths\.rs:1562:25: replace match guard value\.is_some_and\(Value::is_array\) with true ',
+    'src/inspect/paths\.rs:.*: replace match guard value\.is_some_and\(Value::is_array\) with true in <impl Family for Paths>::member$',
     # - a type whose one member is a list of IEs, a message, has members of the same shapes
     #   listed or made: `members` gives the list the object set of the transfer of that
     #   name, which a message has none of.
-    'src/inspect/paths\.rs:1773:66: replace && with \|\| in Protocol::member_shapes$',
+    'src/inspect/paths\.rs:\d+:66: replace && with \|\| in Protocol::member_shapes$',
     # The readers of the protocol crates read an IE in the usual layout themselves, and leave
     # what is otherwise to the codec of the IE, which reads the same IE: a mutant that leaves
     # more to the codec reads the same. The lengths of one octet and of two, and the octets
     # that they are within; the walk that skips to an IE, which then reads each one; the
     # criticality of the usual layout; and the head of a container of three octets at least.
-    'src/protocol/read\.rs:(243|244):13: delete match arm ',
-    'src/protocol/read\.rs:250:19: replace > with (<|==|>=) in field$',
-    'src/protocol/read\.rs:283:5: replace skip -> Option<\(u16, usize\)> with None$',
-    'src/protocol/read\.rs:(290|291):9: delete match arm ',
-    'src/protocol/read\.rs:304:5: replace criticality_of -> Option<crate::Criticality> with None$',
-    'src/protocol/read\.rs:30[5-7]:9: delete match arm [012] in criticality_of$',
-    'src/protocol/read\.rs:353:29: replace > with < in __Walk<.s, P>::next_of$',
-    'src/protocol/read\.rs:789:9: delete match arm \[first, high, low, \.\.\] in head$',
+    'src/protocol/read\.rs:.*: delete match arm \[(length|first) @.* in field$',
+    'src/protocol/read\.rs:.*: replace > with (<|==|>=) in field$',
+    'src/protocol/read\.rs:.*: replace skip -> Option<\(u16, usize\)> with None$',
+    'src/protocol/read\.rs:.*: delete match arm \[(length|first) @.* in skip$',
+    'src/protocol/read\.rs:.*: replace criticality_of -> Option<crate::Criticality> with None$',
+    'src/protocol/read\.rs:.*: delete match arm [012] in criticality_of$',
+    'src/protocol/read\.rs:.*: replace > with < in __Walk<.s, P>::next_of$',
+    'src/protocol/read\.rs:.*: delete match arm \[first, high, low, \.\.\] in head$',
     # The writer of a message of protocol IEs writes a length of one octet or two itself,
     # and leaves the others to the writer of an open type, which writes the same length;
     # the room that it reserves is no part of the octets.
-    'src/protocol/pdu\.rs:(98|99):13: delete match arm ',
-    'src/protocol/pdu\.rs:(87|118):62: replace \+ with \* ',
+    'src/protocol/pdu\.rs:.*: delete match arm length @.* in message_octets$',
+    'src/protocol/pdu\.rs:.*: replace \+ with \* in message_octets(_as_its_type)?$',
     # The name that a message gives as the holder of itself, which its reader discards: the
     # errors of a message name it by its type.
-    'src/protocol/read\.rs:653:9: replace <impl __Holds<M> for M>::__message ',
+    'src/protocol/read\.rs:.*: replace <impl __Holds<M> for M>::__message ',
     # The identifier of an entry of a walk through the trait, which the entry's own `id`
     # shadows where the macros call it, and no generic code calls.
-    'src/protocol/read\.rs:678:9: replace <impl __Item<.s> for __Entry<.s, P>>::id ',
+    'src/protocol/read\.rs:.*: replace <impl __Item<.s> for __Entry<.s, P>>::id ',
     # A check at compile time: the function does nothing when it runs.
-    'src/protocol/build\.rs:158:5: replace __message_of_protocol_ies with \(\)$',
+    'src/protocol/build\.rs:.*: replace __message_of_protocol_ies with \(\)$',
     # The index of an IE of the set after the last one seen is never that one: that IE was
     # seen, and its first place is known.
-    'src/check\.rs:607:41: replace < with <= in compared$',
+    'src/check\.rs:.*: replace < with <= in compared$',
 ]
