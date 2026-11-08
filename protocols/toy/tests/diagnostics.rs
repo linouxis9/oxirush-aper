@@ -522,3 +522,143 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
     assert_eq!(Deviation::of(&error), None);
     Ok(())
 }
+
+/// Clause 10.3: the receiver of a message rejects it, and executes none of it, for an IE
+/// of the criticality `reject` that it does not comprehend (clause 10.3.4.2), whose value
+/// does not decode (clause 10.3.2) or that is missing (clause 10.3.5), for an IE twice or
+/// in a wrong order whatever its criticality (clause 10.3.6), and for a procedure of the
+/// criticality `reject` that it does not comprehend (clause 10.3.4.1). It ignores an IE of
+/// the criticality `ignore`, and goes on for one of `notify`, which it reports. Its cause is
+/// that of the deviation that rejects the message, even after one of `notify` (clause
+/// 10.5), or of the first that it reports.
+#[test]
+fn the_receiver_rejects_a_message_or_goes_on_by_the_criticality_of_each_deviation()
+-> Result<(), Error> {
+    use oxirush_toy::aper::Direction;
+    use oxirush_toy::aper::check::answer;
+    let rejects = |deviations: &[Deviation]| -> Vec<bool> {
+        deviations.iter().map(Deviation::rejects).collect()
+    };
+
+    // A value that does not decode, received as `ignore`: ignored.
+    let ignored = spoiled(Some(7))?.check()?;
+    assert_eq!(rejects(&ignored), [false]);
+    assert_eq!(answer(&ignored), None);
+    // The same IE received as `reject`: a transfer syntax error that rejects it.
+    let Deviation::UndecodableIe {
+        id,
+        name,
+        position,
+        error,
+        ..
+    } = ignored[0].clone()
+    else {
+        panic!("{ignored:?}");
+    };
+    let undecodable = Deviation::UndecodableIe {
+        id,
+        name,
+        position,
+        criticality: Criticality::Reject,
+        error,
+    };
+    assert!(undecodable.rejects());
+    assert_eq!(
+        answer(std::slice::from_ref(&undecodable)),
+        Some((CauseProtocol::transfer_syntax_error, true))
+    );
+
+    // A missing IE of the criticality `reject`.
+    let missing = without_areas()?.check()?;
+    assert_eq!(rejects(&missing), [true]);
+    assert_eq!(
+        answer(&missing),
+        Some((CauseProtocol::abstract_syntax_error_reject, true))
+    );
+
+    // An IE of no message received as `notify`, alone and before one that rejects.
+    let notify = Deviation::UnexpectedIe {
+        id: 60_000,
+        name: None,
+        position: 3,
+        criticality: Criticality::Notify,
+    };
+    assert!(!notify.rejects());
+    assert_eq!(
+        answer(std::slice::from_ref(&notify)),
+        Some((
+            CauseProtocol::abstract_syntax_error_ignore_and_notify,
+            false
+        ))
+    );
+    let reject = Deviation::MissingIe {
+        id: RAN,
+        name: "UE-RAN-ID",
+        criticality: Criticality::Reject,
+    };
+    assert_eq!(
+        answer(&[notify.clone(), reject]),
+        Some((CauseProtocol::abstract_syntax_error_reject, true))
+    );
+
+    // An IE in a wrong order rejects the message whatever its criticality.
+    let wrong_order = Deviation::OutOfOrder {
+        id: RAN,
+        name: "UE-RAN-ID",
+        position: 0,
+        after: 10,
+        after_name: "UE-Core-ID",
+    };
+    let repeated = Deviation::RepeatedIe {
+        id: RAN,
+        name: "UE-RAN-ID",
+        position: 2,
+        first: 1,
+    };
+    assert_eq!(rejects(&[wrong_order.clone(), repeated]), [true, true]);
+    assert_eq!(
+        answer(&[notify, wrong_order]),
+        Some((
+            CauseProtocol::abstract_syntax_error_falsely_constructed_message,
+            true
+        ))
+    );
+
+    // A procedure that the receiver does not comprehend, by the criticality of the PDU.
+    let unknown = |criticality| Deviation::UnknownProcedure {
+        procedure_code: 200,
+        direction: Direction::Initiating,
+        criticality,
+    };
+    assert_eq!(
+        answer(&[unknown(Criticality::Reject)]),
+        Some((CauseProtocol::abstract_syntax_error_reject, true))
+    );
+    assert_eq!(
+        answer(&[unknown(Criticality::Notify)]),
+        Some((
+            CauseProtocol::abstract_syntax_error_ignore_and_notify,
+            false
+        ))
+    );
+    assert_eq!(answer(&[unknown(Criticality::Ignore)]), None);
+
+    // What a receiver answers nothing for: a criticality other than the assigned one.
+    let criticality = [
+        Deviation::PduCriticality {
+            criticality: Criticality::Notify,
+            assigned: Criticality::Reject,
+        },
+        Deviation::IeCriticality {
+            id: RAN,
+            name: "UE-RAN-ID",
+            position: 1,
+            criticality: Criticality::Ignore,
+            assigned: Criticality::Reject,
+        },
+    ];
+    assert_eq!(rejects(&criticality), [false, false]);
+    assert_eq!(answer(&criticality), None);
+    assert_eq!(answer::<Toy>(&[]), None);
+    Ok(())
+}

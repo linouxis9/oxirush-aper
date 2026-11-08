@@ -97,8 +97,9 @@ pub enum ProtocolCause {
 /// says each deviation in a sentence.
 ///
 /// [`ie`](Self::ie), [`type_of_error`](Self::type_of_error),
-/// [`diagnostics_item`](Self::diagnostics_item) and [`cause`](Self::cause) say what
-/// the receiver of the message answers, as clause 10 of the specification has it.
+/// [`diagnostics_item`](Self::diagnostics_item), [`cause`](Self::cause) and
+/// [`rejects`](Self::rejects) say what the receiver of the message answers, as clause 10
+/// of the specification has it, and [`answer`] what it answers for all of them.
 ///
 /// More variants may come with a later version: leave the others to `_`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -341,12 +342,43 @@ impl<P: Diagnostics> Deviation<P> {
     /// specifications has its receiver handle it locally, and send no ERROR INDICATION
     /// back. The cause is then what the receiver notes.
     pub fn cause(&self) -> Option<P::Cause> {
+        self.protocol_cause().map(P::cause)
+    }
+
+    /// Whether the receiver of the message rejects it for this deviation, and executes
+    /// none of it: for an IE of the criticality `reject` that it does not comprehend,
+    /// whose value does not decode or that is missing (clauses 10.3.2, 10.3.4.2 and 10.3.5
+    /// of TS 38.413 and of TS 36.413), for an IE that is there twice or in a wrong order,
+    /// whatever its criticality (clause 10.3.6), and for a procedure of the criticality
+    /// `reject` that it does not comprehend (clause 10.3.4.1). [`answer`] says what it
+    /// answers for all the deviations of a message.
+    pub fn rejects(&self) -> bool {
+        self.acted_on() == Some(Criticality::Reject)
+    }
+
+    /// The criticality by which the receiver acts on the deviation: that of its IE, as
+    /// the message has it or, for a missing one, as the object set assigns it, that of
+    /// the PDU for a procedure that it does not comprehend, and `reject` for an IE twice
+    /// or in a wrong order. `None` where it answers nothing for it, as
+    /// [`cause`](Self::cause) says.
+    fn acted_on(&self) -> Option<Criticality> {
+        self.protocol_cause()?;
+        Some(match self {
+            Self::UnknownProcedure { criticality, .. } => *criticality,
+            _ => self
+                .ie()
+                .map_or(Criticality::Reject, |(_, criticality)| criticality),
+        })
+    }
+
+    /// The protocol cause of [`cause`](Self::cause), as this crate names it.
+    fn protocol_cause(&self) -> Option<ProtocolCause> {
         let by_criticality = |criticality: &Criticality| match criticality {
             Criticality::Reject => Some(ProtocolCause::AbstractSyntaxErrorReject),
             Criticality::Notify => Some(ProtocolCause::AbstractSyntaxErrorIgnoreAndNotify),
             Criticality::Ignore => None,
         };
-        let cause = match self {
+        match self {
             Self::UndecodableIe { .. } => Some(ProtocolCause::TransferSyntaxError),
             Self::UnexpectedIe { criticality, .. }
             | Self::MissingIe { criticality, .. }
@@ -360,8 +392,7 @@ impl<P: Diagnostics> Deviation<P> {
             | Self::NotCanonical { .. }
             | Self::ExtensionAdditions { .. } => None,
             Self::__Protocol(never, _) => match *never {},
-        };
-        cause.map(P::cause)
+        }
     }
 
     /// The deviation that an error of the macros tells of: the IE that a `req` field
@@ -536,6 +567,30 @@ pub fn criticality_diagnostics_for_response<P: Diagnostics>(
     deviations: &[Deviation<P>],
 ) -> P::CriticalityDiagnostics {
     P::criticality_diagnostics(None, criticality, items(deviations))
+}
+
+/// What the receiver of a message answers for `deviations`, those that `check()` found in
+/// it, as clause 10.3 of TS 38.413 and of TS 36.413 has it act on each: the protocol
+/// cause, and whether it rejects the message and executes none of it
+/// ([`Deviation::rejects`]). The cause is that of the first deviation that rejects the
+/// message, even after one of the criticality `notify` (clause 10.5), or of the first
+/// that the receiver reports when none does: an IE of the criticality `notify` that it
+/// does not comprehend or that is missing, or a procedure of that criticality, which it
+/// ignores and reports. `None` where it acts on none of them: an IE or a procedure of
+/// the criticality `ignore`, also an IE whose value does not decode, which it treats by
+/// its criticality as one that it does not comprehend (clause 10.3.2), and what it
+/// answers nothing for, as [`Deviation::cause`] says.
+///
+/// The answer to an ERROR INDICATION is none (clause 10.5): the cause is then what its
+/// receiver notes.
+pub fn answer<P: Diagnostics>(deviations: &[Deviation<P>]) -> Option<(P::Cause, bool)> {
+    if let Some(rejecting) = deviations.iter().find(|deviation| deviation.rejects()) {
+        return Some((rejecting.cause()?, true));
+    }
+    let reported = deviations
+        .iter()
+        .find(|deviation| deviation.acted_on() == Some(Criticality::Notify))?;
+    Some((reported.cause()?, false))
 }
 
 /// The items of the Criticality Diagnostics for `deviations`: 256 at most, and none for

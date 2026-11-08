@@ -4,6 +4,16 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ## Unreleased
 
+### Added
+
+- `Deviation::rejects` and `check::answer`, the rule of clause 10.3 of TS 38.413 and
+  of TS 36.413 that a receiver of a message acts on, which each receiver wrote: whether
+  a deviation rejects the message, and the protocol cause of the answer to all the
+  deviations of a message, with whether it rejects the message. The cause is that of
+  the first deviation that rejects it, even after one of the criticality `notify`
+  (clause 10.5), or of the first that the receiver reports; an IE of the criticality
+  `ignore` is ignored, also one whose value does not decode.
+
 ### Fixed
 
 - `tree_of_jer` reads a transfer, the octets of an `OCTET STRING (CONTAINING …)`,
