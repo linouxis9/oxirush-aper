@@ -827,6 +827,16 @@ fn a_bit_string_of_a_fixed_size_is_its_octets_in_hexadecimal() {
          and 703710 is written, at macro-NodeID"
     );
     assert!(node(tree!({"macro-NodeID": "abcd"})).is_err());
+    // Beside them, an alternative of the type NULL, which the bindings read by its index.
+    let pdu = node(tree!({"unassigned": null})).unwrap();
+    let id = pdu.ie::<oxirush_toy::ie::NodeID>().unwrap().unwrap();
+    assert_eq!(id, NodeID::unassigned(()));
+    let octets = pdu.encode().unwrap();
+    let received = TOYPDU::decode(&octets).unwrap();
+    assert_eq!(
+        select(&received.to_tree(), "/toy/NodeID/unassigned"),
+        [Value::Null]
+    );
 }
 
 #[test]

@@ -46,7 +46,7 @@ oxirush_aper::__types! {
         InitiatingMessage sequence { "procedureCode": _, "criticality": Criticality, "value": _ };
         Item sequence { "item-ID": _, "cause"? Cause, "iE-Extensions"? extensions };
         Items = [ie];
-        NodeID choice { "macro-NodeID": _, "home-NodeID": _, "choice-Extensions": ie };
+        NodeID choice { "macro-NodeID": _, "home-NodeID": _, "unassigned": null, "choice-Extensions": ie };
         Notification sequence { "protocolIEs": ies };
         PrivateIEID choice { "local": _, "global": _ };
         PrivateMessage sequence { "privateIEs": PrivateMessagePrivateIEs };

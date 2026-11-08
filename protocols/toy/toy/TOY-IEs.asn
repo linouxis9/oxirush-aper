@@ -3,8 +3,8 @@
 -- single containers, extension containers whose IE has the type that the type it
 -- extends gives it, a value that holds a key, a list of up to 65536 items, a count
 -- that two octets do not hold, a number of an extensible range, an ENUMERATED whose
--- order its numbers and its addition give, an alternative of the type NULL, the
--- well-known types and the identifiers of a UE.
+-- order its numbers and its addition give, alternatives of the type NULL, one in a
+-- CHOICE of long bit strings, the well-known types and the identifiers of a UE.
 
 TOY-IEs {
 iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
@@ -223,6 +223,7 @@ NAS-PDU ::= OCTET STRING
 NodeID ::= CHOICE {
 	macro-NodeID		BIT STRING (SIZE(20)),
 	home-NodeID			BIT STRING (SIZE(28)),
+	unassigned			NULL,
 	choice-Extensions	ProtocolIE-SingleContainer { {NodeID-ExtIEs} }
 }
 

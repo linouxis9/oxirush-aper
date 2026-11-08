@@ -81,6 +81,13 @@ All notable changes to `oxirush-aper` are recorded here.
 - The generator writes the codec of each member of a `SEQUENCE` in one line:
   the bindings of NGAP are 4794 lines shorter, those of S1AP 2106.
 
+### Fixed
+
+- The generator writes the oracle of a protocol whose CHOICE of a fixed-size BIT
+  STRING longer than 16 bits has an alternative of the type NULL: the fix-up of
+  rasn's decoder of such a CHOICE refused that alternative as one that it did not
+  recognize. TOY has one, in `NodeID`.
+
 ### Removed
 
 - The family of the paths of a view and the functions of a view that only the

@@ -264,8 +264,9 @@ pub fn fix_fixed_bit_strings(generated: &str) -> Result<String> {
 (.*?)^    \}
 )"#,
     )?;
+    // An alternative of a type, or of the type NULL, `()`.
     let variant = Regex::new(
-        r#"(?m)^        (?:#\[rasn\(([^\n]*)\)\]\n        )?([A-Za-z0-9_]+)\(([A-Za-z0-9_]+)\),$"#,
+        r#"(?m)^        (?:#\[rasn\(([^\n]*)\)\]\n        )?([A-Za-z0-9_]+)\(([A-Za-z0-9_]+|\(\))\),$"#,
     )?;
     // Extension alternatives are open types, which start octet-aligned: the
     // same decoders read them.
@@ -338,11 +339,16 @@ pub fn fix_fixed_bit_strings(generated: &str) -> Result<String> {
                     )
                     .expect("write to String");
                 } else if attributes.is_empty() || identifier_only.is_match(attributes) {
+                    // The type NULL is `()`, whose functions a path names in angle brackets.
+                    let path = match variant_type {
+                        "()" => "<()>",
+                        named => named,
+                    };
                     write!(
                         decoders,
                         r#"
             if tag == Tag::new(Class::Context, {index}) {{
-                return {variant_type}::decode_with_tag(decoder, tag).map(Self::{variant_name});
+                return {path}::decode_with_tag(decoder, tag).map(Self::{variant_name});
             }}"#
                     )
                     .expect("write to String");
@@ -490,7 +496,33 @@ fn aligned_bits(length: usize, indent: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::fix_long_inline_strings;
+    use super::{fix_fixed_bit_strings, fix_long_inline_strings};
+
+    /// A CHOICE of a fixed-size BIT STRING longer than 16 bits reads each of its
+    /// alternatives, one of the type NULL too, by its index: automatic tags number them.
+    #[test]
+    fn a_choice_of_a_long_bit_string_reads_an_alternative_of_the_type_null() {
+        let generated = r#"    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(delegate)]
+    pub struct CellID(pub FixedBitString<24usize>);
+    #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
+    #[rasn(choice, automatic_tags)]
+    pub enum NodeID {
+        #[rasn(size("20"), identifier = "macro-NodeID")]
+        macro_NodeID(BitString),
+        unassigned(()),
+    }
+"#;
+        let fixed = fix_fixed_bit_strings(generated).unwrap();
+        assert!(
+            fixed.contains("if tag == Tag::new(Class::Context, 0) {"),
+            "{fixed}"
+        );
+        let null = "            if tag == Tag::new(Class::Context, 1) {
+                return <()>::decode_with_tag(decoder, tag).map(Self::unassigned);
+            }";
+        assert!(fixed.contains(null), "{fixed}");
+    }
 
     /// A string whose size spans 255 octets or more takes a sized type, in its field and
     /// in the `new` of its type, wherever its range starts; one that spans fewer keeps its

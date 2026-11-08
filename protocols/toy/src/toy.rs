@@ -2523,7 +2523,13 @@ pub mod toy_ies {
     pub enum NodeID {
         macro_NodeID(Bits),
         home_NodeID(Bits),
+        unassigned(()),
         choice_Extensions(ProtocolIEField<'static>),
+    }
+    impl From<()> for NodeID {
+        fn from(value: ()) -> Self {
+            Self::unassigned(value)
+        }
     }
     impl From<ProtocolIEField<'static>> for NodeID {
         fn from(value: ProtocolIEField<'static>) -> Self {
@@ -2536,9 +2542,10 @@ pub mod toy_ies {
     impl<'a> Decode<'a> for NodeID {
         #[inline]
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(match reader.index(3, 0, false)? {
+            Ok(match reader.index(4, 0, false)? {
                 0 => Self::macro_NodeID(reader.bits_sized(20, 20)?),
                 1 => Self::home_NodeID(reader.bits_sized(28, 28)?),
+                2 => Self::unassigned(()),
                 _ => Self::choice_Extensions((ProtocolIEField::decode(reader)?).into_owned()),
             })
         }
@@ -2548,15 +2555,18 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             match self {
                 Self::macro_NodeID(value) => {
-                    writer.index(0, 3, false);
+                    writer.index(0, 4, false);
                     writer.bits_sized(*value, 20, 20)?;
                 }
                 Self::home_NodeID(value) => {
-                    writer.index(1, 3, false);
+                    writer.index(1, 4, false);
                     writer.bits_sized(*value, 28, 28)?;
                 }
+                Self::unassigned(value) => {
+                    writer.index(2, 4, false);
+                }
                 Self::choice_Extensions(value) => {
-                    writer.index(2, 3, false);
+                    writer.index(3, 4, false);
                     value.encode(writer)?;
                 }
             }
@@ -2574,6 +2584,7 @@ pub mod toy_ies {
                 Self::home_NodeID(value) => {
                     json::alternative("home-NodeID", json::bits(*value, 28, 28))
                 }
+                Self::unassigned(value) => json::alternative("unassigned", Value::Null),
                 Self::choice_Extensions(value) => {
                     json::alternative("choice-Extensions", value.to_tree())
                 }
@@ -2592,6 +2603,9 @@ pub mod toy_ies {
                         json::read_bits(reading, value, 28, 28)
                     })?)
                 }
+                2 => Self::unassigned(
+                    reading.within("unassigned", value, |value, reading| reading.null(value))?,
+                ),
                 _ => Self::choice_Extensions(reading.within(
                     "choice-Extensions",
                     value,
