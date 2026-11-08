@@ -23,8 +23,9 @@
 //! for a removal or an insertion; after the value, `criticality` is the criticality
 //! beside it, and the name of the IE may follow once. In a container of IEs, as a
 //! transfer, a segment that names no member is taken in its list, and an IE that a value
-//! holds alone goes by its name after the member that holds it. A value has the members
-//! that its type gives it, read against the tables of the protocol.
+//! holds alone goes by its name after the member that holds it, or by its identifier in
+//! digits when it has none. A value has the members that its type gives it, read against
+//! the tables of the protocol.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -35,8 +36,8 @@ use alloc::vec::Vec;
 use oxirush_utils::tree::{self, Edit, Family, Key, Listed, Map, Next, Place, Root, Step, Value};
 
 use super::paths::{
-    Owner, element, element_of, error, extended, fault, member, no_position, not_an_id, position,
-    refusal, refuse, segment_id,
+    Owner, element, element_of, error, extended, fault, held_id, member, no_position, not_an_id,
+    position, refusal, refuse, segment_id,
 };
 use super::{Kind, Member, Protocol, Sent, Shape, foreign, same_name};
 use crate::{Error, ErrorKind};
@@ -242,6 +243,12 @@ impl Family for Trees<'_> {
                     shape => protocol.members(shape, None).unwrap_or_default(),
                 };
                 match member(&members, name) {
+                    // The IEs of a container are listed in its place, where the name of
+                    // the IE whose value it is stays on that IE.
+                    Some((PROTOCOL_IES, of, _)) => At {
+                        ie: at.ie,
+                        ..at.of(*of)
+                    },
                     Some((_, of, _)) => at.of(*of),
                     None => at.of(Shape::Unknown),
                 }
@@ -306,8 +313,12 @@ impl Family for Trees<'_> {
         }
         let named = |name: &Option<&str>| {
             let name = (*name)?;
-            // An IE that has no name is written by its identifier, which is no segment.
-            let alone = times[name] == 1 && name.parse::<u16>().is_err();
+            // An IE that has no name is written by its identifier, which is no segment,
+            // and the name of the IE whose value the list is, or the container in its
+            // place, stays on that IE.
+            let alone = times[name] == 1
+                && name.parse::<u16>().is_err()
+                && !at.names_the_ie(protocol, name);
             alone.then(|| name.to_string())
         };
         Some(names.iter().map(named).collect())
@@ -577,7 +588,7 @@ impl Trees<'_> {
             }
             return Ok(());
         }
-        let Some(id) = segment_id(protocol, part, true)? else {
+        let Some(id) = held_id(protocol, part)? else {
             return Err(fault(
                 ErrorKind::UnknownIe,
                 format!(
@@ -790,7 +801,7 @@ impl Trees<'_> {
                     };
                     next.absent_once(part, value);
                     next.absent_once(CRITICALITY, at.of(Shape::Plain));
-                } else if let Some(id) = segment_id(protocol, part, true)? {
+                } else if let Some(id) = held_id(protocol, part)? {
                     // Without a tree, an IE that a value holds alone is any IE: the walk
                     // meets none whose identifier a place gives.
                     next.absent_once(part, at.value(protocol, Some(id), extended(shape)));

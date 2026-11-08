@@ -2070,3 +2070,87 @@ fn the_name_of_a_list_of_ies_stays_after_it_once() {
     assert_eq!(checked("/toy/Areas/Areas/0/tAC"), Ok(()));
     assert!(checked("/toy/Areas/Areas/Areas/0").is_err());
 }
+
+/// Each path that `paths` lists for `tree` selects the value that it lists with it.
+fn each_path_selects_its_value(tree: &Value) {
+    for (path, value) in inspect::paths(tree) {
+        assert_eq!(select(tree, &path), [value], "{path}");
+    }
+}
+
+/// An IE that a value holds alone and that has no name is its identifier in digits, in the
+/// tree and in a path after the member that holds it, where no segment is a position:
+/// `@id=N` selects it too, with a tree and without one.
+#[test]
+fn an_ie_held_alone_that_has_no_name_goes_by_its_identifier_in_digits() {
+    let written = tree!({"message": "SetupFailure", "ies": [
+        {"Cause": {"choice-Extensions": {"60000": {"octets": "c0ffee"}, "criticality": "ignore"}}},
+    ]});
+    let tree = sent(&written).unwrap();
+    assert_eq!(tree, written);
+    let held = "/toy/Cause/choice-Extensions";
+    for path in [
+        format!("{held}/60000/octets"),
+        format!("{held}/@id=60000/octets"),
+    ] {
+        assert_eq!(select(&tree, &path), [tree!("c0ffee")], "{path}");
+        assert_eq!(inspect::check_path("SetupFailure", &path), Ok(()), "{path}");
+    }
+    assert_eq!(
+        select(&tree, &format!("{held}/criticality")),
+        [tree!("ignore")]
+    );
+    each_path_selects_its_value(&tree);
+    let mut edited = tree.clone();
+    let octets = tree!({"octets": "00"});
+    inspect::set(&mut edited, &format!("{held}/60000"), octets.clone()).unwrap();
+    assert_eq!(select(&edited, &format!("{held}/60000")), [octets]);
+    assert_eq!(sent(&edited).unwrap(), edited);
+}
+
+/// An entry of a list of IEs, or of a container in the place of the value of an IE, that
+/// holds the IE whose value the list or the container is goes by its position: the name of
+/// that IE after it stays on it, and selects that IE and its criticality, not the entry.
+/// So go an Items in the Items of a SETUP REQUEST, as its octets or as a value, and a
+/// SetupTransfer in the SetupTransfer of a SETUP RESPONSE.
+#[test]
+fn an_entry_that_holds_the_ie_whose_value_its_list_is_goes_by_its_position() {
+    let request = |entry: Value| {
+        tree!({"message": "SetupRequest", "ies": [
+            {"Areas": areas()},
+            {"Items": [entry, {"Item": {"item-ID": 1}}]},
+        ]})
+    };
+    let octets = request(tree!({"Items": {"octets": "ff"}, "criticality": "ignore"}));
+    let items = tree!([{"Item": {"item-ID": 2}}]);
+    let value = request(tree!({"Items": items, "criticality": "ignore"}));
+    let transfer = tree!({"message": "SetupResponse", "ies": [
+        {"SetupTransfer": {"protocolIEs": [
+            {"SetupTransfer": {"octets": "ff"}, "criticality": "ignore"},
+            {"Tunnel": tunnel()},
+        ]}},
+    ]});
+    let ff = ("0/octets", tree!("ff"));
+    let ignore = ("0/criticality", tree!("ignore"));
+    let item = ("0/Item/item-ID", tree!(2));
+    for (written, list, entry) in [
+        (octets, "/toy/Items", [ff.clone(), ignore.clone()]),
+        (value, "/toy/Items", [item, ignore.clone()]),
+        (transfer, "/toy/SetupTransfer", [ff, ignore]),
+    ] {
+        let tree = sent(&written).unwrap();
+        assert_eq!(tree, written);
+        let paths = inspect::paths(&tree);
+        for (path, value) in entry {
+            let listed = (format!("{list}/{path}"), value);
+            assert!(paths.contains(&listed), "{listed:?} in {paths:?}");
+        }
+        each_path_selects_its_value(&tree);
+        // After the IE, its name stays on it: the criticality is that of the IE, which
+        // its message assigns, and the entries are those of its list.
+        let name = &list["/toy/".len()..];
+        assert!(select(&tree, &format!("{list}/{name}/criticality")).is_empty());
+        let first = select(&tree, &format!("{list}/0"));
+        assert_eq!(select(&tree, &format!("{list}/{name}/0")), first);
+    }
+}

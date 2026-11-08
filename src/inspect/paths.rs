@@ -455,6 +455,16 @@ pub(super) fn segment_id(
     }
 }
 
+/// The identifier that a segment gives in the entry of an IE that a value holds alone,
+/// where no segment is a position: `@id=N`, the name of the IE, or its identifier in
+/// digits, as a tree writes an IE that has no name and `from_tree` reads it.
+pub(super) fn held_id(protocol: &Protocol, part: &str) -> Result<Option<u16>, tree::Error> {
+    match part.parse::<u16>() {
+        Ok(id) => Ok(Some(id)),
+        Err(_) => segment_id(protocol, part, true),
+    }
+}
+
 /// The shape of an entry of a list of `shape`.
 pub(super) fn element(shape: Shape) -> Shape {
     match shape {

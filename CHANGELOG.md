@@ -2,6 +2,26 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
+## Unreleased
+
+### Fixed
+
+- Each path that `paths` lists selects its value, where the fuzzing of
+  oxirush-ngap 0.6.0 and oxirush-s1ap 0.4.0 found two kinds of tree in which it
+  did not:
+  - an IE that a value holds alone and that has no name, as one of an
+    identifier that NGAP does not have in the `choice-Extensions` of
+    `SONInformation`, is its identifier in digits in a tree, which `from_tree`
+    reads: `select`, the edits and `check_path` take the digits after the
+    member that holds it, where no segment is a position, as they took
+    `@id=N`;
+  - an entry of a list of IEs, or of a container in the place of the value of
+    an IE, that holds the IE whose value the list or the container is, as an
+    `E-RABSetupListCtxtSURes` in the list of that name, is listed by its
+    position: after an IE its name stays on the IE, and `select` took the name
+    of the entry so, for the list itself, and its criticality for the one
+    beside the IE.
+
 ## 0.2.0 - 2026-11-08
 
 ### Changed
