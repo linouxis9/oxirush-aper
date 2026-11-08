@@ -1918,3 +1918,32 @@ fn a_view_in_the_json_encoding_rules_is_read_as_a_tree() {
         .shift_remove("procedure_code");
     assert!(oxirush_toy::inspect::__tree_of_jer(&without).is_err());
 }
+
+/// A value that no table describes, as one that a tree written by hand gives an IE that
+/// the protocol does not have, has the members that the tree gives it: a set adds one
+/// as the last segment of its path, and nothing else goes into one that is not there.
+#[test]
+fn a_value_that_no_table_describes_has_the_members_of_its_tree() {
+    let mut tree = tree!({"message": "ReleaseRequest", "ies": [
+        {"60000": {"a": 1}, "criticality": "ignore"},
+    ]});
+    assert_eq!(select(&tree, "/toy/@id=60000/a"), [tree!(1)]);
+    inspect::set(&mut tree, "/toy/@id=60000/b", tree!(2)).unwrap();
+    assert_eq!(tree["ies"][0]["60000"], tree!({"a": 1, "b": 2}));
+    for refused in ["/toy/@id=60000/c/d", "/toy/@id=60000/A/B"] {
+        let before = tree.clone();
+        assert!(
+            inspect::set(&mut tree, refused, tree!(3)).is_err(),
+            "{refused}"
+        );
+        assert_eq!(tree, before);
+    }
+    let error = inspect::select(&tree, "/toy/@id=60000/c").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "\"c\" is not a member of this value, at /toy/@id=60000/c"
+    );
+    assert!(inspect::remove(&mut tree, "/toy/@id=60000/c").is_err());
+    inspect::remove(&mut tree, "/toy/@id=60000/a").unwrap();
+    assert_eq!(tree["ies"][0]["60000"], tree!({"b": 2}));
+}

@@ -221,7 +221,7 @@ impl Family for Trees<'_> {
         }
     }
 
-    fn member(&self, at: &At, name: &str, value: Option<&Value>) -> At {
+    fn member(&self, at: &At, name: &str, _value: Option<&Value>) -> At {
         let at = &at.owned().unwrap_or(*at);
         let protocol = at.owner.or(self.protocol);
         match at.shape {
@@ -236,8 +236,7 @@ impl Family for Trees<'_> {
             }
             Shape::Ie(_) | Shape::Extension(..) => at.of(Shape::Plain),
             shape => {
-                let entry = value.and_then(Value::as_object);
-                let shape = self.as_written(protocol, shape, entry);
+                let shape = self.as_written(protocol, shape);
                 let members = match shape {
                     Shape::Pdu(message) => tree_members(message),
                     shape => protocol.members(shape, None).unwrap_or_default(),
@@ -377,14 +376,10 @@ impl Trees<'_> {
     }
 
     /// The shape of a value of `shape` as a tree writes it: a transfer as its decoded
-    /// value, unless it is its octets.
-    fn as_written(&self, protocol: &Protocol, shape: Shape, entry: Option<&Map>) -> Shape {
+    /// value. A transfer that is its octets is read before its shape is.
+    fn as_written(&self, protocol: &Protocol, shape: Shape) -> Shape {
         match protocol.resolved(shape) {
-            Shape::Transfer(contained)
-                if !contained.is_empty() && !entry.is_some_and(octets_alone) =>
-            {
-                protocol.resolved(Shape::Named(contained))
-            }
+            Shape::Transfer(contained) => protocol.resolved(Shape::Named(contained)),
             shape => shape,
         }
     }
@@ -407,12 +402,14 @@ impl Trees<'_> {
         let shape = protocol.resolved(at.shape);
         // The criticality beside the value of an IE, where its type has no such member.
         if at.ie.is_some() && same_name(part, CRITICALITY) {
-            let shape = self.as_written(protocol, shape, None);
+            let shape = self.as_written(protocol, shape);
             let members = protocol.members(shape, None).unwrap_or_default();
             if member(&members, part).is_none() {
+                // The criticality of an IE that is not there selects nothing, and what
+                // follows it is still a path.
                 match place.value() {
-                    None if next.edit().is_none() => next.absent_once(part, at.of(Shape::Plain)),
-                    _ => next.beside(place, CRITICALITY, at.of(Shape::Plain)),
+                    None => next.absent_once(part, at.of(Shape::Plain)),
+                    Some(_) => next.beside(place, CRITICALITY, at.of(Shape::Plain)),
                 }
                 return Ok(());
             }
@@ -470,7 +467,7 @@ impl Trees<'_> {
         if let Shape::Ie(_) | Shape::Extension(..) = shape {
             return self.held_alone(entry, at, shape, part, next);
         }
-        let shape = self.as_written(protocol, shape, Some(entry));
+        let shape = self.as_written(protocol, shape);
         let members = match shape {
             Shape::Pdu(message) => Some(tree_members(message)),
             Shape::Unknown | Shape::Undecoded => None,
@@ -861,7 +858,7 @@ impl Trees<'_> {
                 }
             }
             shape => {
-                let shape = self.as_written(protocol, shape, None);
+                let shape = self.as_written(protocol, shape);
                 let members = match shape {
                     Shape::Pdu(message) => tree_members(message),
                     shape => protocol.members(shape, None).unwrap_or_default(),

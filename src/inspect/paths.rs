@@ -269,9 +269,6 @@ impl Protocol {
         let of = match shape {
             Shape::Named(name) => name.to_string(),
             Shape::Message(message) => message.name.to_string(),
-            Shape::AnyMessage => {
-                "the message of a procedure that the tables do not have".to_string()
-            }
             Shape::Pdu(_) => "the tree of a PDU".to_string(),
             Shape::Bits => "a bit string".to_string(),
             Shape::Transfer(_) => "a transfer".to_string(),
@@ -731,14 +728,13 @@ impl Protocol {
         }
         match value {
             Value::Object(entry) => match shape {
+                // A transfer as its decoded value, or as its octets alone, which the codec of
+                // the view takes as they are.
                 Shape::Transfer(_) => {
                     let members = self.members(shape, None).unwrap_or_default();
                     let decoded = member(&members, "decoded");
                     let decoded = decoded.map_or(Shape::Unknown, |(_, of, _)| *of);
-                    match entry.len() == 1 && entry.contains_key("octets") {
-                        true => Ok(value.clone()),
-                        false => self.written(value, decoded, depth + 1),
-                    }
+                    self.written(value, decoded, depth + 1)
                 }
                 // An IE that a value holds alone.
                 Shape::Ie(_) | Shape::Extension(..) => self.entry_of(value, shape, shape, depth),
