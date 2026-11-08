@@ -2,23 +2,21 @@
 # `generator` of .github/workflows/mutants.yml lists here and holds to its own tests and
 # to the bindings that it writes (.github/mutants-generator.py), and what it leaves alone.
 
-# Mutants that no output can tell from the code, each with why.
+# Mutants that no output can tell from the code, each with why, named by their function. A
+# column tells apart the mutants of the same name in one function.
 exclude_re = [
     # SHA-256 (FIPS 180-4 §4.1.2): Ch(e, f, g) joins bits of e and of not e, which are
     # distinct, and Maj(a, b, c) of the three ANDs is the same with `|` in the place of either
     # `^`: a bit is set where two of a, b and c are.
-    'src/asn1\.rs:(77:34|84:36|84:46): replace \^ with \| in sha256$',
+    'src/asn1\.rs:\d+:(34|36|46): replace \^ with \| in sha256$',
     # The definitions that start before a use of an extension container: none starts where
     # one does, as a definition's name is followed by `::=` and a container's by `{`.
-    'src/registry\.rs:623:89: replace < with <= in extensions$',
+    'src/registry\.rs:.*: replace < with <= in extensions$',
     # An abbreviation of MIXED that starts where the letters in lower case of a word end
     # starts with a letter: no digit follows those letters, and the word ends there whether
     # the abbreviation cuts it or not.
-    'src/names\.rs:174:13: replace < with <= in lower_word$',
+    'src/names\.rs:.*: replace < with <= in lower_word$',
     # An abbreviation of MIXED that starts where a run of capitals ends leaves the run as
     # it is: `start <= run` cuts it where `start < run` lets it end.
-    'src/names\.rs:245:26: replace < with <= in words$',
-    # rasn-compiler 0.16.0, which the generator pins, has opaque open types by default: the
-    # field says what the default does.
-    'src/protocol\.rs:112:9: delete field opaque_open_types from struct RasnConfig expression in generate$',
+    'src/names\.rs:\d+:26: replace < with <= in words$',
 ]
