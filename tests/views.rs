@@ -260,7 +260,7 @@ static TOY: Protocol = Protocol {
         "transfer" => Ok(cause_typed()),
         "setup" => Ok(ies_typed()),
         "inner" => Ok(holder_typed()),
-        _ => Err(Error::new(ErrorKind::NoSuchMember, "no codec of a Node")),
+        _ => Err(Error::new(ErrorKind::Path, "no codec of a Node")),
     },
     carried_typed: |name| (name == "LteBlob").then(holder_typed),
     any_message: ies_typed,
@@ -845,14 +845,14 @@ fn an_edit_is_encoded_in_what_it_changed() {
             inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
         inspect::set(&TOY, &mut view, path, value).unwrap();
         let error = parts(&view).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::Edit, "{path}: {error}");
+        assert_eq!(error.kind(), ErrorKind::Value, "{path}: {error}");
     }
     let mut lossy = vec![0x80];
     lossy.extend(ies(&[(15, 1, &[0, 0])]));
     let mut view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &lossy).unwrap();
     inspect::set(&TOY, &mut view, "/toy/Cause/nas", tree!("deregister")).unwrap();
     let error = parts(&view).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Edit);
+    assert_eq!(error.kind(), ErrorKind::Value);
     assert!(
         error
             .to_string()
@@ -865,7 +865,7 @@ fn an_edit_is_encoded_in_what_it_changed() {
     view["message"]["protocolIEs"][0]["value"] = tree!("0101");
     assert_eq!(parts(&view).unwrap().3, ies(&[(15, 1, &[1, 1])]));
     view["message"]["protocolIEs"][0]["value"] = tree!({"nas": "deregister"});
-    assert_eq!(parts(&view).unwrap_err().kind(), ErrorKind::Edit);
+    assert_eq!(parts(&view).unwrap_err().kind(), ErrorKind::Value);
 }
 
 /// A view written by hand, without what was received, is encoded from its values: a
@@ -894,7 +894,7 @@ fn a_view_written_by_hand_is_encoded_from_its_values() {
         );
     }
     let both = tree!({"decoded": {"radioNetwork": "unspecified"}, "octets": "0000"});
-    assert_eq!(parts(&holder(both)).unwrap_err().kind(), ErrorKind::Form);
+    assert_eq!(parts(&holder(both)).unwrap_err().kind(), ErrorKind::Value);
     // The octets of the Container, written as an LteBlob, and as another name
     let carried = message(tree!([{"id": 18, "criticality": "ignore", "value":
                                   {"LteBlob": {"cause": {"nas": "deregister"}}}}]));
@@ -904,7 +904,7 @@ fn a_view_written_by_hand_is_encoded_from_its_values() {
     assert_eq!(parts(&other).unwrap_err().kind(), ErrorKind::Value);
     // An IE without a value or octets
     let empty = message(tree!([{"id": 15, "criticality": "ignore"}]));
-    assert_eq!(parts(&empty).unwrap_err().kind(), ErrorKind::Form);
+    assert_eq!(parts(&empty).unwrap_err().kind(), ErrorKind::Value);
 }
 
 /// `open` shows the octets of the Container as the LteBlob that they carry, and the view
@@ -948,9 +948,9 @@ fn a_view_deeper_than_256_is_not_written() {
     assert!(parts(&deepest).is_ok());
     // 128 levels, the last written as octets, 257 deep
     let deeper = hand(128, tree!("0000"));
-    assert_eq!(parts(&deeper).unwrap_err().kind(), ErrorKind::Limit);
+    assert_eq!(parts(&deeper).unwrap_err().kind(), ErrorKind::Value);
     let deeper = hand(130, tree!({"radioNetwork": "unspecified"}));
-    assert_eq!(parts(&deeper).unwrap_err().kind(), ErrorKind::Limit);
+    assert_eq!(parts(&deeper).unwrap_err().kind(), ErrorKind::Value);
     // The view of 40 levels, 80 deep, is written back
     let octets = ies(&[(15, 1, &nested(40))]);
     let view = inspect::view(&TOY, Direction::Initiating, 1, tree!("reject"), &octets).unwrap();
@@ -1092,7 +1092,7 @@ fn the_parts_that_a_tree_writes() {
         tree!({"procedure_code": 1, "direction": "Sideways", "ies": []}),
     ] {
         let error = inspect::tree_parts(&TOY, &refused).err().unwrap();
-        assert_eq!(error.kind(), ErrorKind::Form, "{refused}: {error}");
+        assert_eq!(error.kind(), ErrorKind::Value, "{refused}: {error}");
     }
 }
 
@@ -1112,7 +1112,7 @@ fn the_parts_that_a_view_writes() {
         let mut wrong = view.clone();
         wrong[member] = value;
         let error = parts(&wrong).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::Form, "{member}: {error}");
+        assert_eq!(error.kind(), ErrorKind::Value, "{member}: {error}");
     }
 }
 
@@ -1131,7 +1131,7 @@ fn a_view_in_the_json_encoding_rules_is_read() {
     let mut without = jer.clone();
     without["procedure_code"] = Value::Null;
     let error = inspect::view_of_jer(&TOY, &without).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Form);
+    assert_eq!(error.kind(), ErrorKind::Value);
 }
 
 /// A view is of the PDU of its direction and its procedure code, and one of another PDU is
@@ -1144,7 +1144,7 @@ fn a_view_is_of_its_pdu() {
         Ok(())
     );
     let error = inspect::of_the_pdu(&TOY, &view, Direction::Initiating, 2).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Form);
+    assert_eq!(error.kind(), ErrorKind::Value);
     assert!(
         error
             .to_string()
@@ -1289,7 +1289,7 @@ fn what_is_no_path_is_refused_as_such() {
         ErrorKind::Path
     );
     let long = "/toy/Cause".to_string() + &"/a".repeat(70);
-    assert_eq!(select(&view, &long).unwrap_err().kind(), ErrorKind::Limit);
+    assert_eq!(select(&view, &long).unwrap_err().kind(), ErrorKind::Path);
 }
 
 /// A view without its message is read by the tables of its direction and its procedure
@@ -1299,7 +1299,7 @@ fn a_view_without_its_message_is_read_by_the_tables_of_its_procedure() {
     let view =
         tree!({"procedure_code": 1, "direction": "SuccessfulOutcome", "criticality": "reject"});
     let error = select(&view, "/toy/Holder").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     assert!(
         error
             .to_string()
@@ -1371,7 +1371,7 @@ fn the_name_of_an_ie_stays_on_its_entry() {
     );
     assert_eq!(select(&view, "/toy/Nas/Nas"), Ok(vec![&ies[2]]));
     let error = select(&view, "/message/protocolIEs/0/Cause").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
 }
 
 /// An entry of an unknown IE is the IE that the next segment names, unless some value has
@@ -1381,14 +1381,14 @@ fn an_entry_of_an_unknown_ie_is_the_ie_that_the_next_segment_names() {
     let refused = |path: &str| checked(path).unwrap_err().kind();
     assert_eq!(
         refused("/toy/Holder/items/0/Item/misspelled"),
-        ErrorKind::NoSuchMember
+        ErrorKind::Path
     );
     assert_eq!(
         refused("/toy/Holder/items/0/Cause/misspelled"),
-        ErrorKind::NoSuchMember
+        ErrorKind::Path
     );
     let extension = "/toy/Holder/iE-Extensions/0/ExtendedCause/misspelled";
-    assert_eq!(refused(extension), ErrorKind::NoSuchMember);
+    assert_eq!(refused(extension), ErrorKind::Path);
     // The Holder has a member payload of another type than the IE Payload
     assert_eq!(checked("/toy/Holder/items/0/Payload/misspelled"), Ok(()));
     assert_eq!(checked("/toy/Cause/Cause/radioNetwork"), Ok(()));
@@ -1472,7 +1472,7 @@ fn a_member_is_named_whatever_its_case() {
         Ok(vec![&ies[3]["value"]["list"][0]])
     );
     let error = select(&view, "/toy/@id=99/value/missing").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     inspect::set(&TOY, &mut view, "/toy/@id=99/value/new", tree!(2)).unwrap();
     assert_eq!(view["message"]["protocolIEs"][3]["value"]["new"], tree!(2));
 }
@@ -1526,7 +1526,7 @@ fn an_edit_of_the_criticality_leaves_the_value_as_received() {
 fn an_edit_takes_star_in_a_list_alone() {
     let mut view = written_view();
     let error = inspect::set(&TOY, &mut view, "/toy/Holder/*", tree!(1)).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     inspect::set(&TOY, &mut view, "/toy/Holder/causes/*/misc", Value::Null).unwrap();
     assert_eq!(
         view["message"]["protocolIEs"][1]["value"]["causes"],
@@ -1595,7 +1595,7 @@ fn a_transfer_written_as_its_value_is_read_as_that_value() {
         Ok(vec![])
     );
     let error = select(&view, "/toy/Holder/transfer/misspelled").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     assert_eq!(
         select(&view, "/toy/Holder/inner/cause/nas"),
         Ok(vec![&deregister])
@@ -1624,7 +1624,7 @@ fn an_ie_that_did_not_decode_is_its_octets() {
     let error = select(&view, "/toy/Cause/nas").unwrap_err();
     assert_eq!(error.kind(), ErrorKind::UndecodableIe);
     let error = inspect::set(&TOY, &mut view, "/toy/Cause/nas", tree!("deregister")).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NothingSelected);
+    assert_eq!(error.kind(), ErrorKind::Path);
     inspect::set(&TOY, &mut view, "/toy/Cause/_ie_name", tree!("Cause")).unwrap();
     assert_eq!(
         view["message"]["protocolIEs"][0]["_ie_name"],
@@ -1638,16 +1638,16 @@ fn an_ie_that_did_not_decode_is_its_octets() {
 fn a_member_that_is_not_there_is_read_by_its_type() {
     let mut view = written_view();
     let error = select(&view, "/toy/Holder/tac/misspelled").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     let error = inspect::remove(&TOY, &mut view, "/toy/Holder/tac").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NothingSelected);
+    assert_eq!(error.kind(), ErrorKind::Path);
     // An IE that the message does not have, likewise
     view["message"]["protocolIEs"]
         .as_array_mut()
         .unwrap()
         .remove(1);
     let error = select(&view, "/toy/Holder/misspelled").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     assert_eq!(
         select(&view, "/toy/Cause/radioNetwork"),
         Ok(vec![&tree!("unspecified")])
@@ -1672,7 +1672,7 @@ fn what_an_edit_cannot_do_is_refused() {
     let mut view = written_view();
     let error = |result: Result<(), Error>| {
         let error = result.unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::Edit, "{error}");
+        assert_eq!(error.kind(), ErrorKind::Value, "{error}");
         error.to_string()
     };
     assert!(
@@ -1744,7 +1744,7 @@ fn what_a_value_without_members_selects() {
     assert_eq!(select(&view, "/toy/Cause/radioNetwork/*"), Ok(vec![]));
     assert_eq!(select(&view, "/toy/Holder/flags/value"), Ok(vec![]));
     let error = select(&view, "/toy/Holder/flags/misspelled").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     assert_eq!(
         select(&view, "/toy/Holder/transfer/octets"),
         Ok(vec![&tree!("0001")])
@@ -1755,7 +1755,7 @@ fn what_a_value_without_members_selects() {
         "\"x\" is not a member of this value, which has none, at /toy/Holder/blob/x"
     );
     let error = select(&view, "/toy/Container/LteBlob").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NotOpened);
+    assert_eq!(error.kind(), ErrorKind::Path);
 }
 
 /// The paths of a view list the octets of an IE or of a transfer that has no value beside
@@ -1911,7 +1911,7 @@ fn a_written_tree_is_read_as_deep_as_256() {
         let tree = tree!([{"Node": (node)}]);
         inspect::listed_ies(&TOY, "SetupRequest", &tree)
     };
-    let limit = |result: Result<Value, Error>| result.unwrap_err().kind() == ErrorKind::Limit;
+    let limit = |result: Result<Value, Error>| result.unwrap_err().kind() == ErrorKind::Value;
     // The IE's value is 1 deep, each next one deeper: the TAC of level n is n + 1 deep
     let next = |node: Value| tree!({"next": (node)});
     assert!(listed(chain(255, next)).is_ok());
@@ -2009,7 +2009,7 @@ mod another_protocol {
         ie_contents: |_| None,
         type_form: |_| None,
         transfer_fields: &[],
-        transfer_typed: |_| Err(Error::new(ErrorKind::NoSuchMember, "no transfer")),
+        transfer_typed: |_| Err(Error::new(ErrorKind::Path, "no transfer")),
         carried_typed: |name| inspect::same_name(name, "Wrapper").then(ies_typed),
         any_message: ies_typed,
     };
@@ -2094,7 +2094,7 @@ mod another_protocol {
         let speed = "/toy/Container/Wrapper/Speed";
         assert_eq!(
             inspect::select(&TOY, &view, speed).unwrap_err().kind(),
-            ErrorKind::NotOpened
+            ErrorKind::Path
         );
         inspect::open(&TOY, &mut view, speed).unwrap();
         let value = format!("{speed}/value");

@@ -39,7 +39,7 @@ mod views;
 use alloc::vec::Vec;
 use oxirush_utils::tree::Value;
 
-use crate::Error;
+use crate::{Error, ErrorKind};
 
 pub use crate::json::Form;
 pub use paths::{
@@ -252,11 +252,14 @@ pub(crate) fn foreign(name: &str, protocol: &str) -> Result<&'static Protocol, E
     if let Some(found) = registered(protocol) {
         return Ok(found);
     }
-    Err(Error::value(alloc::format!(
-        "{name} is a type of {protocol}: call oxirush_{}::inspect::register() once, and its \
+    Err(Error::new(
+        ErrorKind::Value,
+        alloc::format!(
+            "{name} is a type of {protocol}: call oxirush_{}::inspect::register() once, and its \
          tables read and write it",
-        protocol.to_ascii_lowercase()
-    )))
+            protocol.to_ascii_lowercase()
+        ),
+    ))
 }
 
 impl Protocol {

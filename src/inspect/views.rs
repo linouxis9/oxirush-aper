@@ -28,7 +28,7 @@ use oxirush_utils::tree::{Map, Value};
 use super::paths::{EDITED, extended, member_shape, of_a_transfer, written_ie};
 use super::{Protocol, Shape, Typed, foreign, same_name};
 use crate::json::{self, hex};
-use crate::{Direction, Error};
+use crate::{Direction, Error, ErrorKind};
 
 /// How deep in a view an IE or a transfer is still decoded.
 const NESTING: usize = 64;
@@ -44,9 +44,12 @@ fn unhex(value: &Value) -> Result<Vec<u8>, Error> {
     octets.ok_or_else(|| {
         // The start of what is written says which value it is.
         let written: String = value.to_string().chars().take(40).collect();
-        Error::value(format!(
-            "{written} is not octets: octets are written in hexadecimal, two digits for each"
-        ))
+        Error::new(
+            ErrorKind::Value,
+            format!(
+                "{written} is not octets: octets are written in hexadecimal, two digits for each"
+            ),
+        )
     })
 }
 
@@ -76,14 +79,16 @@ fn contained(raw: Value, typed: Result<Typed, Error>) -> Value {
 
 /// Why what is deeper than the inspection goes keeps its octets.
 fn too_deep<T>() -> Result<T, Error> {
-    Err(Error::limit(format!(
-        "inspection nesting exceeds {NESTING}"
-    )))
+    Err(Error::new(
+        ErrorKind::Value,
+        format!("inspection nesting exceeds {NESTING}"),
+    ))
 }
 
 /// A view whose direction is none of the three.
 fn no_direction() -> Error {
-    Error::form(
+    Error::new(
+        ErrorKind::Value,
         "the direction of a view is InitiatingMessage, SuccessfulOutcome or UnsuccessfulOutcome",
     )
 }
@@ -101,7 +106,7 @@ impl Protocol {
             };
         }
         let typed = (self.carried_typed)(name);
-        let carries_none = || Error::no_such_member(format!("octets carry no {name}"));
+        let carries_none = || Error::new(ErrorKind::Path, format!("octets carry no {name}"));
         let mut transfer = contained(raw, typed.ok_or_else(carries_none));
         self.expand(&mut transfer, 0, self.carried_shape(name));
         transfer
@@ -127,11 +132,14 @@ impl Protocol {
             (Some((name, octets)), None) if names.iter().any(|known| same_name(known, name)) => {
                 Ok(octets.clone())
             }
-            _ => Err(Error::value(format!(
-                "IE {id} is written as its octets, or as {{NAME: VALUE}} for a type that they \
+            _ => Err(Error::new(
+                ErrorKind::Value,
+                format!(
+                    "IE {id} is written as its octets, or as {{NAME: VALUE}} for a type that they \
                  carry: {}",
-                names.join(", ")
-            ))),
+                    names.join(", ")
+                ),
+            )),
         }
     }
 
@@ -249,10 +257,10 @@ impl Protocol {
     ) -> Result<(), Error> {
         // What is decoded at the limit of the inspection has values of its own under it.
         if depth > 4 * NESTING {
-            return Err(Error::limit(format!(
-                "inspection nesting exceeds {}",
-                4 * NESTING
-            )));
+            return Err(Error::new(
+                ErrorKind::Value,
+                format!("inspection nesting exceeds {}", 4 * NESTING),
+            ));
         }
         // A type of another protocol, by its tables.
         if let Shape::Foreign(name, protocol) = shape {
@@ -295,9 +303,12 @@ impl Protocol {
                         } else if let Some(octets) = alone("octets") {
                             octets.clone()
                         } else {
-                            return Err(Error::form(format!(
-                                "{key} is written with its decoded value alone, or as its octets"
-                            )));
+                            return Err(Error::new(
+                                ErrorKind::Value,
+                                format!(
+                                    "{key} is written with its decoded value alone, or as its octets"
+                                ),
+                            ));
                         };
                         *child = wire;
                     }
@@ -340,9 +351,10 @@ impl Protocol {
         let known = ["_raw_transfer", "decoded", "_decode_error", EDITED, LOSSY];
         let mut members = child.as_object().into_iter().flatten();
         if let Some((other, _)) = members.find(|(name, _)| !known.contains(&name.as_str())) {
-            return Err(Error::no_such_member(format!(
-                "{key} has no member {other:?}: a transfer has its decoded value"
-            )));
+            return Err(Error::new(
+                ErrorKind::Path,
+                format!("{key} has no member {other:?}: a transfer has its decoded value"),
+            ));
         }
         let Some(edited) = child.get("decoded") else {
             *child = raw;
@@ -353,7 +365,10 @@ impl Protocol {
         // transfer field the type of the transfer.
         let transfer = match key {
             "value" | "extensionValue" => id.and_then(self.ie_contents).ok_or_else(|| {
-                Error::form("an IE that contains no type has no decoded value beside its octets")
+                Error::new(
+                    ErrorKind::Value,
+                    "an IE that contains no type has no decoded value beside its octets",
+                )
             })?,
             key => match self.carried_or_foreign(key) {
                 Some(carried) => carried,
@@ -365,9 +380,10 @@ impl Protocol {
             *child = raw;
         } else {
             if (transfer.encode)(&original)? != bytes {
-                return Err(Error::edit(format!(
-                    "{key} does not encode back to the octets received"
-                )));
+                return Err(Error::new(
+                    ErrorKind::Value,
+                    format!("{key} does not encode back to the octets received"),
+                ));
             }
             *child = Value::String(hex(&(transfer.encode)(edited)?));
         }
@@ -410,9 +426,10 @@ impl Protocol {
             // The IE was shown as its octets.
             (_, Some(edited)) if undecoded => {
                 if !edited.is_string() {
-                    return Err(Error::edit(format!(
-                        "IE {id} did not decode: its value is its octets in hexadecimal"
-                    )));
+                    return Err(Error::new(
+                        ErrorKind::Value,
+                        format!("IE {id} did not decode: its value is its octets in hexadecimal"),
+                    ));
                 }
                 edited.clone()
             }
@@ -423,7 +440,8 @@ impl Protocol {
                     Some(original) => (original.as_u64())
                         .and_then(|v| u16::try_from(v).ok())
                         .ok_or_else(|| {
-                            Error::form(
+                            Error::new(
+                                ErrorKind::Value,
                                 "_original_id is the identifier that the octets were decoded \
                                  as, a number",
                             )
@@ -436,10 +454,13 @@ impl Protocol {
                 if &original == edited && id == original_id {
                     raw
                 } else if (received.encode)(&original)? != bytes {
-                    return Err(Error::edit(format!(
-                        "IE {original_id} does not encode back to the octets received; \
+                    return Err(Error::new(
+                        ErrorKind::Value,
+                        format!(
+                            "IE {original_id} does not encode back to the octets received; \
                          replace its octets instead"
-                    )));
+                        ),
+                    ));
                 } else {
                     Value::String(hex(&(typed(id)?.encode)(edited)?))
                 }
@@ -447,9 +468,10 @@ impl Protocol {
             // An IE that was not received.
             (None, Some(new)) => Value::String(hex(&(typed(id)?.encode)(new)?)),
             (None, None) => {
-                return Err(Error::form(format!(
-                    "IE {id} has no {field} and no _raw_value"
-                )));
+                return Err(Error::new(
+                    ErrorKind::Value,
+                    format!("IE {id} has no {field} and no _raw_value"),
+                ));
             }
         })
     }
@@ -594,7 +616,8 @@ fn message_octets(
         return Ok(original);
     }
     if (typed.encode)(&decoded)? != original {
-        return Err(Error::edit(
+        return Err(Error::new(
+            ErrorKind::Value,
             "the message does not encode back to the octets received",
         ));
     }
@@ -613,7 +636,7 @@ fn message_octets(
 pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Error> {
     const FORM: &str = "a tree is {\"message\": NAME, \"ies\": [{NAME: VALUE}, …]}, with \
                         \"octets\" in the place of the IEs for a message as it is sent";
-    let form = || Error::form(FORM);
+    let form = || Error::new(ErrorKind::Value, FORM);
     let written = tree.as_object().ok_or_else(form)?;
     const MEMBERS: [&str; 6] = [
         "message",
@@ -627,17 +650,21 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
         .keys()
         .find(|key| !MEMBERS.iter().any(|known| same_name(known, key)))
     {
-        return Err(Error::form(format!(
-            "{other:?} is no member of a tree: {FORM}"
-        )));
+        return Err(Error::new(
+            ErrorKind::Value,
+            format!("{other:?} is no member of a tree: {FORM}"),
+        ));
     }
     // A member is read however its name is written, and is written once.
     for known in MEMBERS {
         let mut spellings = written.keys().filter(|key| same_name(known, key));
         if let (Some(first), Some(second)) = (spellings.next(), spellings.next()) {
-            return Err(Error::form(format!(
-                "the member {known:?} of a tree is written twice, as {first:?} and as {second:?}"
-            )));
+            return Err(Error::new(
+                ErrorKind::Value,
+                format!(
+                    "the member {known:?} of a tree is written twice, as {first:?} and as {second:?}"
+                ),
+            ));
         }
     }
     let member = |name: &str| {
@@ -653,16 +680,19 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
             let message = messages.find(|(set, ..)| same_name(set.name, name));
             let (set, ..) = message.ok_or_else(|| {
                 let nearest = protocol.nearest_message(name);
-                Error::unknown_message(format!(
-                    "{name:?} is not a message of {}{nearest}",
-                    protocol.name
-                ))
+                Error::new(
+                    ErrorKind::UnknownMessage,
+                    format!("{name:?} is not a message of {}{nearest}", protocol.name),
+                )
             })?;
             if member("procedure_code").or(member("direction")).is_some() {
-                return Err(Error::form(format!(
-                    "{name} is named by its message alone: its procedure_code and its \
+                return Err(Error::new(
+                    ErrorKind::Value,
+                    format!(
+                        "{name} is named by its message alone: its procedure_code and its \
                      direction are those of its name"
-                )));
+                    ),
+                ));
             }
             (set.direction, set.procedure_code, Some(set.name))
         }
@@ -674,14 +704,17 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
             let code = code.and_then(|code| u8::try_from(code).ok());
             let direction = member("direction").and_then(Value::as_str);
             let (Some(code), Some(direction)) = (code, direction) else {
-                return Err(Error::form(format!("{FORM}; {UNKNOWN}")));
+                return Err(Error::new(ErrorKind::Value, format!("{FORM}; {UNKNOWN}")));
             };
             let direction = direction_of(direction)?;
             if let Some(name) = protocol.message_name_of(direction, code) {
-                return Err(Error::form(format!(
-                    "the {direction} of procedure {code} is {name}: it is written as \
+                return Err(Error::new(
+                    ErrorKind::Value,
+                    format!(
+                        "the {direction} of procedure {code} is {name}: it is written as \
                      {{\"message\": \"{name}\"}}"
-                )));
+                    ),
+                ));
             }
             (direction, code, None)
         }
@@ -691,10 +724,13 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
         (Some(criticality), _) => criticality.clone(),
         (None, Some(assigned)) => assigned.into(),
         (None, None) => {
-            return Err(Error::form(format!(
-                "the {direction} of procedure {code} says its \"criticality\": the tables \
+            return Err(Error::new(
+                ErrorKind::Value,
+                format!(
+                    "the {direction} of procedure {code} says its \"criticality\": the tables \
                  have none for it"
-            )));
+                ),
+            ));
         }
     };
     let message = match (member("ies"), member("octets")) {
@@ -737,18 +773,28 @@ pub fn view_parts(protocol: &'static Protocol, view: &Value) -> Result<Parts, Er
     ];
     const FORM: &str =
         "a view has its procedure_code, its direction, its criticality and its message";
-    let members = view.as_object().ok_or_else(|| Error::form(FORM))?;
+    let members = view
+        .as_object()
+        .ok_or_else(|| Error::new(ErrorKind::Value, FORM))?;
     if let Some(other) = members.keys().find(|key| !MEMBERS.contains(&key.as_str())) {
-        return Err(Error::form(format!(
-            "{other:?} is no member of a view: {FORM}"
-        )));
+        return Err(Error::new(
+            ErrorKind::Value,
+            format!("{other:?} is no member of a view: {FORM}"),
+        ));
     }
     let code = view["procedure_code"]
         .as_u64()
         .and_then(|c| u8::try_from(c).ok())
-        .ok_or_else(|| Error::form("the procedure_code of a view is a number from 0 to 255"))?;
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Value,
+                "the procedure_code of a view is a number from 0 to 255",
+            )
+        })?;
     let direction = direction_of(view["direction"].as_str().ok_or_else(no_direction)?)?;
-    let message = view.get("message").ok_or_else(|| Error::form(FORM))?;
+    let message = view
+        .get("message")
+        .ok_or_else(|| Error::new(ErrorKind::Value, FORM))?;
     let received = view.get("_raw_message");
     let message = message_octets(protocol, direction, code, message.clone(), received)?;
     Ok(Parts {
@@ -771,7 +817,12 @@ pub fn view_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, E
     let code = view["procedure_code"]
         .as_u64()
         .and_then(|c| u8::try_from(c).ok())
-        .ok_or_else(|| Error::form("the procedure_code of a view is a number from 0 to 255"))?;
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Value,
+                "the procedure_code of a view is a number from 0 to 255",
+            )
+        })?;
     let direction = direction_of(view["direction"].as_str().ok_or_else(no_direction)?)?;
     let shape = protocol.message_shape(direction, code);
     if let Some(message) = view.get_mut("message") {
@@ -808,10 +859,13 @@ pub fn of_the_pdu(
             None => format!("the {direction} of procedure {code}"),
         }
     };
-    Err(Error::form(format!(
-        "this view is of {}, and the PDU is {}: with_view takes a view of the PDU itself, and \
+    Err(Error::new(
+        ErrorKind::Value,
+        format!(
+            "this view is of {}, and the PDU is {}: with_view takes a view of the PDU itself, and \
          from_view any view",
-        message(of, procedure),
-        message(direction, code.into()),
-    )))
+            message(of, procedure),
+            message(direction, code.into()),
+        ),
+    ))
 }

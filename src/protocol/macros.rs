@@ -576,7 +576,7 @@ macro_rules! __ies {
                     // elsewhere.
                     let extensions = EXTENSION_TYPES.iter().filter(|(known, ..)| *known == id);
                     let extended: Vec<_> = extensions.map(|(_, extended, _)| *extended).collect();
-                    Err($crate::Error::unknown_ie(match extended.is_empty() {
+                    Err($crate::Error::new($crate::ErrorKind::UnknownIe, match extended.is_empty() {
                         true => format!("{} IE {id} is unknown", $protocol_name),
                         false => format!(
                             "{} IE {id} has a type where it extends {}, and none here",

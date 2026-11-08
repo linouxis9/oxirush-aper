@@ -65,7 +65,7 @@ use crate::{BitString, Bits, Error, ErrorKind, ObjectIdentifier, Octets};
 pub fn from_value<T: Tree>(value: &Value) -> Result<T, Error> {
     utils::from_value(value).map_err(|error| {
         let kind = match error.kind() {
-            Fault::NoSuchMember => ErrorKind::NoSuchMember,
+            Fault::NoSuchMember => ErrorKind::Path,
             _ => ErrorKind::Value,
         };
         Error::new(kind, error.to_string())

@@ -49,6 +49,13 @@ All notable changes to `oxirush-aper` are recorded here.
   readers and the writers that did the same octet by octet go, and so does the
   walk that skipped to an IE of the usual layout. `field`, the walk of the
   readers and the macros, stays.
+- An error has the kinds of what a program does with it: the eight of the paths and
+  of the JSON forms are two, `Path` (a path that is not well formed, a name that the
+  value at its place cannot have, an edit that selects nothing, a path past the
+  limits) and `Value` (JSON that is no value of its type or no tree, a tree nested
+  past the limits, an edit that is refused). Its public surface is `kind()`, `ie()`,
+  `reason()`, `fields()` and `Display`: the functions that make one are hidden, for
+  the bindings alone.
 - An IE has one name in the macros and in the module `ie` of a protocol: the one
   after its identifier, as `AMFOverloadResponse`. The name of its type, which the
   one IE of a type had too, as `OverloadResponse`, is no longer one.
@@ -78,6 +85,9 @@ All notable changes to `oxirush-aper` are recorded here.
 - The macros `__with_ie_mut!` and `__build_ie!` (`with_ngap_ie_mut!` and
   `build_ngap_ie!` of the protocol crates), the module `messages` of a
   registry, `protocol::__Field`, and `Protocol::__procedure_criticality`.
+- `ErrorKind::NoSuchMember`, `NothingSelected`, `NotOpened`, `Form`, `Edit` and
+  `Limit`, which are `Path` or `Value`, and the functions of `Error` named after a
+  kind, as `Error::argument`, which `Error::new(kind, what)` is (hidden).
 - `procedure_name()` of a PDU: `kind()` names its message, and `Display` shows it.
 - `encode_into` of a PDU, which `oxirush_aper::encode_into(&pdu, &mut octets)`
   is; `protocol::message_octets_as_its_type`, which `message_octets` is; and the
@@ -117,6 +127,8 @@ All notable changes to `oxirush-aper` are recorded here.
 | `reader.unsigned_extensible(0, 255)` (and of each form) | `reader.unsigned(0, 255, true)` |
 | `reader.enumerated(root, additions, ext)`, `reader.choice(...)` | `reader.index(root, additions, ext)` |
 | `pdu.procedure_name()` | `pdu.kind()`, or `pdu.to_string()` |
+| `ErrorKind::NoSuchMember`, `NothingSelected`, `NotOpened` | `ErrorKind::Path` |
+| `ErrorKind::Form`, `Edit`, `Limit` (of a tree) | `ErrorKind::Value` (`Path` for the limits of a path) |
 | `ie::OverloadResponse` (the name of the type of an IE) | `ie::AMFOverloadResponse` (its name after `id-`) |
 | `GUAMI::new(plmn, region, set, pointer, None)` (of the bindings) | `GUAMI { plmn_identity, amf_region_id, amf_set_id, amf_pointer, ie_extensions: None }` |
 

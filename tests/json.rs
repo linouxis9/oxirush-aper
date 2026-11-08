@@ -535,7 +535,7 @@ fn a_bit_string_has_its_length_unless_its_type_gives_it() {
 #[test]
 fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
     let (kind, why) = refused(&with("other", tree!(1)));
-    assert_eq!(kind, ErrorKind::NoSuchMember);
+    assert_eq!(kind, ErrorKind::Path);
     assert_eq!(
         why,
         "this is not a value of Sample: \"other\" is not a member that its type has: it has \
@@ -567,7 +567,7 @@ fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
 #[test]
 fn a_choice_is_one_alternative_that_its_type_has() {
     let (kind, why) = refused(&with("either", tree!({"other": 1})));
-    assert_eq!(kind, ErrorKind::NoSuchMember);
+    assert_eq!(kind, ErrorKind::Path);
     assert_eq!(
         why,
         "this is not a value of Sample: \"other\" is not an alternative that its type has: it \

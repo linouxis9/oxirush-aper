@@ -152,7 +152,7 @@ macro_rules! __transfers {
         pub(crate) fn transfer(field: &str) -> Result<$crate::inspect::Typed, $crate::Error> {
             match field {
                 $($($field => Ok($crate::__typed!($transfer)),)?)*
-                _ => Err($crate::Error::form(format!(
+                _ => Err($crate::Error::new($crate::ErrorKind::Value, format!(
                     "{PROTOCOL} has several types for {field}, or none: it is read and \
                      written as its octets"
                 ))),
@@ -578,7 +578,7 @@ mod tests {
         // A name that neither has is refused with the members of both, with a view and
         // without one.
         let refused = select(&view, &path("misspelled")).unwrap_err();
-        assert_eq!(refused.kind(), crate::ErrorKind::NoSuchMember);
+        assert_eq!(refused.kind(), crate::ErrorKind::Path);
         let text = refused.to_string();
         assert!(text.contains("is not a member of Cause, which has radioNetwork"));
         assert!(text.contains("; an IE itself has id, criticality, value, octets, at /"));
@@ -596,7 +596,7 @@ mod tests {
         let before = view.clone();
         assert_eq!(set(&mut view, &path("misspelled"), tree!(1)), Err(refused));
         let kept = remove(&mut view, &path("nas")).unwrap_err();
-        assert_eq!(kept.kind(), crate::ErrorKind::Edit);
+        assert_eq!(kept.kind(), crate::ErrorKind::Value);
         assert!(
             kept.to_string().contains("a CHOICE has one alternative"),
             "{kept}"
@@ -784,7 +784,7 @@ mod tests {
         let listed = listed_ies("no message", &shown).unwrap();
         assert_eq!(listed, tree!([entry(false)]));
         let refused = listed_ies("no message", &tree!([{"Cause": &value}])).unwrap_err();
-        assert_eq!(refused.kind(), crate::ErrorKind::Form);
+        assert_eq!(refused.kind(), crate::ErrorKind::Value);
         let text = refused.to_string();
         assert!(text.contains("says its \"criticality\""), "{refused}");
         // An entry that is written as a view has it stays as it is.
@@ -806,7 +806,7 @@ mod tests {
         }
         let deep = tree!([{"Cause": deep, "criticality": "ignore"}]);
         let refused = listed_ies("no message", &deep).unwrap_err();
-        assert_eq!(refused.kind(), crate::ErrorKind::Limit);
+        assert_eq!(refused.kind(), crate::ErrorKind::Value);
         assert!(refused.to_string().contains("nests deeper"), "{refused}");
     }
 

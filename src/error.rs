@@ -40,26 +40,13 @@ pub enum ErrorKind {
     /// A name or an identifier of an IE that the protocol does not have, or has no
     /// type for where it is.
     UnknownIe,
-    /// A path that is not well formed.
+    /// A path that is not well formed, a name that the value at its place cannot have,
+    /// an edit whose path selects nothing, or a path past the limits of the inspection.
     Path,
-    /// A name that the type at that place cannot have: a member of a value, an IE of
-    /// a message, or a name where a list goes by position.
-    NoSuchMember,
-    /// An edit whose path selects nothing.
-    NothingSelected,
-    /// A path through the type that octets carry, before they were opened.
-    NotOpened,
-    /// A JSON value that is not a value of its ASN.1 type: of another form, with a
-    /// name that an ENUMERATED does not have, or outside a constraint.
+    /// JSON that is not a value of its ASN.1 type: of another form, with a name that an
+    /// ENUMERATED does not have, outside a constraint, or nested past the limits of the
+    /// inspection; JSON that is no tree; and an edit that is refused.
     Value,
-    /// JSON that is not written as a tree or as a view.
-    Form,
-    /// An edit that is refused: a member that its type always has is not taken out,
-    /// and the octets of a value that was edited since are not read.
-    Edit,
-    /// Nesting or a number of occurrences over the limits of the inspection, or
-    /// what it does not represent.
-    Limit,
 }
 
 /// The IE of a message that an error is about: [`Error::ie`] of an error of the kind
@@ -84,6 +71,7 @@ pub struct ErrorIe {
 
 impl ErrorIe {
     /// The IE of an identifier and a criticality, at a position when it is there.
+    #[doc(hidden)]
     pub fn new(id: u16, criticality: Criticality, position: Option<usize>) -> Self {
         Self {
             id,
@@ -142,6 +130,7 @@ struct Inner {
 
 impl Error {
     /// An error of a kind, which says `what` is wrong.
+    #[doc(hidden)]
     pub fn new(kind: ErrorKind, what: impl Into<String>) -> Self {
         Self(Box::new(Inner {
             kind,
@@ -160,6 +149,7 @@ impl Error {
     /// The same error, with the reason of what is wrong, which the message has after
     /// it.
     #[must_use]
+    #[doc(hidden)]
     pub fn because(mut self, why: impl Into<String>) -> Self {
         self.0.why = Some(why.into());
         self
@@ -168,6 +158,7 @@ impl Error {
     /// The same error, told of `what`: what it said is wrong becomes the reason, where
     /// it gave none apart.
     #[must_use]
+    #[doc(hidden)]
     pub fn of(mut self, what: impl Into<String>) -> Self {
         let was = core::mem::replace(&mut self.0.what, what.into());
         if self.0.why.is_none() {
@@ -178,29 +169,22 @@ impl Error {
 
     /// The same error, of another kind.
     #[must_use]
+    #[doc(hidden)]
     pub fn with_kind(mut self, kind: ErrorKind) -> Self {
         self.0.kind = kind;
         self
     }
 
     /// The IE of a message that the error is about, when it is about one: an error of
-    /// the kind `MissingIe` or `UndecodableIe` that the bindings of a protocol made.
-    ///
-    /// ```
-    /// use oxirush_aper::{Criticality, Error, ErrorIe};
-    ///
-    /// // The IE 21 of an NG SETUP REQUEST, received with the criticality `ignore`
-    /// let ie = ErrorIe::new(21, Criticality::Ignore, Some(3));
-    /// let error = Error::undecodable("the DefaultPagingDRX does not decode").about_ie(ie);
-    /// assert_eq!(error.ie(), Some(ie));
-    /// assert_eq!(Error::argument("an MCC has three digits").ie(), None);
-    /// ```
+    /// the kind `MissingIe` or `UndecodableIe` that the bindings of a protocol made, as
+    /// the macro that extracts IEs makes one for an IE that the message does not have.
     pub fn ie(&self) -> Option<ErrorIe> {
         self.0.ie
     }
 
     /// The same error, about an IE of a message.
     #[must_use]
+    #[doc(hidden)]
     pub fn about_ie(mut self, ie: ErrorIe) -> Self {
         self.0.ie = Some(ie);
         self
@@ -208,6 +192,7 @@ impl Error {
 
     /// The same error, with the message that `reword` makes of the one that it has.
     #[must_use]
+    #[doc(hidden)]
     pub fn reworded(self, reword: impl FnOnce(&str) -> String) -> Self {
         let mut reworded = Self::new(self.0.kind, reword(&self.to_string()));
         reworded.0.ie = self.0.ie;
@@ -232,6 +217,7 @@ impl Error {
     /// SEQUENCE names the member that did not decode.
     #[cold]
     #[must_use]
+    #[doc(hidden)]
     pub fn in_field(mut self, name: &'static str) -> Self {
         self.0.fields.push(name);
         self
@@ -241,6 +227,7 @@ impl Error {
     /// why.
     #[cold]
     #[must_use]
+    #[doc(hidden)]
     pub fn decoding(mut self, name: &str) -> Self {
         let what = format!("these octets do not decode as {name}");
         let was = core::mem::replace(&mut self.0.what, what);
@@ -254,6 +241,7 @@ impl Error {
     /// why.
     #[cold]
     #[must_use]
+    #[doc(hidden)]
     pub fn encoding(mut self, name: &str) -> Self {
         let what = format!("a value of {name} does not encode");
         let was = core::mem::replace(&mut self.0.what, what);
@@ -352,6 +340,7 @@ impl Error {
     /// A PDU of another message than the one that ASN.1 names `expected`: `held` is the
     /// name of the message of its `direction` and of the procedure `code`, when the
     /// specification has one.
+    #[doc(hidden)]
     pub fn wrong_message(
         expected: &str,
         held: Option<&str>,
@@ -373,6 +362,7 @@ impl Error {
 
     /// A PDU of the message that ASN.1 names `name`, which has no container of
     /// protocol IEs.
+    #[doc(hidden)]
     pub fn no_protocol_ies(name: &str) -> Self {
         let what =
             format!("the message of this PDU is {name}, which has no container of protocol IEs");
@@ -381,6 +371,7 @@ impl Error {
 
     /// A PDU whose direction and procedure code the specification has no message for,
     /// and so no object set.
+    #[doc(hidden)]
     pub fn no_message_of(direction: crate::Direction, code: u8) -> Self {
         let what = format!(
             "the specification has no {direction} of procedure {code}, and so no object set \
@@ -393,6 +384,7 @@ impl Error {
     /// protocol IEs: the message that ASN.1 names `name`, when the specification has
     /// one for the PDU.
     #[must_use]
+    #[doc(hidden)]
     pub fn of_message(self, name: Option<&str>) -> Self {
         const UNNAMED: &str =
             "the message of this PDU does not decode as a container of protocol IEs";
@@ -404,6 +396,7 @@ impl Error {
 
     /// This error is why `count` protocol IEs do not encode as a message.
     #[must_use]
+    #[doc(hidden)]
     pub fn of_protocol_ies(self, count: usize) -> Self {
         self.of(format!(
             "these {count} protocol IEs do not encode as a message"
@@ -423,6 +416,7 @@ impl Error {
     ///     "this NGSetupRequest has no SupportedTAList, which the field `areas` requires"
     /// );
     /// ```
+    #[doc(hidden)]
     pub fn missing_ie(message: &str, ie: &str, field: &str) -> Self {
         let what = format!("this {message} has no {ie}, which the field `{field}` requires");
         Self::new(ErrorKind::MissingIe, what)
@@ -445,6 +439,7 @@ impl Error {
     /// );
     /// ```
     #[must_use]
+    #[doc(hidden)]
     pub fn undecodable_ie(self, message: &str, ie: &str) -> Self {
         // What the codec said of the octets, without the type that it took them for.
         self.of(format!("the {ie} of this {message} does not decode"))
@@ -455,6 +450,7 @@ impl Error {
     /// not encode: it is outside a constraint of its type, and so no value of that
     /// type. This error is what the codec said of it.
     #[must_use]
+    #[doc(hidden)]
     pub fn outside_its_type(self, name: &str) -> Self {
         self.of(format!("this is not a value of {name}"))
             .with_kind(ErrorKind::Value)
@@ -475,49 +471,6 @@ fn size_outside(size: usize, lower: usize, upper: Option<usize>) -> String {
         Some(upper) => format!("a size of {size} is outside its constraint ({lower}..{upper})"),
         None => format!("a size of {size} is outside its constraint ({lower}..MAX)"),
     }
-}
-
-/// An error of each kind, with what is wrong.
-macro_rules! kinds {
-    ($($(#[$doc:meta])* $name:ident $kind:ident;)*) => {
-        impl Error {
-            $(
-                $(#[$doc])*
-                pub fn $name(what: impl Into<String>) -> Self {
-                    Self::new(ErrorKind::$kind, what)
-                }
-            )*
-        }
-    };
-}
-
-kinds! {
-    /// An argument that a function does not take, and what it takes.
-    argument Argument;
-    /// A name of a message, or a direction and a procedure code, that the protocol
-    /// does not have.
-    unknown_message UnknownMessage;
-    /// A name or an identifier of an IE that the protocol does not have, or has no
-    /// type for where it is.
-    unknown_ie UnknownIe;
-    /// A path that is not well formed.
-    path Path;
-    /// A name that the type at that place cannot have.
-    no_such_member NoSuchMember;
-    /// An edit whose path selects nothing.
-    nothing_selected NothingSelected;
-    /// A path through the type that octets carry, before they are opened.
-    not_opened NotOpened;
-    /// A path into an IE or a transfer that is there and did not decode.
-    undecodable UndecodableIe;
-    /// A JSON value that is not a value of its ASN.1 type.
-    value Value;
-    /// JSON that is not written as a tree or as a view.
-    form Form;
-    /// An edit that is refused.
-    edit Edit;
-    /// Nesting or a number of occurrences over the limits of the inspection.
-    limit Limit;
 }
 
 impl fmt::Display for Error {

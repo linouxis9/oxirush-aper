@@ -47,7 +47,7 @@ const WRITTEN: usize = 256;
 // ── The errors ──────────────────────────────────────────────────────────────
 
 /// The kinds of the errors of the crate, by the code that the engine carries for them.
-const KINDS: [ErrorKind; 16] = [
+const KINDS: [ErrorKind; 10] = [
     ErrorKind::Decode,
     ErrorKind::Encode,
     ErrorKind::WrongMessage,
@@ -57,13 +57,7 @@ const KINDS: [ErrorKind; 16] = [
     ErrorKind::UnknownMessage,
     ErrorKind::UnknownIe,
     ErrorKind::Path,
-    ErrorKind::NoSuchMember,
-    ErrorKind::NothingSelected,
-    ErrorKind::NotOpened,
     ErrorKind::Value,
-    ErrorKind::Form,
-    ErrorKind::Edit,
-    ErrorKind::Limit,
 ];
 
 /// The code that the engine carries for an error of this kind.
@@ -75,12 +69,7 @@ fn code(kind: ErrorKind) -> u16 {
 /// Why a segment selects nothing at a place, which another place may make up for: the
 /// path is refused when no place has what it selects.
 fn fault(kind: ErrorKind, reason: impl Into<String>) -> tree::Error {
-    let engine = match kind {
-        ErrorKind::Path => tree::ErrorKind::Path,
-        ErrorKind::Limit => tree::ErrorKind::Limit,
-        _ => tree::ErrorKind::NoSuchMember,
-    };
-    tree::Error::new(engine, "", reason).with_code(code(kind))
+    tree::Error::new(tree::ErrorKind::NoSuchMember, "", reason).with_code(code(kind))
 }
 
 /// Why a path is refused at a place, whatever the others have: the value there cannot
@@ -106,12 +95,8 @@ fn error(error: tree::Error) -> Error {
         None => None,
     };
     let kind = kind.unwrap_or(match error.kind() {
-        tree::ErrorKind::Path => ErrorKind::Path,
-        tree::ErrorKind::Limit => ErrorKind::Limit,
-        tree::ErrorKind::NothingSelected => ErrorKind::NothingSelected,
-        tree::ErrorKind::Value => ErrorKind::Value,
-        tree::ErrorKind::Refused => ErrorKind::Edit,
-        _ => ErrorKind::NoSuchMember,
+        tree::ErrorKind::Value | tree::ErrorKind::Refused => ErrorKind::Value,
+        _ => ErrorKind::Path,
     });
     Error::new(kind, error.to_string())
 }
@@ -437,7 +422,7 @@ impl Protocol {
         if let (Shape::Message(message), IES) = (shape, part) {
             let has: Vec<_> = members.iter().map(|(name, ..)| *name).collect();
             return fault(
-                ErrorKind::NoSuchMember,
+                ErrorKind::Path,
                 format!(
                     "a message {} has no IEs under /{}: it has {}",
                     message.name,
@@ -460,7 +445,7 @@ impl Protocol {
         };
         let names = names(shape, members);
         fault(
-            ErrorKind::NoSuchMember,
+            ErrorKind::Path,
             match names.is_empty() {
                 true => format!("{part:?} is not a member of {of}, which has none"),
                 false => format!(
@@ -630,7 +615,7 @@ fn or_its_own(reason: tree::Error, shape: Shape, members: &[Member]) -> tree::Er
 /// Why a segment that is no position selects no entry of a list.
 fn no_position(part: &str) -> tree::Error {
     fault(
-        ErrorKind::NoSuchMember,
+        ErrorKind::Path,
         format!(
             "{part:?} is not a position in a list: an entry goes by its number, and \"*\" is \
              each of them"
@@ -641,7 +626,7 @@ fn no_position(part: &str) -> tree::Error {
 /// Why a segment that names an IE selects no entry of a list whose entries are no IEs.
 fn no_ie_there(part: &str) -> tree::Error {
     fault(
-        ErrorKind::NoSuchMember,
+        ErrorKind::Path,
         format!("{part:?} selects an IE, and the entries of this list go by position"),
     )
 }
@@ -844,7 +829,7 @@ impl Family for Views<'_> {
             (Err(reason), Some(edit))
                 if edit != Edit::Open && reason.kind() != tree::ErrorKind::Refused =>
             {
-                let again = refusal(ErrorKind::NoSuchMember, reason.reason());
+                let again = refusal(ErrorKind::Path, reason.reason());
                 Err(match reason.code() {
                     Some(code) => again.with_code(code),
                     None => again,
@@ -997,7 +982,7 @@ impl Views<'_> {
         if part == "*" {
             if edit.is_some_and(|edit| edit != Edit::Open) {
                 return Err(refusal(
-                    ErrorKind::NoSuchMember,
+                    ErrorKind::Path,
                     format!("{part:?} selects among the entries of a list, and this is no list"),
                 ));
             }
@@ -1013,7 +998,7 @@ impl Views<'_> {
         let held = value_member(shape);
         if part.starts_with("@id=") && held.is_none() {
             return Err(fault(
-                ErrorKind::NoSuchMember,
+                ErrorKind::Path,
                 format!("{part:?} selects among the IEs of a list, and this is no list"),
             ));
         }
@@ -1038,7 +1023,10 @@ impl Views<'_> {
                         },
                         (Edit::Open, _) => {}
                         _ => {
-                            return Err(refusal(ErrorKind::Edit, "octets are set, in hexadecimal"));
+                            return Err(refusal(
+                                ErrorKind::Value,
+                                "octets are set, in hexadecimal",
+                            ));
                         }
                     }
                     return Ok(());
@@ -1046,7 +1034,7 @@ impl Views<'_> {
             } else if has_octets(shape) || received(entry).is_some() {
                 if entry.contains_key(EDITED) {
                     return Err(refusal(
-                        ErrorKind::Edit,
+                        ErrorKind::Value,
                         "the value was edited since these octets were received",
                     ));
                 }
@@ -1075,7 +1063,7 @@ impl Views<'_> {
                     Ok(())
                 }
                 None => Err(fault(
-                    ErrorKind::NoSuchMember,
+                    ErrorKind::Path,
                     format!("{part:?} is not a member of this value"),
                 )),
             };
@@ -1219,7 +1207,7 @@ impl Views<'_> {
                             .map(|(id, ..)| protocol.ie_name(*id))
                             .collect();
                         return Err(fault(
-                            ErrorKind::NoSuchMember,
+                            ErrorKind::Path,
                             format!(
                                 "{part:?} is not an IE of {}, which has {}",
                                 message.name,
@@ -1337,7 +1325,7 @@ impl Views<'_> {
                             Ok(())
                         }
                         _ => Err(refusal(
-                            ErrorKind::NotOpened,
+                            ErrorKind::Path,
                             format!("the octets are not shown as a {name}: open decodes them"),
                         )),
                     },
@@ -1347,7 +1335,7 @@ impl Views<'_> {
             Shape::Plain => return Err(protocol.no_member(shape, &[], part)),
             _ => {
                 return Err(fault(
-                    ErrorKind::NoSuchMember,
+                    ErrorKind::Path,
                     format!("{part:?} is not a member of this value, which has none"),
                 ));
             }
@@ -1366,7 +1354,7 @@ fn refuse(
     alternative: bool,
     optional: bool,
 ) -> Result<(), tree::Error> {
-    let refused = |reason: String| Err(refusal(ErrorKind::Edit, reason));
+    let refused = |reason: String| Err(refusal(ErrorKind::Value, reason));
     match edit {
         Edit::Remove => {
             // Without the value the octets received would be sent, and the edit would
@@ -1477,7 +1465,7 @@ pub fn check_path(protocol: &'static Protocol, message: &str, path: &str) -> Res
         let selected = tree::places_in(&views, &Value::Null, &prefix).map_err(error)?;
         if selected.is_empty() {
             return Err(Error::new(
-                ErrorKind::NoSuchMember,
+                ErrorKind::Path,
                 format!(
                     "{path} selects nothing in a message {}: a value before {:?} has no members",
                     message.name,
@@ -1702,7 +1690,7 @@ pub fn written_ie(protocol: &'static Protocol, entry: &mut Map) -> Result<(), Er
     if let Some(octets) = entry.shift_remove("octets") {
         if VALUES.iter().any(|value| entry.contains_key(value)) {
             return Err(Error::new(
-                ErrorKind::Form,
+                ErrorKind::Value,
                 "an IE is written with its value or its octets, not both",
             ));
         }
@@ -1958,7 +1946,7 @@ impl Protocol {
     ) -> Result<Value, Error> {
         if depth > WRITTEN {
             return Err(Error::new(
-                ErrorKind::Limit,
+                ErrorKind::Value,
                 format!("a written tree nests deeper than {WRITTEN}"),
             ));
         }
@@ -2024,7 +2012,7 @@ impl Protocol {
         let field = value_member(shape).unwrap_or("value");
         let entry = ie
             .as_object()
-            .ok_or_else(|| Error::new(ErrorKind::Form, IE))?;
+            .ok_or_else(|| Error::new(ErrorKind::Value, IE))?;
         if entry.contains_key("id") {
             let id = self.entry_id(ie).and_then(|id| u16::try_from(id).ok());
             let mut entry = entry.clone();
@@ -2035,7 +2023,7 @@ impl Protocol {
         }
         let mut members = entry.iter().filter(|(member, _)| *member != "criticality");
         let (Some((name, value)), None) = (members.next(), members.next()) else {
-            return Err(Error::new(ErrorKind::Form, IE));
+            return Err(Error::new(ErrorKind::Value, IE));
         };
         let id = match name.parse::<u16>() {
             Ok(id) => id,
@@ -2050,7 +2038,7 @@ impl Protocol {
             (None, Some(criticality), _) => oxirush_utils::tree!(criticality),
             (None, None, Shape::Ies(Some(message))) => {
                 return Err(Error::new(
-                    ErrorKind::Form,
+                    ErrorKind::Value,
                     format!(
                         "{} has no IE {name}: one that is sent in it says its \"criticality\"",
                         message.name
@@ -2059,7 +2047,7 @@ impl Protocol {
             }
             (None, None, _) => {
                 return Err(Error::new(
-                    ErrorKind::Form,
+                    ErrorKind::Value,
                     format!("{name} says its \"criticality\" here: the tables have none for it"),
                 ));
             }
@@ -2195,7 +2183,7 @@ fn octets_alone(octets: Value) -> Value {
 
 /// An entry of a container that has no identifier.
 fn no_identifier() -> Error {
-    Error::new(ErrorKind::Form, "an IE has its identifier")
+    Error::new(ErrorKind::Value, "an IE has its identifier")
 }
 
 /// The IEs of the message of `protocol` that ASN.1 names `message`, which a view has as

@@ -159,7 +159,7 @@ fn a_segment_that_names_no_member_of_a_transfer_is_taken_in_its_decoded_value() 
     // A name that neither has is refused with the members of both, with a view and
     // without one.
     let refused = select(&format!("{transfer}/misspelled")).unwrap_err();
-    assert_eq!(refused.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(refused.kind(), ErrorKind::Path);
     assert_eq!(
         refused.to_string(),
         "\"misspelled\" is not a member of Cause, which has radioNetwork, nas, misc, \
@@ -198,13 +198,13 @@ fn a_transfer_that_did_not_decode_or_that_is_its_octets_has_no_decoded_value() {
     // An edit changes nothing there.
     let before = view.clone();
     let error = inspect::set(&TEST, &mut view, path, tree!("unspecified")).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NothingSelected);
+    assert_eq!(error.kind(), ErrorKind::Path);
     assert_eq!(view, before);
     // A transfer that an edit replaced by its octets: what its type has selects nothing.
     view["message"]["protocolIEs"][1]["value"]["transfer"] = tree!("00");
     assert_eq!(inspect::select(&TEST, &view, path), Ok(vec![]));
     let misspelled = inspect::select(&TEST, &view, "/test/Holder/transfer/misspelled");
-    assert_eq!(misspelled.unwrap_err().kind(), ErrorKind::NoSuchMember);
+    assert_eq!(misspelled.unwrap_err().kind(), ErrorKind::Path);
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn an_edit_that_one_place_refuses_is_done_at_none() {
     let everywhere = "/test/*/value/radioNetwork";
     assert_eq!(inspect::select(&TEST, &view, everywhere).unwrap().len(), 1);
     let error = inspect::set(&TEST, &mut view, everywhere, tree!("user-inactivity")).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     assert!(
         error.to_string().contains("is not a member of Holder"),
         "{error}"
@@ -226,10 +226,10 @@ fn an_edit_that_one_place_refuses_is_done_at_none() {
     let cause = &view["message"]["protocolIEs"][0];
     assert_eq!(cause["value"], tree!({"nas": "deregister"}));
     let refused = inspect::remove(&TEST, &mut view, "/test/Cause/nas").unwrap_err();
-    assert_eq!(refused.kind(), ErrorKind::Edit);
+    assert_eq!(refused.kind(), ErrorKind::Value);
     // The value of an IE is not taken out, and its octets are set in its place.
     let refused = inspect::remove(&TEST, &mut view, "/test/Cause/value").unwrap_err();
-    assert_eq!(refused.kind(), ErrorKind::Edit);
+    assert_eq!(refused.kind(), ErrorKind::Value);
     inspect::set(&TEST, &mut view, "/test/Cause/octets", tree!("40")).unwrap();
     let cause = &view["message"]["protocolIEs"][0];
     assert_eq!(
@@ -237,7 +237,7 @@ fn an_edit_that_one_place_refuses_is_done_at_none() {
         &tree!({"id": 15, "criticality": "ignore", "_raw_value": "40"})
     );
     let refused = inspect::set(&TEST, &mut view, "/test/Cause/octets", tree!(64)).unwrap_err();
-    assert_eq!(refused.kind(), ErrorKind::Edit);
+    assert_eq!(refused.kind(), ErrorKind::Value);
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn the_segment_after_the_root_selects_among_the_ies() {
     }
     // Without the root, the list has positions.
     let error = inspect::select(&TEST, &view, "/message/protocolIEs/Cause").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
     assert_eq!(
         inspect::select(&TEST, &view, "/message/protocolIEs/0/id"),
         Ok(vec![&tree!(15)])
@@ -305,7 +305,7 @@ fn the_ies_that_a_value_holds_are_written_by_name_and_read_back() {
     // An entry of the extension container that does not say its criticality is refused.
     let unsaid = tree!([{"Holder": {"iE-Extensions": [{"ExtendedCause": {"nas": "deregister"}}]}}]);
     let error = inspect::listed_ies(&TEST, "Release", &unsaid).unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Form);
+    assert_eq!(error.kind(), ErrorKind::Value);
     // A transfer that did not decode is its octets in a tree, and sent as they are.
     let undecoded = tree!([{"id": 16, "criticality": "reject", "value": {
         "transfer": {"_raw_transfer": "ff", "_decode_error": "why"},
@@ -433,7 +433,7 @@ fn open_takes_what_each_place_has_as_a_selection_does() {
     assert_eq!(view, before);
     // A name that no place has is still refused.
     let error = inspect::open(&TEST, &mut view, "/test/*/value/misspelled").unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::NoSuchMember);
+    assert_eq!(error.kind(), ErrorKind::Path);
 }
 
 /// The second finding of the review of the move of the paths to oxirush-utils: an IE or a

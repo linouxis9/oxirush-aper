@@ -584,12 +584,12 @@ pub mod inspect {
 
     #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn __decode_typed<T>(_: &'static str, _: &[u8]) -> Result<Decoded, Error> {
-        Err(Error::new(ErrorKind::Form, "no tree"))
+        Err(Error::new(ErrorKind::Value, "no tree"))
     }
 
     #[allow(clippy::extra_unused_type_parameters)]
     pub(crate) fn __encode_typed<T>(_: &Value) -> Result<Vec<u8>, Error> {
-        Err(Error::new(ErrorKind::Form, "no tree"))
+        Err(Error::new(ErrorKind::Value, "no tree"))
     }
 }
 
