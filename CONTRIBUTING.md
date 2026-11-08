@@ -39,8 +39,8 @@ where the examples of the README run, and TOY is not.
 
 `protocols/toy/` is TOY, a protocol of five procedures whose ASN.1 modules,
 in `protocols/toy/toy/`, have one of each form that the generator writes: a
-transfer of protocol IEs and one of a value, octets that carry a type, a list
-of single containers, an IE of an extension that has the type that the type
+transfer of protocol IEs, which an IE contains too, and one of a value, octets
+that carry a type, a list of single containers, an IE of an extension that has the type that the type
 it extends gives it, the well-known types and the identifiers of a UE. The
 generator writes its bindings as it writes those of oxirush-ngap and
 oxirush-s1ap, and its tests are the tests of what the generated crates

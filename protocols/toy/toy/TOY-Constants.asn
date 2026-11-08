@@ -48,6 +48,7 @@ id-TransferKind								ProtocolIE-ID ::= 31
 id-NodeID									ProtocolIE-ID ::= 32
 id-SecurityContext							ProtocolIE-ID ::= 33
 id-FailureTransfer							ProtocolIE-ID ::= 34
+id-SetupTransfer							ProtocolIE-ID ::= 35
 id-ExtensionIndex							ProtocolIE-ID ::= 40
 id-ExtendedCause							ProtocolIE-ID ::= 41
 

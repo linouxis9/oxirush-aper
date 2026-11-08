@@ -2,7 +2,7 @@
 oxirush_aper::__protocol! { protocol Toy "TOY", bindings toy, pdu TOYPDU, triggering initiating_message successful_outcome unsuccessful_outcome }
 oxirush_aper::__procedures! {
     protocol Toy "TOY", bindings toy, pdu TOYPDU, kind ToyPduKind, hooks oxirush_toy_hooks;
-    1 Setup reject { InitiatingMessage SetupRequest "SetupRequest" [26 reject mandatory, 20 ignore optional, 32 reject optional, 22 reject optional, 24 reject optional, 25 ignore optional, 21 reject optional, 27 reject optional, 28 ignore optional, 29 ignore optional]; SuccessfulOutcome SetupResponse "SetupResponse" [20 ignore optional, 33 reject conditional, 16 ignore optional]; UnsuccessfulOutcome SetupFailure "SetupFailure" [15 ignore mandatory, 34 ignore optional, 16 ignore optional]; }
+    1 Setup reject { InitiatingMessage SetupRequest "SetupRequest" [26 reject mandatory, 20 ignore optional, 32 reject optional, 22 reject optional, 24 reject optional, 25 ignore optional, 21 reject optional, 27 reject optional, 28 ignore optional, 29 ignore optional]; SuccessfulOutcome SetupResponse "SetupResponse" [20 ignore optional, 33 reject conditional, 35 ignore optional, 16 ignore optional]; UnsuccessfulOutcome SetupFailure "SetupFailure" [15 ignore mandatory, 34 ignore optional, 16 ignore optional]; }
     2 Release ignore { InitiatingMessage ReleaseRequest "ReleaseRequest" [10 reject mandatory, 11 reject mandatory, 15 ignore mandatory, 30 reject optional]; }
     3 ErrorIndication ignore { InitiatingMessage ErrorIndication "ErrorIndication" [10 ignore optional, 11 ignore optional, 15 ignore optional, 16 ignore optional]; }
     4 PrivateMessage ignore { InitiatingMessage PrivateMessage "PrivateMessage"; }
@@ -30,6 +30,7 @@ oxirush_aper::__ies! {
     32 "NodeID" crate::toy::NodeID => NodeID;
     33 "SecurityContext" @key crate::toy::SecurityContext<'a> => SecurityContext;
     34 "FailureTransfer" oxirush_aper::Octets<'a>, crate::toy::FailureTransfer => FailureTransfer;
+    35 "SetupTransfer" oxirush_aper::Octets<'a>, crate::toy::SetupTransfer<'a> => SetupTransfer;
     40 "ExtensionIndex" where [crate::toy::IndexOfItem: Item, crate::toy::IndexOfTransfer: TransferItem];
     41 ignore "ExtendedCause" crate::toy::ExtendedCause => ExtendedCause;
 }

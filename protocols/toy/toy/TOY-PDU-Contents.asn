@@ -23,6 +23,7 @@ IMPORTS
 	NodeName,
 	SecurityContext,
 	SecurityKey,
+	SetupTransfer,
 	TransferList,
 	Tunnel,
 	UE-Core-ID,
@@ -49,6 +50,7 @@ FROM TOY-Containers
 	id-NodeName,
 	id-SecurityContext,
 	id-SecurityKey,
+	id-SetupTransfer,
 	id-TransferList,
 	id-Tunnel,
 	id-UE-Core-ID,
@@ -83,6 +85,7 @@ SetupResponse ::= SEQUENCE {
 SetupResponseIEs TOY-PROTOCOL-IES ::= {
 	{ ID id-NodeName			CRITICALITY ignore	TYPE NodeName				PRESENCE optional	}|
 	{ ID id-SecurityContext		CRITICALITY reject	TYPE SecurityContext		PRESENCE conditional	}|
+	{ ID id-SetupTransfer		CRITICALITY ignore	TYPE OCTET STRING (CONTAINING SetupTransfer)	PRESENCE optional	}|
 	{ ID id-CriticalityDiagnostics	CRITICALITY ignore	TYPE CriticalityDiagnostics	PRESENCE optional	},
 	...
 }

@@ -318,6 +318,7 @@ pub mod toy_constants {
     pub const ID_SECURITY_CONTEXT: ProtocolIEID = ProtocolIEID(33);
     pub const ID_SECURITY_KEY: ProtocolIEID = ProtocolIEID(21);
     pub const ID_SETUP: ProcedureCode = ProcedureCode(1);
+    pub const ID_SETUP_TRANSFER: ProtocolIEID = ProtocolIEID(35);
     pub const ID_TRANSFER_KIND: ProtocolIEID = ProtocolIEID(31);
     pub const ID_TRANSFER_LIST: ProtocolIEID = ProtocolIEID(24);
     pub const ID_TUNNEL: ProtocolIEID = ProtocolIEID(29);
