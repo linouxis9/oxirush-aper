@@ -14,6 +14,14 @@ All notable changes to `oxirush-aper` are recorded here.
   (clause 10.5), or of the first that the receiver reports; an IE of the criticality
   `ignore` is ignored, also one whose value does not decode.
 
+### Changed
+
+- The writer of the test of a README, `protocols/tests/readme.py`, compiles the
+  test with the features that `required-features` of the `[[test]]` named `readme`
+  of the crate's Cargo.toml names, and always where it names none: it compiled it
+  with `serde` alone. A crate whose test needs `serde` names it there:
+  `[[test]] name = "readme" required-features = ["serde"]`.
+
 ### Fixed
 
 - `tree_of_jer` reads a transfer, the octets of an `OCTET STRING (CONTAINING …)`,

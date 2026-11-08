@@ -13,6 +13,9 @@ change of a Rust block of the README or of what it shows, write the file again a
 the test; CI runs this with `--check`, which fails while the file is not the one of the
 README.
 
+The test is compiled with the features that `required-features` of the `[[test]]` named
+`readme` of Cargo.toml names, and always where none is named.
+
 The output of a block is the `json` and `text` blocks that follow it with nothing but
 blank lines between them. A block that shows no output prints none. A block that has a
 `main` is run as the documentation test runs it: its function calls `main`, which returns
@@ -21,6 +24,7 @@ line: a change of the prose of the README leaves the file as it is.
 """
 import pathlib
 import sys
+import tomllib
 
 ROOT = pathlib.Path.cwd()
 TEST = ROOT / "tests/readme.rs"
@@ -29,8 +33,7 @@ HEAD = '''\
 // The Rust blocks of README.md, each as a function, with what the README shows under
 // each: `../oxirush-aper/protocols/tests/readme.py` writes this file from the README and
 // says how. Do not edit it.
-#![cfg(feature = "serde")]
-#![allow(unused)]
+{gate}#![allow(unused)]
 
 use std::cell::RefCell;
 
@@ -77,6 +80,26 @@ fn each_block_prints_what_the_readme_shows() {
 '''
 
 
+def gate(manifest):
+    """The attribute that compiles the test with the features that `manifest`, the text of
+    Cargo.toml, has the `[[test]]` named `readme` require, and none where it names none.
+
+    >>> print(gate('[[test]]\\nname = "readme"\\nrequired-features = ["tree"]'), end="")
+    #![cfg(feature = "tree")]
+    >>> print(gate('[[test]]\\nname = "readme"\\nrequired-features = ["tree", "endpoint"]'), end="")
+    #![cfg(all(feature = "tree", feature = "endpoint"))]
+    >>> gate('[package]\\nname = "crate"'), gate('[[test]]\\nname = "other"\\nrequired-features = ["x"]')
+    ('', '')
+    """
+    tests = tomllib.loads(manifest).get("test", [])
+    readme = next((test for test in tests if test.get("name") == "readme"), {})
+    features = readme.get("required-features", [])
+    conditions = ", ".join(f'feature = "{feature}"' for feature in features)
+    if len(features) > 1:
+        conditions = f"all({conditions})"
+    return f"#![cfg({conditions})]\n" if features else ""
+
+
 def examples(readme):
     """The Rust blocks of the README, each as its code and the output shown under it."""
     found, open_, output = [], None, False
@@ -113,9 +136,10 @@ def literal(text):
     return f'r{"#" * hashes}"{text}"{"#" * hashes}'
 
 
-def generated(found):
-    """The text of tests/readme.rs for the Rust blocks of the README."""
-    file = HEAD
+def generated(found, manifest):
+    """The text of tests/readme.rs for the Rust blocks of the README, and the crate whose
+    Cargo.toml is `manifest`."""
+    file = HEAD.replace("{gate}", gate(manifest))
     file += "\n/// Each Rust block of README.md, by its rank, and what the README shows under it.\n"
     file += "#[rustfmt::skip]\nconst BLOCKS: &[(fn(), &str)] = &[\n"
     for rank, (_, output) in enumerate(found, 1):
@@ -135,7 +159,7 @@ def generated(found):
 def main():
     if sys.argv[1:] not in ([], ["--check"]):
         raise SystemExit(__doc__)
-    text = generated(examples((ROOT / "README.md").read_text()))
+    text = generated(examples((ROOT / "README.md").read_text()), (ROOT / "Cargo.toml").read_text())
     if sys.argv[1:] == ["--check"]:
         if not TEST.exists() or TEST.read_text() != text:
             raise SystemExit(
@@ -146,4 +170,5 @@ def main():
     TEST.write_text(text)
 
 
-main()
+if __name__ == "__main__":
+    main()
