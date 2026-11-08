@@ -83,6 +83,9 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Fixed
 
+- `family/` runs the block of the README that uses oxirush-ngap with the revision
+  of oxirush-ngap that takes this crate, which no published version does yet:
+  its copy of the block was that of 0.1.
 - The generator writes the oracle of a protocol whose CHOICE of a fixed-size BIT
   STRING longer than 16 bits has an alternative of the type NULL: the fix-up of
   rasn's decoder of such a CHOICE refused that alternative as one that it did not

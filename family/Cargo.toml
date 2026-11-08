@@ -1,5 +1,5 @@
 # The block of the README that uses another crate of the family: oxirush-aper with
-# oxirush-ngap, at the versions that this manifest names. A package of its own, so that
+# oxirush-ngap, at the revision that this manifest names. A package of its own, so that
 # the crate depends on none of them: nothing here is published. `cargo test` here runs
 # the block and compares what it prints with the README.
 [package]
@@ -10,7 +10,9 @@ publish = false
 license = "Apache-2.0"
 
 [dev-dependencies]
-oxirush-ngap = "0.5"
+# The revision of oxirush-ngap that takes this oxirush-aper, until a version of it is
+# published that does.
+oxirush-ngap = { git = "https://github.com/linouxis9/oxirush-ngap", rev = "9e7713f22a0c86c8400327e7924d76af87688d37" }
 hex = "0.4"
 
 # Not a member of a workspace that the crate may be in.

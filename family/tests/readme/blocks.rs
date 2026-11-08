@@ -37,27 +37,27 @@ pub const BLOCKS: &[fn()] = &[
 /// The block 1 of the README that uses other crates.
 fn block_1() {
     use oxirush_ngap::aper::{Reader, Writer};
-    use oxirush_ngap::ngap::NGAP_PDU;
+    use oxirush_ngap::ngap::NGAPPDU;
 
     fn main() -> Result<(), Box<dyn std::error::Error>> {
         // A UE CONTEXT RELEASE REQUEST, and the octets of the value of each of its IEs
         let octets = hex::decode("002a4015000003000a0002002a005500020007000f40020500")?;
-        let pdu = NGAP_PDU::decode(&octets)?;
+        let pdu = NGAPPDU::decode(&octets)?;
         let ies = pdu.protocol_ies()?;
         for ie in &ies.0 {
             let mut reader = Reader::new(&ie.value);
             match ie.id.0 {
                 // AMF-UE-NGAP-ID ::= INTEGER (0..1099511627775)
-                10 => println!("AMF-UE-NGAP-ID {}", reader.unsigned(0, 1_099_511_627_775)?),
+                10 => println!("AMF-UE-NGAP-ID {}", reader.unsigned(0, 1_099_511_627_775, false)?),
                 // RAN-UE-NGAP-ID ::= INTEGER (0..4294967295)
-                85 => println!("RAN-UE-NGAP-ID {}", reader.unsigned(0, 4_294_967_295)?),
+                85 => println!("RAN-UE-NGAP-ID {}", reader.unsigned(0, 4_294_967_295, false)?),
                 id => println!("IE {id}: {:02x?}", &ie.value[..]),
             }
         }
 
         // A Writer writes the value that the codec of the IE writes
         let mut written = Vec::new();
-        Writer::new(&mut written).unsigned(42, 0, 1_099_511_627_775)?;
+        Writer::new(&mut written).unsigned(42, 0, 1_099_511_627_775, false)?;
         println!("{}", written == *ies.0[0].value);
         Ok(())
     }
