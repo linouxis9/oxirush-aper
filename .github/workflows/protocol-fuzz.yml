@@ -24,9 +24,13 @@ on:
         required: true
         type: string
       weekly:
-        description: The cron of the schedule of the caller that runs four hours
+        description: The cron of the schedule of the caller that runs long and minimizes
         required: true
         type: string
+      weekly-minutes:
+        description: Minutes for each target on the weekly schedule
+        type: number
+        default: 240
       minutes:
         description: Minutes for each target, rather than those of the schedule
         type: number
@@ -76,6 +80,7 @@ jobs:
           WEEKLY: ${{ inputs.weekly }}
           SCHEDULE: ${{ github.event.schedule }}
           MINUTES: ${{ inputs.minutes }}
+          WEEKLY_MINUTES: ${{ inputs.weekly-minutes }}
           REPORT: ${{ inputs.report }}
         run: |
           empty=$(git hash-object -t tree /dev/null)
@@ -123,7 +128,7 @@ jobs:
           if [ "$MINUTES" != 0 ]; then
             minutes=$MINUTES
           elif [ "$SCHEDULE" = "$WEEKLY" ]; then
-            minutes=240
+            minutes=$WEEKLY_MINUTES
           else
             minutes=60
           fi

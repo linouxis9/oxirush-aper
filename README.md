@@ -544,7 +544,8 @@ each field is tested against its clause. `fuzz/` has a
 reads fields and constraints that the octets choose and writes them back.
 The Fuzz workflow runs it, and the targets of oxirush-ngap and oxirush-s1ap,
 which edit and build PDUs through the trees of this crate too, on both and on
-the protocol of the tests, an hour each night and four hours on Sunday.
+the protocol of the tests, an hour each day but Sunday and four hours on
+Monday.
 
 ```sh
 cargo test --all-features
