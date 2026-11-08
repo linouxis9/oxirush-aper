@@ -103,7 +103,7 @@ jobs:
       - run: cargo clippy --manifest-path benches/Cargo.toml --all-targets -- -D warnings
       - run: cargo bench --manifest-path benches/Cargo.toml --no-run
       # The examples of the tools that the protocol crates run from protocols/
-      - run: python3 -m doctest protocols/tests/readme.py
+      - run: python3 -m doctest protocols/tests/readme.py protocols/benches/build_cost.py
 
   # TOY, a protocol that the generator writes from the ASN.1 of protocols/toy/toy as it
   # writes NGAP and S1AP, a member of the workspace: its tests are those of what the

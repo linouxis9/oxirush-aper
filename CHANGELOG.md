@@ -29,6 +29,10 @@ All notable changes to `oxirush-aper` are recorded here.
   writes it, as its decoded value: it made it `{"octets": null}`, which `from_tree`
   refused. The PDUs of the vectors of oxirush-ngap with a transfer, 169 of its 479,
   were not written from the values of pycrate.
+- `protocols/benches/build_cost.py` reads a relative path that a `--config` gives,
+  a file of configuration or the value of a key `path`, as one of the crate, where
+  cargo reads it: it built a copy of the crate with the path resolved against the
+  copy, and a patch of the build failed.
 
 ## 0.2.1 - 2026-11-08
 
