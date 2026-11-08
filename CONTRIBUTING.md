@@ -22,7 +22,8 @@ oxirush-ngap and oxirush-s1ap take `generator/` and `protocols/` from a
 checkout of this repository beside theirs, at the revision that their
 `build/revisions` records, and their CI calls the jobs of
 `.github/workflows/protocol.yml`, `protocol-reproduce.yml`,
-`protocol-mutants.yml` and `protocol-fuzz.yml` at that revision. A change to either reaches them when they move to its revision:
+`protocol-mutants.yml`, `protocol-fuzz.yml` and `protocol-wireshark.yml` at
+that revision. A change to either reaches them when they move to its revision:
 `pin.py` writes it wherever they name it, and their CONTRIBUTING.md says
 what else a move takes.
 

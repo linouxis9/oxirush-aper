@@ -28,6 +28,7 @@ PLACES = [
     ".github/workflows/fuzz.yml",
     ".github/workflows/mutants.yml",
     ".github/workflows/reproduce.yml",
+    ".github/workflows/wireshark.yml",
 ]
 COMMIT = re.compile(r"[0-9a-f]{40}")
 

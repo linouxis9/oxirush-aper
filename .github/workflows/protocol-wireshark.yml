@@ -1,0 +1,93 @@
+name: Protocol Wireshark
+
+# The comparison of oxirush-ngap and oxirush-s1ap with Wireshark, which the Wireshark
+# workflow of each calls every night, at the revision of this repository that its
+# build/revisions records, with the name of its protocol: tshark dissects the PDUs of
+# tests/wireshark/corpus.tsv and of tests/fixtures of the crate, tests/wireshark.rs writes
+# what the crate reads of them, and compare.py of protocols/tests/wireshark/ compares the
+# two field by field. tshark is 4.6.4, the version that tests/wireshark/known.tsv of the
+# crate was triaged with: the package 4.6.4-1 of the release of Ubuntu 26.04, which its
+# updates do not replace here. A difference that known.tsv does not explain fails the job,
+# and so does a run in which nothing was compared; the report is kept for 30 days.
+on:
+  workflow_call:
+    inputs:
+      protocol:
+        description: The protocol of the crate, `ngap` or `s1ap`
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The tests need no debug information: without it the bindings build faster and in
+  # less memory.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  wireshark:
+    name: Wireshark 4.6.4
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: crate
+    env:
+      PROTOCOL: ${{ inputs.protocol }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - id: revisions
+        run: echo "aper=$(awk '$1 == "oxirush-aper" { print $2 }' build/revisions)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ steps.revisions.outputs.aper }}
+          path: oxirush-aper
+      - name: tshark 4.6.4
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            tshark=4.6.4-1 wireshark-common=4.6.4-1 libwireshark19=4.6.4-1 \
+            libwiretap16=4.6.4-1 libwsutil17=4.6.4-1 libwireshark-data=4.6.4-1
+          tshark --version | head -n 1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crate
+      # Each PDU once: the corpus of the comparison, the vectors with and without the
+      # additions of a later release, the PDUs that other implementations sent and those
+      # that a fuzzer found a fault with.
+      - name: The PDUs
+        run: |
+          python3 -I ../oxirush-aper/protocols/tests/wireshark/extract.py --protocol "$PROTOCOL" \
+            --tsv tests/wireshark/corpus.tsv \
+            --tsv tests/fixtures/messages.tsv:2 \
+            --tsv tests/fixtures/vectors.tsv:2 \
+            --tsv tests/fixtures/later.tsv:2 \
+            --tsv tests/fixtures/later.tsv:5 \
+            --tsv tests/fixtures/captured.tsv:2 \
+            --tsv tests/fixtures/fuzzed.tsv:2 \
+            --output "$RUNNER_TEMP/pdus.tsv"
+      - name: Compare
+        run: |
+          variable=${PROTOCOL^^}_WIRESHARK
+          export "${variable}_CORPUS=$RUNNER_TEMP/pdus.tsv" "${variable}_OUTPUT=$RUNNER_TEMP/wireshark"
+          cargo test --features inspect --test wireshark -- --nocapture
+      # The test passes without comparing anything where tshark, Python or the checkout of
+      # oxirush-aper is missing, or where tshark is not the pinned one: compare.py writes
+      # the summary only once it has compared.
+      - name: Something was compared
+        if: always()
+        run: |
+          summary=$RUNNER_TEMP/wireshark/summary.txt
+          test -s "$summary" || { echo "::error::nothing was compared with Wireshark"; exit 1; }
+          { echo '```'; cat "$summary"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wireshark-${{ inputs.protocol }}
+          path: ${{ runner.temp }}/wireshark
+          retention-days: 30
