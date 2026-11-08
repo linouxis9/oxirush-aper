@@ -226,15 +226,17 @@ jobs:
 
   # The targets of each protocol with the crate at the head of its default branch, three
   # at a time, so that with the fields seven run at once and Sunday's runs end that
-  # evening.
+  # evening. A dispatch gives its minutes as text, which fromJSON makes the number that
+  # the called workflow takes, as it does the boolean of `weekly`; a schedule gives
+  # neither.
   ngap:
     name: ngap
     uses: ./.github/workflows/protocol-fuzz.yml
     with:
       protocol: ngap
       weekly: "13 12 * * 0"
-      minutes: ${{ inputs.minutes || 0 }}
-      report: ${{ inputs.weekly || false }}
+      minutes: ${{ fromJSON(inputs.minutes || '0') }}
+      report: ${{ fromJSON(inputs.weekly || 'false') }}
       parallel: 3
 
   s1ap:
@@ -243,6 +245,6 @@ jobs:
     with:
       protocol: s1ap
       weekly: "13 12 * * 0"
-      minutes: ${{ inputs.minutes || 0 }}
-      report: ${{ inputs.weekly || false }}
+      minutes: ${{ fromJSON(inputs.minutes || '0') }}
+      report: ${{ fromJSON(inputs.weekly || 'false') }}
       parallel: 3
