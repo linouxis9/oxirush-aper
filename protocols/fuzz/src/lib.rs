@@ -732,3 +732,58 @@ pub fn tree(input: Build) {
         written_pdu(&written);
     }
 }
+
+/// A PDU of the fixtures and the value of its tree that the fuzzer's octets take the
+/// place of.
+#[derive(Arbitrary, Debug)]
+pub struct Transfer {
+    base: u16,
+    path: u16,
+    octets: Vec<u8>,
+}
+
+/// A PDU of the fixtures whose transfer, or another value that holds values, is the
+/// fuzzer's octets: an OCTET STRING that contains a transfer, the open type of an IE, an
+/// entry of a list deep in an IE. The octets are read as the type of that place, and not
+/// only where the octets of a whole PDU around them decode.
+///
+/// A place that takes no octets is an error, never a panic, and a PDU that `from_tree`
+/// writes with them is one that the crate wrote ([`written_pdu`]): what the octets are
+/// read as is written and read again as the same.
+pub fn transfer(input: Transfer) {
+    let pool = &*POOL;
+    let Some(pdu) = pool
+        .pdus
+        .get(usize::from(input.base) % pool.pdus.len().max(1))
+    else {
+        return;
+    };
+    let mut tree = pdu.to_tree();
+    // The places that hold the values that `paths` lists: an IE, a member, an entry
+    let mut places: Vec<String> = Vec::new();
+    for (path, _) in inspect::paths(&tree) {
+        let Some(below) = path.strip_prefix(ROOT) else {
+            continue;
+        };
+        let mut place = ROOT.to_owned();
+        for segment in below.split('/').skip(1) {
+            place.push('/');
+            place.push_str(segment);
+            if place.len() < path.len() && !places.contains(&place) {
+                places.push(place.clone());
+            }
+        }
+    }
+    let Some(path) = places.get(usize::from(input.path) % places.len().max(1)) else {
+        return;
+    };
+    let mut octets = codec::tree::Map::new();
+    octets.insert("octets".into(), Value::from(hex(&input.octets)));
+    if inspect::set(&mut tree, path, Value::Object(octets)).is_err() {
+        return;
+    }
+    if let Ok(written) = Pdu::from_tree(&tree) {
+        written_pdu(&written);
+    }
+}
+

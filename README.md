@@ -542,9 +542,9 @@ The worked examples of X.691 Annex A are reproduced octet for octet, and
 each field is tested against its clause. `fuzz/` has a
 [cargo-fuzz](https://crates.io/crates/cargo-fuzz) target, `fields`, which
 reads fields and constraints that the octets choose and writes them back.
-The Fuzz workflow runs it, and the six targets of oxirush-ngap and oxirush-s1ap,
-which edit and build PDUs through the trees of this crate too, an hour each
-night and four hours on Sunday.
+The Fuzz workflow runs it, and the targets of oxirush-ngap and oxirush-s1ap,
+which edit and build PDUs through the trees of this crate too, on both and on
+the protocol of the tests, an hour each night and four hours on Sunday.
 
 ```sh
 cargo test --all-features

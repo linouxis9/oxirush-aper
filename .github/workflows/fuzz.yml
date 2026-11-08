@@ -143,6 +143,7 @@ jobs:
           - { protocol: toy, target: exact, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
           - { protocol: toy, target: edit, max_len: 1024, flags: -len_control=0 }
           - { protocol: toy, target: tree, max_len: 1024, flags: -len_control=0 }
+          - { protocol: toy, target: transfer, max_len: 1024, flags: -len_control=0 }
     env:
       # What the targets of protocols/fuzz/ take from the inside of TOY.
       RUSTFLAGS: ${{ matrix.protocol && '--cfg oxirush_toy_hooks' || '' }}
