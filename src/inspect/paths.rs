@@ -868,6 +868,15 @@ impl Protocol {
                 for (key, child) in object.iter_mut() {
                     self.of_jer(child, member_shape(&members, key), depth + 1);
                 }
+                // A transfer is the value that it contains, which a view has as its
+                // decoded value.
+                if let Shape::Transfer(contained) = self.resolved(shape)
+                    && !contained.is_empty()
+                    && !object.keys().any(|name| of_a_transfer(name))
+                {
+                    let decoded = core::mem::take(object);
+                    object.insert("decoded".into(), Value::Object(decoded));
+                }
             }
             Value::Array(entries) => {
                 let entry = self.entry_shape(shape);

@@ -2,6 +2,16 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
+## Unreleased
+
+### Fixed
+
+- `tree_of_jer` reads a transfer, the octets of an `OCTET STRING (CONTAINING …)`,
+  that the JSON Encoding Rules write as the value that it contains, as pycrate
+  writes it, as its decoded value: it made it `{"octets": null}`, which `from_tree`
+  refused. The PDUs of the vectors of oxirush-ngap with a transfer, 169 of its 479,
+  were not written from the values of pycrate.
+
 ## 0.2.1 - 2026-11-08
 
 ### Added

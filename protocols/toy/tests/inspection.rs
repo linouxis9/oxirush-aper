@@ -1921,6 +1921,62 @@ fn a_view_in_the_json_encoding_rules_is_read_as_a_tree() {
     assert!(oxirush_toy::inspect::__tree_of_jer(&without).is_err());
 }
 
+/// A transfer is the value that it contains in the JSON Encoding Rules, as pycrate writes
+/// it, in a member of a value and as the value of an IE: it is read as a tree has it, its
+/// decoded value.
+#[test]
+fn a_transfer_in_the_json_encoding_rules_is_read_as_its_decoded_value() {
+    let read = |view: Value| {
+        let tree = oxirush_toy::inspect::__tree_of_jer(&view).unwrap();
+        TOYPDU::from_tree(&tree).map(|_| tree)
+    };
+    let failure = tree!({"cause": {"protocol": "semantic-error"}});
+    let request = tree!({
+        "procedure_code": 1,
+        "direction": "InitiatingMessage",
+        "criticality": "reject",
+        "message": {"protocolIEs": [
+            {"id": 26, "criticality": "reject", "value": [
+                {"tAC": "000001", "broadcastPLMNs": ["02f839"]},
+            ]},
+            {"id": 24, "criticality": "reject", "value": [{
+                "transfer-ID": 1,
+                "setupTransfer": {"protocolIEs": [
+                    {"id": 29, "criticality": "reject", "value": {"unassigned": null}},
+                ]},
+                "failureTransfer": &failure,
+            }]},
+        ]},
+    });
+    assert_eq!(
+        read(request).unwrap(),
+        tree!({"message": "SetupRequest", "ies": [
+            {"Areas": areas()},
+            {"TransferList": [{
+                "transfer-ID": 1,
+                "setupTransfer": {"protocolIEs": [{"Tunnel": {"unassigned": null}}]},
+                "failureTransfer": &failure,
+            }]},
+        ]})
+    );
+    let failed = tree!({
+        "procedure_code": 1,
+        "direction": "UnsuccessfulOutcome",
+        "criticality": "reject",
+        "message": {"protocolIEs": [
+            {"id": 15, "criticality": "ignore", "value": {"protocol": "semantic-error"}},
+            {"id": 34, "criticality": "ignore", "value": &failure},
+        ]},
+    });
+    assert_eq!(
+        read(failed).unwrap(),
+        tree!({"message": "SetupFailure", "ies": [
+            {"Cause": {"protocol": "semantic-error"}},
+            {"FailureTransfer": &failure},
+        ]})
+    );
+}
+
 /// A value that no table describes, as one that a tree written by hand gives an IE that
 /// the protocol does not have, has the members that the tree gives it: a set adds one
 /// as the last segment of its path, and nothing else goes into one that is not there.
