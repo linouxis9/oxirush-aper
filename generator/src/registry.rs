@@ -33,10 +33,8 @@ pub(crate) struct Message {
 
 /// An IE: the name that ASN.1 gives it after `id-`, the types that its object sets give
 /// it and the types that its octets contain, the criticalities that the object sets of
-/// the single containers give it, and the names that the macros take it by.
-/// The macros take the IE of a message by its own name and, where one type has one IE,
-/// by the name of that type and by the aliases that the bindings give the type.
-/// An IE of an extension container has the type that the type which it extends gives
+/// the single containers give it, and the name that the macros take it by, after its
+/// identifier. An IE of an extension container has the type that the type which it extends gives
 /// it: `extends` has each of these types with the types of the bindings that it
 /// extends so.
 #[derive(Default)]
@@ -46,7 +44,7 @@ pub(crate) struct Ie {
     pub(crate) extends: BTreeMap<String, BTreeSet<String>>,
     pub(crate) contents: BTreeSet<String>,
     pub(crate) items: BTreeSet<String>,
-    pub(crate) macros: Vec<String>,
+    pub(crate) marker: Option<String>,
 }
 
 pub struct Registry {
@@ -55,8 +53,6 @@ pub struct Registry {
     /// The module of the bindings, and their types by name without case or punctuation.
     module: String,
     types: BTreeMap<String, String>,
-    /// The aliases that the bindings give their types, each with the name of its type.
-    aliases: BTreeMap<String, String>,
     /// The types of the bindings that borrow from the octets that they are decoded
     /// from: the list writes them with their lifetime.
     borrowing: BTreeSet<String>,
@@ -111,18 +107,10 @@ impl Registry {
                 .entry(canonical(&c[1]))
                 .or_insert_with(|| c[1].to_string());
         }
-        // The aliases follow the modules, at the root of the bindings.
-        let alias =
-            Regex::new(r"(?m)^pub type ([A-Za-z][A-Za-z0-9_]*) = ([A-Za-z][A-Za-z0-9_]*);")?;
-        let aliases = alias.captures_iter(generated);
-        let aliases = aliases
-            .map(|c| (c[1].to_string(), c[2].to_string()))
-            .collect();
         let mut registry = Self {
             protocol: protocol.to_string(),
             module: protocol.to_ascii_lowercase(),
             types,
-            aliases,
             borrowing,
             keys,
             procedures: BTreeMap::new(),
@@ -240,7 +228,7 @@ impl Registry {
                 continue;
             };
             for (id, ie) in &self.ies {
-                if alone(&ie.types).as_ref() == Some(&path) && !ie.macros.is_empty() {
+                if alone(&ie.types).as_ref() == Some(&path) && ie.marker.is_some() {
                     found.push((*id, item, lower, upper));
                 }
             }
@@ -370,7 +358,7 @@ impl Registry {
                 (Some(ty), None) => write!(out, " {}", self.written(&ty))?,
                 (None, None) => {
                     ensure!(
-                        ie.macros.is_empty(),
+                        ie.marker.is_none(),
                         "{}: the macros take an IE that has several types",
                         ie.name
                     );
@@ -392,8 +380,8 @@ impl Registry {
                 }
                 (None, Some(_)) => bail!("{} contains a type and has several", ie.name),
             }
-            if !ie.macros.is_empty() {
-                write!(out, " => {}", ie.macros.join(" "))?;
+            if let Some(marker) = &ie.marker {
+                write!(out, " => {marker}")?;
             }
             writeln!(out, ";")?;
         }
@@ -402,7 +390,7 @@ impl Registry {
         // its size.
         writeln!(out, "oxirush_aper::__lists! {{")?;
         for (list, item, lower, upper) in &self.lists {
-            let marker = |id: &u16| self.ies.get(id).and_then(|ie| ie.macros.first());
+            let marker = |id: &u16| self.ies.get(id).and_then(|ie| ie.marker.as_ref());
             let (Some(list), Some(item)) = (marker(list), marker(item)) else {
                 bail!("a list of single containers, or its item, has no name");
             };
@@ -498,8 +486,6 @@ impl Registry {
         let mut ies: BTreeMap<u16, Ie> = BTreeMap::new();
         // The names of the macros: the identifier and the type that each one stands for.
         let mut names: BTreeMap<String, (u16, String)> = BTreeMap::new();
-        // The protocol IEs of each generated type.
-        let mut typed: BTreeMap<String, BTreeSet<u16>> = BTreeMap::new();
         for c in object.captures_iter(asn) {
             let Some((id, protocol_ie)) = ids.get(&c[1]).copied() else {
                 continue;
@@ -525,9 +511,6 @@ impl Registry {
             if &c[2] == "TYPE" && protocol_ie {
                 // The name of an IE names that IE, in the type that its first object has.
                 names.entry(ident(&c[1])).or_insert((id, ty.clone()));
-                if generated {
-                    typed.entry(ty).or_default().insert(id);
-                }
             }
         }
         // The type that an IE has where it extends each type.
@@ -547,28 +530,6 @@ impl Registry {
             let ie = id.and_then(|id| ies.get_mut(id));
             ie.ok_or_else(|| anyhow!("{name} names no IE"))?.items = criticalities;
         }
-        // The name of a type is an alias only for the one IE of that type: a type that two
-        // IEs have could otherwise address either. Nor is it one when an IE has that name,
-        // within the reach of the macros or not: the name of an IE names that IE.
-        let protocol_ies = ids.iter().filter(|(_, (_, protocol_ie))| *protocol_ie);
-        let constants: BTreeSet<String> = protocol_ies.map(|(name, _)| ident(name)).collect();
-        for (ty, of) in typed {
-            let name = ty.rsplit("::").next().expect("a path").to_string();
-            if let Some(id) = of.first().copied().filter(|_| of.len() == 1)
-                && !constants.contains(&name)
-            {
-                names.entry(name).or_insert((id, ty));
-            }
-        }
-        // An alias of a type is a name of that type: it names the IE that the name of
-        // the type names, unless an IE has that name itself.
-        for (alias, ty) in &self.aliases {
-            if let Some(named) = names.get(ty).cloned()
-                && !constants.contains(alias)
-            {
-                names.entry(alias.clone()).or_insert(named);
-            }
-        }
         for (name, (id, ty)) in names {
             let ie = ies
                 .get_mut(&id)
@@ -577,11 +538,7 @@ impl Registry {
                 alone(&ie.types).as_ref() == Some(&ty),
                 "{name}: the macros and the inspection have two types for the IE"
             );
-            // The IE's own name first, then the name of its type.
-            match ident(&ie.name) == name {
-                true => ie.macros.insert(0, name),
-                false => ie.macros.push(name),
-            }
+            ie.marker = Some(name);
         }
         Ok(ies)
     }

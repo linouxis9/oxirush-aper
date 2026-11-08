@@ -49,6 +49,9 @@ All notable changes to `oxirush-aper` are recorded here.
   readers and the writers that did the same octet by octet go, and so does the
   walk that skipped to an IE of the usual layout. `field`, the walk of the
   readers and the macros, stays.
+- An IE has one name in the macros and in the module `ie` of a protocol: the one
+  after its identifier, as `AMFOverloadResponse`. The name of its type, which the
+  one IE of a type had too, as `OverloadResponse`, is no longer one.
 - The generator writes no `new` for a `SEQUENCE`: a struct literal builds one,
   with its members by their names. The `new` of a bit string of one size, which
   refuses a number that its bits do not hold, stays. The macro of the
@@ -75,6 +78,7 @@ All notable changes to `oxirush-aper` are recorded here.
 - The macros `__with_ie_mut!` and `__build_ie!` (`with_ngap_ie_mut!` and
   `build_ngap_ie!` of the protocol crates), the module `messages` of a
   registry, `protocol::__Field`, and `Protocol::__procedure_criticality`.
+- `procedure_name()` of a PDU: `kind()` names its message, and `Display` shows it.
 - `encode_into` of a PDU, which `oxirush_aper::encode_into(&pdu, &mut octets)`
   is; `protocol::message_octets_as_its_type`, which `message_octets` is; and the
   hook `message_octets_both_ways`.
@@ -112,6 +116,8 @@ All notable changes to `oxirush-aper` are recorded here.
 | `reader.unsigned(0, 255)`, `writer.unsigned(v, 0, 255)` | `reader.unsigned(0, 255, false)`, `writer.unsigned(v, 0, 255, false)` |
 | `reader.unsigned_extensible(0, 255)` (and of each form) | `reader.unsigned(0, 255, true)` |
 | `reader.enumerated(root, additions, ext)`, `reader.choice(...)` | `reader.index(root, additions, ext)` |
+| `pdu.procedure_name()` | `pdu.kind()`, or `pdu.to_string()` |
+| `ie::OverloadResponse` (the name of the type of an IE) | `ie::AMFOverloadResponse` (its name after `id-`) |
 | `GUAMI::new(plmn, region, set, pointer, None)` (of the bindings) | `GUAMI { plmn_identity, amf_region_id, amf_set_id, amf_pointer, ie_extensions: None }` |
 
 ### Added

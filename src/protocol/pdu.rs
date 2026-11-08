@@ -367,7 +367,7 @@ macro_rules! __pdu {
             #[doc = concat!("let octets = hex::decode(\"", $release, "\").unwrap();")]
             #[doc = concat!("let pdu = ", stringify!($pdu), "::decode(&octets)?;")]
             /// assert_eq!(pdu.direction(), Direction::Initiating);
-            /// assert_eq!(pdu.procedure_name(), "UEContextReleaseRequest");
+            /// assert!(pdu.to_string().starts_with("UEContextReleaseRequest"));
             ///
             /// // The octets of a PDU that end early
             #[doc = concat!("let error = ", stringify!($pdu), "::decode(&octets[..octets.len() - 1]).unwrap_err();")]
@@ -376,7 +376,7 @@ macro_rules! __pdu {
             /// // A PDU that is kept after the octets that it was read from
             #[doc = concat!("let kept: ", stringify!($pdu), "<'static> = pdu.into_owned();")]
             /// drop(octets);
-            /// assert_eq!(kept.procedure_name(), "UEContextReleaseRequest");
+            /// assert!(kept.to_string().starts_with("UEContextReleaseRequest"));
             #[doc = concat!("# Ok::<(), ", stringify!($name), "::Error>(())")]
             /// ```
             pub fn decode(bytes: &'a [u8]) -> Result<Self, $crate::Error> {
@@ -618,7 +618,6 @@ macro_rules! __pdu {
             /// message.protocol_ies.0.swap(0, 1);
             ///
             #[doc = concat!("let again = ", stringify!($pdu), "::of_message(&message, Criticality::Ignore)?;")]
-            /// assert_eq!(again.procedure_name(), "UEContextReleaseRequest");
             /// assert_eq!(again.decode_value::<UEContextReleaseRequest>()?, message);
             #[doc = concat!("# Ok::<(), ", stringify!($name), "::Error>(())")]
             /// ```

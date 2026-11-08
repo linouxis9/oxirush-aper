@@ -83,7 +83,7 @@ pub fn decode(octets: &[u8]) {
     );
 
     // What the octets of the message have no part in.
-    let _ = (pdu.to_string(), pdu.procedure_name(), pdu.kind());
+    let _ = (pdu.to_string(), pdu.kind());
 
     // The protocol IEs of the message, whatever the message is: rasn reads them as
     // those of a message that is a container of protocol IEs and nothing else.

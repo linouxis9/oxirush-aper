@@ -74,15 +74,9 @@ macro_rules! __procedures {
         )?)*
 
         impl crate::$bindings::$pdu<'_> {
-            /// Return the ASN.1 procedure name.
-            pub fn procedure_name(&self) -> &'static str {
-                match self.procedure_code() {
-                    $($code => stringify!($procedure),)*
-                    _ => "Unknown",
-                }
-            }
-
-            /// Return the canonical direction/procedure kind.
+            /// The message of this PDU, by the name of its type, or the direction and the
+            /// procedure code of a procedure that the specification does not have in that
+            /// direction.
             pub fn kind(&self) -> $kind {
                 let procedure_code = self.procedure_code();
                 let kind = match self {
@@ -478,12 +472,11 @@ macro_rules! __set_of {
 macro_rules! __ies {
     (protocol $protocol:ident $protocol_name:literal;
     $($id:literal $($item:ident)? $name:literal $(@ $key:ident)?
-        $($ie:ty $(, $contents:ty)? $(=> $own:ident $($alias:ident)*)?)?
+        $($ie:ty $(, $contents:ty)? $(=> $own:ident)?)?
         $(where [$($extending:ty: $($extended:ident)+),+])?;
     )*) => {
-        /// The IEs of the protocol, one marker type each, by the names that the macros
-        /// take: its own, after the identifier that ASN.1 gives it, and the name of its
-        /// type for the one IE of that type.
+        /// The IEs of the protocol, one marker type each, by the name that the macros
+        /// take, after the identifier that ASN.1 gives it.
         #[allow(non_camel_case_types)]
         pub mod ie {
             $($($(
@@ -505,7 +498,6 @@ macro_rules! __ies {
                         $crate::decode::<$ie>(octets).map(|value| value.into_owned())
                     }
                 }
-                $(pub use $own as $alias;)*
             )?)?)*
         }
 
