@@ -273,7 +273,11 @@ pub fn paths(octets: &[u8]) {
         Err(_) => Value::String(String::from_utf8_lossy(value).into_owned()),
     };
 
-    let name = inspect::message_name(&pdu).unwrap_or("no message");
+    let set = aper::protocol::object_set::<<Pdu as aper::protocol::InProtocol>::Protocol>(
+        pdu.direction(),
+        pdu.procedure_code(),
+    );
+    let name = set.map_or("no message", |set| set.name);
     let changed = match function % 7 {
         0 => inspect::select(&view, &path).is_err(),
         1 => inspect::set(&mut view, &path, value).is_ok(),

@@ -42,7 +42,7 @@ pub mod counting;
 // It is expanded in `protocol.rs`, whose names `types`, `extract_ies!`, `build!` and
 // `Pdu` it takes.
 macro_rules! typed {
-    ($direction:ident $procedure:ident $criticality:ident $message:ident {
+    ($criticality:ident $message:ident {
         $($ie_criticality:ident $ie:ident: $type:ident $(<$borrows:lifetime>)?,)*
     }) => {{
         /// The values of the IEs of the message, in their order. Those that hold
@@ -65,7 +65,7 @@ macro_rules! typed {
 
         #[allow(non_snake_case)]
         fn build(($($ie,)*): Values<'_>) -> Result<Pdu, codec::Error> {
-            build!($direction, $procedure, $criticality, $message,
+            build!($criticality $message,
                 $($ie_criticality $ie($ie),)*
             )
         }
@@ -102,6 +102,14 @@ mod protocol {
 use protocol::codec::inspect;
 use protocol::codec::{tree, tree::Value};
 pub use protocol::{Borrowed, Pdu, TheirPdu, codec, extract_ies, types};
+
+/// The name that ASN.1 gives the message of a PDU; `None` for a procedure that the
+/// specification does not have in that direction.
+fn message_name(pdu: &Pdu) -> Option<&'static str> {
+    use codec::aper::protocol::{InProtocol, object_set};
+    let set = object_set::<<Pdu as InProtocol>::Protocol>(pdu.direction(), pdu.procedure_code());
+    set.map(|set| set.name)
+}
 use std::hint::black_box;
 
 // ── The protocol ────────────────────────────────────────────────────────────
@@ -219,7 +227,7 @@ impl Message {
     ) -> Self {
         let pdu = Pdu::decode(&octets).unwrap();
         assert_eq!(pdu.encode().unwrap(), octets);
-        let name = inspect::message_name(&pdu).unwrap();
+        let name = message_name(&pdu).unwrap();
         let view = pdu.to_view().unwrap();
         let tree = pdu.to_tree();
         let path = path.map_or_else(|| deepest(&view), String::from);
