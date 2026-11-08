@@ -576,6 +576,16 @@ fn a_bit_string_is_aligned_unless_it_has_one_size_of_sixteen_bits_at_most() {
     assert!(reader.bit().unwrap());
     assert_eq!(reader.bits_sized(10, 10).unwrap(), ten);
     assert!(reader.bit().unwrap());
+    // Sixteen bits are a bit-field too, read where the bit before them ends.
+    let sixteen = Bits::new(0x8001, 16).unwrap();
+    let octets = written(|w| {
+        w.bit(true);
+        w.bits_sized(sixteen, 16, 16).unwrap();
+    });
+    assert_eq!(octets, [0b1100_0000, 0x00, 0b1000_0000]);
+    let mut reader = Reader::new(&octets);
+    assert!(reader.bit().unwrap());
+    assert_eq!(reader.bits_sized(16, 16).unwrap(), sixteen);
 
     // §16.10: one size of more is octet-aligned, and what follows it is not.
     let twenty = Bits::new(0xabcde, 20).unwrap();

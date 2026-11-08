@@ -438,6 +438,9 @@ mod tests {
         assert_eq!((set.value(), set.len()), (0x155, 10));
         assert_eq!(set.to_vec(), [0x55, 0x40]);
         assert_eq!(Bits::from_octets(&[0x55, 0x40], 10).unwrap(), set);
+        // The longest, of 64 bits, from its eight octets.
+        let longest = Bits::from_octets(&[0xff; 8], 64).unwrap();
+        assert_eq!(longest, Bits::new(u64::MAX, 64).unwrap());
         assert_eq!(set.get(0), Some(false));
         assert_eq!(set.get(1), Some(true));
         assert_eq!(set.get(9), Some(true));
