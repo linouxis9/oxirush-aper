@@ -187,7 +187,7 @@ jobs:
 
   # Each target gives its octets to the crate, and checks what it reads and writes.
   fuzz:
-    name: Fuzz the codec and the JSON forms (7 minutes)
+    name: Fuzz the codec and the JSON forms (8 minutes)
     needs: revisions
     runs-on: ubuntu-24.04
     defaults:
@@ -221,10 +221,12 @@ jobs:
       - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096
       - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
       # These take the PDUs of tests/fixtures themselves, and edit them, write them from
-      # their trees or give the fuzzer's octets a place in them.
+      # their trees, give the fuzzer's octets a place in them or write them as another
+      # implementation writes JER.
       - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run transfer -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0
 
   # The files that the tools of `protocols/` write, as they write them: the revisions
   # of build/revisions wherever the repository names one, and the test of the README.

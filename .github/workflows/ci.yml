@@ -149,7 +149,7 @@ jobs:
   # the paths or the checks that the generated crates share shows at the commit, before
   # a protocol crate takes it. Each corpus starts from the PDUs of its tests/fixtures.
   toy-fuzz:
-    name: Fuzz TOY (7 minutes)
+    name: Fuzz TOY (8 minutes)
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -172,6 +172,7 @@ jobs:
       - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run transfer -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0
 
   # The block of the README that uses oxirush-ngap: `family/` is a package of its own,
   # which takes it at the version of its manifest, so that the crate depends on none of

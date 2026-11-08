@@ -787,3 +787,67 @@ pub fn transfer(input: Transfer) {
     }
 }
 
+/// A PDU of the fixtures as another implementation writes it in the JSON Encoding Rules
+/// (ITU-T X.697), and the leaves that the fuzzer changes in it.
+#[derive(Arbitrary, Debug)]
+pub struct Jer {
+    base: u16,
+    changes: Vec<(Vec<u16>, Leaf)>,
+}
+
+/// A view of a PDU as another implementation writes one: its procedure code, its
+/// direction, its criticality and each IE by its identifier, its criticality and its
+/// value, the values those of the tree of a PDU of the fixtures, with leaves that the
+/// fuzzer changes anywhere in it, the identifiers and the criticalities too.
+///
+/// `tree_of_jer` takes any view without a panic, and a PDU that `from_tree` writes from
+/// the tree that it gives is one that the crate wrote ([`written_pdu`]).
+pub fn jer(input: Jer) {
+    use codec::aper::protocol::Field;
+    let pool = &*POOL;
+    let Some(pdu) = pool
+        .pdus
+        .get(usize::from(input.base) % pool.pdus.len().max(1))
+    else {
+        return;
+    };
+    let Ok(fields) = pdu.protocol_ies() else {
+        return;
+    };
+    let tree = pdu.to_tree();
+    let values = tree.get("ies").and_then(Value::as_array);
+    let mut ies = Vec::new();
+    for (position, field) in fields.0.iter().enumerate() {
+        // The value of the IE in the tree, the member that is not its criticality
+        let value = values
+            .and_then(|values| values.get(position))
+            .and_then(Value::as_object)
+            .and_then(|entry| entry.iter().find(|(name, _)| *name != "criticality"))
+            .map_or(Value::Null, |(_, value)| value.clone());
+        let mut ie = codec::tree::Map::new();
+        ie.insert("id".into(), Value::from(field.id()));
+        ie.insert(
+            "criticality".into(),
+            Value::from(field.criticality().name()),
+        );
+        ie.insert("value".into(), value);
+        ies.push(Value::Object(ie));
+    }
+    let mut message = codec::tree::Map::new();
+    message.insert("protocolIEs".into(), Value::Array(ies));
+    let mut view = codec::tree::Map::new();
+    view.insert("procedure_code".into(), Value::from(pdu.procedure_code()));
+    view.insert("direction".into(), Value::from(pdu.direction().name()));
+    view.insert("criticality".into(), Value::from(pdu.criticality().name()));
+    view.insert("message".into(), Value::Object(message));
+    let mut view = Value::Object(view);
+    for (walk, leaf) in input.changes.iter().take(8) {
+        change(&mut view, walk, leaf.value());
+    }
+    let Ok(tree) = inspect::__tree_of_jer(&view) else {
+        return;
+    };
+    if let Ok(written) = Pdu::from_tree(&tree) {
+        written_pdu(&written);
+    }
+}

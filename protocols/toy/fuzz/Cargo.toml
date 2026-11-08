@@ -79,3 +79,10 @@ test = false
 doc = false
 bench = false
 
+
+[[bin]]
+name = "jer"
+path = "../../fuzz/fuzz_targets/jer.rs"
+test = false
+doc = false
+bench = false
