@@ -83,6 +83,8 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Fixed
 
+- `check_path` takes `*` in an IE that a value holds alone, as `select` does: the
+  value of the IE and the criticality beside it.
 - `family/` runs the block of the README that uses oxirush-ngap with the revision
   of oxirush-ngap that takes this crate, which no published version does yet:
   its copy of the block was that of 0.1.
