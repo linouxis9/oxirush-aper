@@ -1884,3 +1884,37 @@ fn an_alternative_of_the_type_null_is_a_value_in_a_procedure_that_the_tables_lac
         assert_eq!(select(&tree, path), std::slice::from_ref(value), "{path}");
     }
 }
+
+/// A view of a PDU whose values another implementation wrote in the JSON Encoding Rules,
+/// as pycrate writes them, is read as a tree: each IE by its name, and the values of the
+/// well-known types in their readable form, where it gives the same value back.
+#[test]
+fn a_view_in_the_json_encoding_rules_is_read_as_a_tree() {
+    let view = tree!({
+        "procedure_code": 1,
+        "direction": "InitiatingMessage",
+        "criticality": "reject",
+        "message": {"protocolIEs": [
+            {"id": 26, "criticality": "reject", "value": [
+                {"tAC": "000001", "broadcastPLMNs": ["02f839"]},
+            ]},
+            {"id": 20, "criticality": "ignore", "value": "node-1"},
+        ]},
+    });
+    let tree = oxirush_toy::inspect::__tree_of_jer(&view).unwrap();
+    assert_eq!(
+        tree,
+        tree!({"message": "SetupRequest", "ies": [
+            {"Areas": [{"tAC": 1, "broadcastPLMNs": ["208-93"]}]},
+            {"NodeName": "node-1"},
+        ]})
+    );
+    assert!(TOYPDU::from_tree(&tree).is_ok());
+    // A view without its procedure code or its direction is refused.
+    let mut without = view.clone();
+    without
+        .as_object_mut()
+        .unwrap()
+        .shift_remove("procedure_code");
+    assert!(oxirush_toy::inspect::__tree_of_jer(&without).is_err());
+}

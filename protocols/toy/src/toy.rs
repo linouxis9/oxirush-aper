@@ -1449,6 +1449,8 @@ pub mod toy_ies {
         pub tac: TAC,
         pub node_name: Option<NodeName<'a>>,
         pub message: Option<Octets<'a>>,
+        pub kinds: Option<Kinds>,
+        pub mixed: Option<Mixed>,
         pub ie_extensions: Option<ProtocolExtensionContainer<'static>>,
     }
     impl<'a> ContainerBlob<'a> {
@@ -1459,6 +1461,8 @@ pub mod toy_ies {
                 tac: self.tac,
                 node_name: self.node_name.map(|value| value.into_owned()),
                 message: self.message.map(|value| value.into_owned()),
+                kinds: self.kinds,
+                mixed: self.mixed,
                 ie_extensions: self.ie_extensions,
             }
         }
@@ -1469,19 +1473,29 @@ pub mod toy_ies {
     impl<'a> Decode<'a> for ContainerBlob<'a> {
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
             let extended = reader.bit()?;
-            let present = reader.bits(3)?;
+            let present = reader.bits(5)?;
             let tac = TAC::decode(reader).map_err(in_field("tac"))?;
-            let node_name = if present & 4 != 0 {
+            let node_name = if present & 16 != 0 {
                 Some(NodeName::decode(reader).map_err(in_field("node_name"))?)
             } else {
                 None
             };
-            let message = if present & 2 != 0 {
+            let message = if present & 8 != 0 {
                 Some(
                     reader
                         .octet_string(1, 9600, false)
                         .map_err(in_field("message"))?,
                 )
+            } else {
+                None
+            };
+            let kinds = if present & 4 != 0 {
+                Some(Kinds::decode(reader).map_err(in_field("kinds"))?)
+            } else {
+                None
+            };
+            let mixed = if present & 2 != 0 {
+                Some(Mixed::decode(reader).map_err(in_field("mixed"))?)
             } else {
                 None
             };
@@ -1501,6 +1515,8 @@ pub mod toy_ies {
                 tac,
                 node_name,
                 message,
+                kinds,
+                mixed,
                 ie_extensions,
             })
         }
@@ -1510,6 +1526,8 @@ pub mod toy_ies {
             writer.bit(false);
             writer.bit(self.node_name.is_some());
             writer.bit(self.message.is_some());
+            writer.bit(self.kinds.is_some());
+            writer.bit(self.mixed.is_some());
             writer.bit(self.ie_extensions.is_some());
             self.tac.encode(writer).map_err(in_field("tac"))?;
             if let Some(value) = &self.node_name {
@@ -1519,6 +1537,12 @@ pub mod toy_ies {
                 writer
                     .octet_string(value, 1, 9600, false)
                     .map_err(in_field("message"))?;
+            }
+            if let Some(value) = &self.kinds {
+                value.encode(writer).map_err(in_field("kinds"))?;
+            }
+            if let Some(value) = &self.mixed {
+                value.encode(writer).map_err(in_field("mixed"))?;
             }
             if let Some(value) = &self.ie_extensions {
                 value.encode(writer).map_err(in_field("ie_extensions"))?;
@@ -1540,6 +1564,8 @@ pub mod toy_ies {
                 "message",
                 self.message.as_ref().map(|value| json::octets(value)),
             );
+            members.put_optional("kinds", self.kinds.as_ref().map(|value| value.to_tree()));
+            members.put_optional("mixed", self.mixed.as_ref().map(|value| value.to_tree()));
             members.put_optional(
                 "iE-Extensions",
                 self.ie_extensions.as_ref().map(|value| value.to_tree()),
@@ -1553,6 +1579,8 @@ pub mod toy_ies {
             let message = reading.optional(&members, "message", |value, reading| {
                 json::read_octets(reading, value)
             })?;
+            let kinds = reading.optional(&members, "kinds", Kinds::from_tree)?;
+            let mixed = reading.optional(&members, "mixed", Mixed::from_tree)?;
             let ie_extensions = reading.optional(
                 &members,
                 "iE-Extensions",
@@ -1562,6 +1590,8 @@ pub mod toy_ies {
                 tac,
                 node_name,
                 message,
+                kinds,
+                mixed,
                 ie_extensions,
             })
         }
@@ -2458,6 +2488,134 @@ pub mod toy_ies {
     }
     #[cfg(feature = "serde")]
     oxirush_utils::impl_serde!(Items<'a>);
+    /// `KindOfTransfer ::= TransferKind`.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+    pub struct KindOfTransfer(pub TransferKind);
+    impl From<KindOfTransfer> for TransferKind {
+        #[inline]
+        fn from(value: KindOfTransfer) -> Self {
+            value.0
+        }
+    }
+    impl From<TransferKind> for KindOfTransfer {
+        fn from(value: TransferKind) -> Self {
+            Self(value)
+        }
+    }
+    impl AsnType for KindOfTransfer {
+        const NAME: &'static str = "KindOfTransfer";
+    }
+    impl<'a> Decode<'a> for KindOfTransfer {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self(TransferKind::decode(reader)?))
+        }
+    }
+    impl Encode for KindOfTransfer {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            self.0.encode(writer)?;
+            Ok(())
+        }
+    }
+    #[cfg(feature = "inspect")]
+    impl Tree for KindOfTransfer {
+        const NAME: &'static str = <Self as AsnType>::NAME;
+        fn to_tree(&self) -> Value {
+            self.0.to_tree()
+        }
+        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+            Ok(Self(TransferKind::from_tree(value, reading)?))
+        }
+    }
+    #[cfg(feature = "serde")]
+    oxirush_utils::impl_serde!(KindOfTransfer);
+    /// `Kinds ::= SEQUENCE`.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct Kinds {
+        pub first: TransferKind,
+        pub second: KindOfTransfer,
+    }
+    impl AsnType for Kinds {
+        const NAME: &'static str = "Kinds";
+    }
+    impl<'a> Decode<'a> for Kinds {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            let first = TransferKind::decode(reader).map_err(in_field("first"))?;
+            let second = KindOfTransfer::decode(reader).map_err(in_field("second"))?;
+            Ok(Self { first, second })
+        }
+    }
+    impl Encode for Kinds {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            self.first.encode(writer).map_err(in_field("first"))?;
+            self.second.encode(writer).map_err(in_field("second"))?;
+            Ok(())
+        }
+    }
+    #[cfg(feature = "inspect")]
+    impl Tree for Kinds {
+        const NAME: &'static str = <Self as AsnType>::NAME;
+        fn to_tree(&self) -> Value {
+            let mut members = json::Members::new();
+            members.put("first", self.first.to_tree());
+            members.put("second", self.second.to_tree());
+            members.finish()
+        }
+        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+            let members = reading.members(value, names::Kinds)?;
+            let first = reading.member(&members, "first", TransferKind::from_tree)?;
+            let second = reading.member(&members, "second", KindOfTransfer::from_tree)?;
+            Ok(Self { first, second })
+        }
+    }
+    #[cfg(feature = "serde")]
+    oxirush_utils::impl_serde!(Kinds);
+    /// `Mixed ::= SEQUENCE`.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct Mixed {
+        pub kind: TransferKind,
+        pub cause: CauseNas,
+    }
+    impl AsnType for Mixed {
+        const NAME: &'static str = "Mixed";
+    }
+    impl<'a> Decode<'a> for Mixed {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            let kind = TransferKind::decode(reader).map_err(in_field("kind"))?;
+            let cause = CauseNas::decode(reader).map_err(in_field("cause"))?;
+            Ok(Self { kind, cause })
+        }
+    }
+    impl Encode for Mixed {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            self.kind.encode(writer).map_err(in_field("kind"))?;
+            self.cause.encode(writer).map_err(in_field("cause"))?;
+            Ok(())
+        }
+    }
+    #[cfg(feature = "inspect")]
+    impl Tree for Mixed {
+        const NAME: &'static str = <Self as AsnType>::NAME;
+        fn to_tree(&self) -> Value {
+            let mut members = json::Members::new();
+            members.put("kind", self.kind.to_tree());
+            members.put("cause", self.cause.to_tree());
+            members.finish()
+        }
+        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+            let members = reading.members(value, names::Mixed)?;
+            let kind = reading.member(&members, "kind", TransferKind::from_tree)?;
+            let cause = reading.member(&members, "cause", CauseNas::from_tree)?;
+            Ok(Self { kind, cause })
+        }
+    }
+    #[cfg(feature = "serde")]
+    oxirush_utils::impl_serde!(Mixed);
     /// `NAS-PDU ::= OCTET STRING`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct NASPDU<'a>(pub Octets<'a>);

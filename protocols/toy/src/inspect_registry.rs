@@ -35,7 +35,7 @@ oxirush_aper::__types! {
         Cause choice { "radioNetwork": CauseRadioNetwork, "nas": CauseNas, "protocol": CauseProtocol, "misc": CauseMisc, "choice-Extensions": ie };
         ConnectionItem sequence { "uE-Core-ID"? _, "uE-RAN-ID"? _, "iE-Extensions"? extensions };
         Connections = [ConnectionItem];
-        ContainerBlob sequence { "tAC": TAC, "nodeName"? _, "message"? _, "iE-Extensions"? extensions };
+        ContainerBlob sequence { "tAC": TAC, "nodeName"? _, "message"? _, "kinds"? Kinds, "mixed"? Mixed, "iE-Extensions"? extensions };
         Counts sequence { "countUL": _, "countDL": _, "iE-Extensions"? extensions };
         CriticalityDiagnostics sequence { "procedureCode"? _, "triggeringMessage"? TriggeringMessage, "procedureCriticality"? Criticality, "iEsCriticalityDiagnostics"? CriticalityDiagnosticsIEList, "iE-Extensions"? extensions };
         CriticalityDiagnosticsIEItem sequence { "iECriticality": Criticality, "iE-ID": _, "typeOfError": TypeOfError, "iE-Extensions"? extensions };
@@ -46,6 +46,9 @@ oxirush_aper::__types! {
         InitiatingMessage sequence { "procedureCode": _, "criticality": Criticality, "value": _ };
         Item sequence { "item-ID": _, "cause"? Cause, "iE-Extensions"? extensions };
         Items = [ie];
+        KindOfTransfer = TransferKind;
+        Kinds sequence { "first": TransferKind, "second": KindOfTransfer };
+        Mixed sequence { "kind": TransferKind, "cause": CauseNas };
         NodeID choice { "macro-NodeID": _, "home-NodeID": _, "unassigned": null, "choice-Extensions": ie };
         Notification sequence { "protocolIEs": ies };
         PrivateIEID choice { "local": _, "global": _ };

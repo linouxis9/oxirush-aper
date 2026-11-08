@@ -789,6 +789,15 @@ impl Trees<'_> {
             Shape::Ie(known) | Shape::Extension(known, _) => {
                 if same_name(part, CRITICALITY) {
                     next.absent_once(part, at.of(Shape::Plain));
+                } else if part == "*" {
+                    // The value of the IE, of the type of the IE that the place has if it
+                    // is one, and the criticality beside it, as in a tree.
+                    let value = match known {
+                        Some(id) => at.value(protocol, Some(id), extended(shape)),
+                        None => at.of(Shape::Unknown),
+                    };
+                    next.absent_once(part, value);
+                    next.absent_once(CRITICALITY, at.of(Shape::Plain));
                 } else if let Some(id) = segment_id(protocol, part, true)?
                     && known.is_none_or(|known| known == id)
                 {

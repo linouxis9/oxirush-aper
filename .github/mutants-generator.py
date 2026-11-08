@@ -84,9 +84,15 @@ def generate(protocol):
     if subprocess.run(["cargo", "build", "--locked", *manifest], **quiet).returncode != 0:
         return "unviable"
     try:
+        # What the generator writes is taken out first: one that writes nothing writes
+        # other bindings than those that it writes unchanged.
+        for file in written(protocol):
+            (crate / file).unlink(missing_ok=True)
         if not ran([*LIMIT, "cargo", "run", "--locked", *manifest], **quiet):
             return None
         files = written(protocol)
+        if not all((crate / file).exists() for file in files):
+            return None
         rust = [file for file in files if file.endswith(".rs")]
         # Bindings that are no Rust are not those that the generator writes unchanged
         formatted = subprocess.run(["rustfmt", "--edition", "2024", *rust], **quiet)

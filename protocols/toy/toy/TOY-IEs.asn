@@ -3,8 +3,9 @@
 -- single containers, extension containers whose IE has the type that the type it
 -- extends gives it, a value that holds a key, a list of up to 65536 items, a count
 -- that two octets do not hold, a number of an extensible range, an ENUMERATED whose
--- order its numbers and its addition give, alternatives of the type NULL, one in a
--- CHOICE of long bit strings, the well-known types and the identifiers of a UE.
+-- order its numbers and its addition give, a type that is another ENUMERATED,
+-- alternatives of the type NULL, one in a CHOICE of long bit strings, the well-known
+-- types and the identifiers of a UE.
 
 TOY-IEs {
 iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
@@ -120,6 +121,8 @@ ContainerBlob ::= SEQUENCE {
 	tAC					TAC,
 	nodeName			NodeName													OPTIONAL,
 	message				OCTET STRING (SIZE(1..9600))								OPTIONAL,
+	kinds				Kinds														OPTIONAL,
+	mixed				Mixed														OPTIONAL,
 	iE-Extensions		ProtocolExtensionContainer { {ContainerBlob-ExtIEs} }	OPTIONAL,
 	...
 }
@@ -198,6 +201,18 @@ GTPTunnel-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
 IndexOfItem ::= INTEGER (1..8, ...)
 
 IndexOfTransfer ::= INTEGER (1..4, ...)
+
+KindOfTransfer ::= TransferKind
+
+Kinds ::= SEQUENCE {
+	first				TransferKind,
+	second				KindOfTransfer
+}
+
+Mixed ::= SEQUENCE {
+	kind				TransferKind,
+	cause				CauseNas
+}
 
 Item ::= SEQUENCE {
 	item-ID				INTEGER (0..255),

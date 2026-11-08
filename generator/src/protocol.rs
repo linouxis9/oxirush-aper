@@ -77,11 +77,10 @@ pub fn generate(protocol: &Protocol) -> Result<()> {
     let mut files = crate::asn1::modules()?;
     files.sort();
 
+    // rasn-compiler leaves an open type opaque by default, as these specifications need:
+    // its typed open types are experimental and emit invalid bindings for them. The
+    // macros over the generated registry give an open type its type.
     let config = RasnConfig {
-        // rasn-compiler's typed open types are experimental and currently emit invalid
-        // bindings for these specifications. An open type is opaque: the macros over the
-        // generated registry give it its type.
-        opaque_open_types: true,
         generate_from_impls: true,
         ..RasnConfig::default()
     };

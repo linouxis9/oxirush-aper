@@ -55,7 +55,7 @@ exclude_re = [
     #   readings of members, which the trees do not use, and for a family that opens a value
     #   where the edit is not to open one or goes through members without an end, which the
     #   trees never do;
-    'src/inspect/paths\.rs:.*: delete match arm tree::ErrorKind::(Value|Refused) in error$',
+    'src/inspect/paths\.rs:.*: delete match arm tree::ErrorKind::Value \| tree::ErrorKind::Refused in error$',
     # - every list of IEs of a type is its member protocolIEs, and `transfer` gives none for
     #   a type that is no transfer of protocol IEs;
     'src/inspect/paths\.rs:.*: replace match guard \*member == IES with true in Protocol::members$',
