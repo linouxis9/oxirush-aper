@@ -37,9 +37,7 @@ compile_error!(
      .cargo/config.toml sets them, or set RUSTFLAGS to the --cfg that this file names"
 );
 
-use codec::hooks::{
-    BorrowedPdu, PDU_TYPE, Pdu, message_octets, message_octets_both_ways, message_read_and_written,
-};
+use codec::hooks::{BorrowedPdu, PDU_TYPE, Pdu, message_octets, message_read_and_written};
 
 /// The octets that hexadecimal writes.
 fn unhex(text: &str) -> Vec<u8> {
@@ -120,19 +118,6 @@ fn pdu_and_message(octets: &[u8]) -> (usize, usize) {
         .as_ref()
         .map_err(Clone::clone)
         .and_then(BorrowedPdu::encode);
-    // `decode` and `encode` take a PDU of the usual layout octet by octet. The codec of
-    // the type, which they stand for, gives the same PDU, the same error and the same
-    // octets.
-    let as_its_type = codec::aper::decode::<BorrowedPdu>(octets);
-    assert_eq!(as_its_type, pdu, "{octets:02x?}");
-    if let Ok(pdu) = &pdu {
-        assert_eq!(codec::aper::encode(pdu), written, "{pdu:?}");
-        // The protocol IEs of its message are put back octet by octet too.
-        if let Ok(ies) = pdu.protocol_ies() {
-            let (octet_by_octet, as_its_type) = message_octets_both_ways(&ies);
-            assert_eq!(octet_by_octet, as_its_type, "{pdu:?}");
-        }
-    }
     if !same(PDU_TYPE, octets, &written) {
         return (0, 0);
     }

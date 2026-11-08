@@ -43,6 +43,12 @@ All notable changes to `oxirush-aper` are recorded here.
 - A PDU decodes one way: `decode` borrows the octets of its message from what it
   is given, and `into_owned()` keeps it after them. `decode_value` is the one way
   to the message, which borrows from the PDU.
+- `decode` and `encode` of a PDU are its codec, `set_protocol_ies` writes the
+  message with the codec of the container, and `check` and `check_structure` read
+  the container once, with a reader that notes its faults for `check`: the
+  readers and the writers that did the same octet by octet go, and so does the
+  walk that skipped to an IE of the usual layout. `field`, the walk of the
+  readers and the macros, stays.
 - The generator writes no `new` for a `SEQUENCE`: a struct literal builds one,
   with its members by their names. The `new` of a bit string of one size, which
   refuses a number that its bits do not hold, stays. The macro of the
@@ -69,6 +75,9 @@ All notable changes to `oxirush-aper` are recorded here.
 - The macros `__with_ie_mut!` and `__build_ie!` (`with_ngap_ie_mut!` and
   `build_ngap_ie!` of the protocol crates), the module `messages` of a
   registry, `protocol::__Field`, and `Protocol::__procedure_criticality`.
+- `encode_into` of a PDU, which `oxirush_aper::encode_into(&pdu, &mut octets)`
+  is; `protocol::message_octets_as_its_type`, which `message_octets` is; and the
+  hook `message_octets_both_ways`.
 - `Message::__decode_owned`, and the fields of the `Protocol` of the generator
   that only the documentation of a PDU took: `aliases`, `ue_ids` (and `UeIds`),
   `release_request`, `release_display`, `other_message`, `no_message` and

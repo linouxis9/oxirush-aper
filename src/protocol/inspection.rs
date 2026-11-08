@@ -1013,7 +1013,7 @@ macro_rules! __hooks {
         )]
         pub mod hooks {
             use crate::Error;
-            use crate::$bindings::{ProtocolIEContainer, $pdu};
+            use crate::$bindings::$pdu;
 
             /// The bindings, by a name that is the same for both protocols.
             pub use crate::$bindings as bindings;
@@ -1031,15 +1031,6 @@ macro_rules! __hooks {
             /// The octets of the message of `pdu`.
             pub fn message_octets<'p>(pdu: &'p $pdu<'_>) -> &'p [u8] {
                 $crate::protocol::Pdu::value(pdu)
-            }
-
-            /// The octets of the message that has these protocol IEs, as `set_protocol_ies`
-            /// writes them, octet by octet, and as the codec of the type writes them.
-            pub fn message_octets_both_ways(
-                ies: &ProtocolIEContainer<'_>,
-            ) -> (Result<Vec<u8>, Error>, Result<Vec<u8>, Error>) {
-                let as_its_type = $crate::protocol::message_octets_as_its_type(&ies.0);
-                ($crate::protocol::message_octets(&ies.0), as_its_type)
             }
 
             /// The message of `pdu` as its type: the name of the type in the bindings, and the

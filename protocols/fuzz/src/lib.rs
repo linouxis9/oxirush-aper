@@ -69,13 +69,8 @@ pub fn decode(octets: &[u8]) {
         .map_err(Clone::clone)
         .and_then(Borrowed::encode);
     oracle::same_octets(PDU_TYPE, octets, ours(&written));
-    let pdu = match read {
-        Ok(pdu) => pdu,
-        // What `decode` refuses, the codec of the type refuses in the same words.
-        Err(error) => {
-            assert_eq!(aper::decode::<Borrowed>(octets), Err(error));
-            return;
-        }
+    let Ok(pdu) = read else {
+        return;
     };
     let written = match written {
         Ok(written) => written,
@@ -86,11 +81,6 @@ pub fn decode(octets: &[u8]) {
         Ok(&pdu),
         "{written:02x?}"
     );
-
-    // `decode` and `encode` take a PDU of the usual layout octet by octet: the codec of
-    // the type gives the same PDU and the same octets.
-    assert_eq!(aper::decode::<Borrowed>(octets).as_ref(), Ok(&pdu));
-    assert_eq!(aper::encode(&pdu).as_ref(), Ok(&written), "{pdu:?}");
 
     // What the octets of the message have no part in.
     let _ = (pdu.to_string(), pdu.procedure_name(), pdu.kind());

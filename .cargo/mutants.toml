@@ -26,8 +26,7 @@ exclude_re = [
     'src/writer\.rs:.*: replace \| with \^ in Writer<.a>::(length|long_open_type)$',
     'src/oid\.rs:.*: replace \| with \^ in ObjectIdentifier::(to|from)_contents$',
     'src/json\.rs:.*: replace \| with \^ in Form::write$',
-    'src/protocol/read\.rs:.*: replace \| with \^ in (field|skip)$',
-    'src/protocol/pdu\.rs:.*: replace \| with \^ in message_octets$',
+    'src/protocol/read\.rs:.*: replace \| with \^ in field$',
     # A range of 256 values in the case of a length: a length of no bit, then one octet,
     # aligned, as the arm of that range reads and writes it.
     'src/reader\.rs:.*: delete match arm 255 in Reader<.a>::offset$',
@@ -85,15 +84,11 @@ exclude_re = [
     # head of a container of three octets at least.
     'src/protocol/read\.rs:.*: delete match arm \[(length|first) @.* in field$',
     'src/protocol/read\.rs:.*: replace > with (<|==|>=) in field$',
-    'src/protocol/read\.rs:.*: replace skip -> Option<\(u16, usize\)> with None$',
-    'src/protocol/read\.rs:.*: delete match arm \[(length|first) @.* in skip$',
     'src/protocol/read\.rs:.*: replace > with < in __Walk<.s, P>::next_of$',
     'src/protocol/read\.rs:.*: delete match arm \[first, high, low, \.\.\] in head$',
-    # The writer of a message of protocol IEs writes a length of one octet or two itself,
-    # and leaves the others to the writer of an open type, which writes the same length;
-    # the room that it reserves is no part of the octets.
-    'src/protocol/pdu\.rs:.*: delete match arm length @.* in message_octets$',
-    'src/protocol/pdu\.rs:.*: replace \+ with \* in message_octets(_as_its_type)?$',
+    # The room that the writer of a message of protocol IEs reserves is no part of the
+    # octets.
+    'src/protocol/pdu\.rs:.*: replace \+ with \* in message_octets$',
     # The name that a message gives as the holder of itself, which its reader discards: the
     # errors of a message name it by its type.
     'src/protocol/read\.rs:.*: replace <impl __Holds<M> for M>::__message ',

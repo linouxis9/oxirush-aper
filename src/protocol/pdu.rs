@@ -6,15 +6,23 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::errors::__undecodable_ie;
-use super::read;
 use super::{Direction, Field, Message, Pdu, Protocol, Transfer, object_set};
 use crate::check::{Deviation, Wrong, deviations, structure_deviations};
 use crate::{Criticality, Decode, Error, ErrorKind, Faults, Octets, Presence, Reader, Writer};
 
 /// The protocol IEs of a message, which the ASN.1 has as a SEQUENCE of one container of
-/// protocol IEs, which a later release may add to: the additions are skipped.
-fn message_ies<'o, P: Protocol>(octets: &'o [u8]) -> Result<Vec<P::Field<'o>>, Error> {
-    let mut reader = Reader::new(octets);
+/// protocol IEs, which a later release may add to: the additions are skipped. With
+/// `noting`, the faults of a reader that notes them too: what of the message is in another
+/// form than the one that X.691 gives it, around the values of its IEs, which are not read
+/// here.
+fn message_ies<'o, P: Protocol>(
+    octets: &'o [u8],
+    noting: bool,
+) -> Result<(Vec<P::Field<'o>>, Faults), Error> {
+    let mut reader = match noting {
+        true => Reader::noting(octets),
+        false => Reader::new(octets),
+    };
     let extended = reader.bit()?;
     let ies = (|| {
         let count = reader.size(0, 65535)?;
@@ -28,92 +36,15 @@ fn message_ies<'o, P: Protocol>(octets: &'o [u8]) -> Result<Vec<P::Field<'o>>, E
     if extended {
         reader.skip_additions()?;
     }
+    // The bits after the message, up to the end of its last octet, are padding.
+    reader.align();
     reader.finish()?;
-    Ok(ies)
-}
-
-/// What of the message is in another form than the one that X.691 gives it, around the
-/// values of its IEs, which are not read here: the faults of a reader that notes them, as
-/// the codec of a message that is a container of protocol IEs and nothing else reads it.
-fn message_faults<P: Protocol>(octets: &[u8]) -> Faults {
-    let mut reader = Reader::noting(octets);
-    let read = (|| {
-        let extended = reader.bit()?;
-        let count = reader.size(0, 65535)?;
-        for _ in 0..count {
-            P::Field::decode(&mut reader)?;
-        }
-        if extended {
-            reader.skip_additions()?;
-        }
-        // The bits after the message, up to the end of its last octet, are padding.
-        reader.align();
-        reader.finish()
-    })();
-    match read {
-        Ok(()) => *reader.faults(),
-        Err(_) => Faults::default(),
-    }
-}
-
-/// The identifier and the criticality of each IE of the octets of a message, in their
-/// order, without their values: the walk of the readers, which the codec of the
-/// container reads alike.
-fn listed_ies<P: Protocol>(octets: &[u8]) -> Result<Vec<(u16, Criticality)>, Error> {
-    let (extended, count) = read::head(octets)?;
-    // No more IEs than the octets can hold, of four octets each at least.
-    let mut listed = Vec::with_capacity(count.min(octets.len() / 4));
-    let mut at = 3;
-    for _ in 0..count {
-        let (id, criticality, _, next) =
-            read::field::<P>(octets, at).map_err(|error| error.in_field("protocol_ies"))?;
-        listed.push((id, criticality));
-        at = next;
-    }
-    read::tail(octets, at, extended)?;
-    Ok(listed)
-}
-
-/// The octets of the message that has these protocol IEs, written octet by octet: the
-/// extension bit of the message in an octet, the count of its IEs in two, and for each IE
-/// its identifier in two octets, its criticality in the next, and its value in its open
-/// type. It is what the codec of the type writes, which the tests of the protocol crates
-/// hold it to.
-pub fn message_octets<'f, F: Field<'f>>(ies: &[F]) -> Result<Vec<u8>, Error> {
-    // More IEs than a container has are refused by the codec of the type.
-    let Ok(count) = u16::try_from(ies.len()) else {
-        return message_octets_as_its_type(ies);
-    };
-    let values: usize = ies.iter().map(|ie| ie.value().len() + 5).sum();
-    let mut octets = Vec::with_capacity(3 + values);
-    octets.push(0);
-    octets.extend_from_slice(&count.to_be_bytes());
-    for ie in ies {
-        let [high, low] = ie.id().to_be_bytes();
-        let criticality = (ie.criticality() as u8) << 6;
-        let value: &[u8] = ie.value();
-        // The length of the value in one octet or in two, as nearly every IE has it.
-        match value.len() {
-            length @ 0..=0x7f => octets.extend_from_slice(&[high, low, criticality, length as u8]),
-            length @ 0x80..=0x3fff => {
-                let [first, second] = (length as u16 | 0x8000).to_be_bytes();
-                octets.extend_from_slice(&[high, low, criticality, first, second]);
-            }
-            // A longer value is in fragments, which the writer writes.
-            _ => {
-                octets.extend_from_slice(&[high, low, criticality]);
-                Writer::new(&mut octets).open_type(value);
-                continue;
-            }
-        }
-        octets.extend_from_slice(value);
-    }
-    Ok(octets)
+    Ok((ies, *reader.faults()))
 }
 
 /// The octets of the message that has these protocol IEs, as the codec of the type writes
 /// them.
-pub fn message_octets_as_its_type<'f, F: Field<'f>>(ies: &[F]) -> Result<Vec<u8>, Error> {
+pub fn message_octets<'f, F: Field<'f>>(ies: &[F]) -> Result<Vec<u8>, Error> {
     let values: usize = ies.iter().map(|ie| ie.value().len() + 5).sum();
     let mut octets = Vec::with_capacity(3 + values);
     let mut writer = Writer::new(&mut octets);
@@ -155,7 +86,8 @@ pub fn protocol_ies<'s, 'p: 's, X: Pdu<'p>>(
         let none = Error::new(ErrorKind::Decode, "there are no octets");
         return Err(none.of_message(name));
     }
-    message_ies::<X::Protocol>(value).map_err(|error| error.of_message(name))
+    let ies = message_ies::<X::Protocol>(value, false).map_err(|error| error.of_message(name));
+    ies.map(|(ies, _)| ies)
 }
 
 /// Make `ies` the protocol IEs of the message of `pdu`: the PDU keeps its direction, its
@@ -366,20 +298,18 @@ fn container_deviations<P: Protocol>(
     if octets.is_empty() {
         return Err(Error::new(ErrorKind::Decode, "there are no octets"));
     }
+    let (ies, faults) = message_ies::<P>(octets, values)?;
+    let listed: Vec<_> = ies.iter().map(|ie| (ie.id(), ie.criticality())).collect();
     if !values {
-        let listed = listed_ies::<P>(octets)?;
         structure_deviations(set, &listed, found);
         return Ok(());
     }
-    let ies = message_ies::<P>(octets)?;
     // What of the container itself is in another form than the one of X.691.
-    let faults = message_faults::<P>(octets);
     found.extend(faults.iter().map(|noted| Deviation::NotCanonical {
         ie: None,
         fault: noted.fault,
         bit: noted.bit,
     }));
-    let listed: Vec<_> = ies.iter().map(|ie| (ie.id(), ie.criticality())).collect();
     // What is wrong with the value of the IE at a position: why it does not decode, as
     // the macro that extracts it says it, or what of it is outside the root of an
     // extensible constraint. And what of its encoding is in another form than the one of
@@ -450,90 +380,12 @@ macro_rules! __pdu {
             #[doc = concat!("# Ok::<(), ", stringify!($name), "::Error>(())")]
             /// ```
             pub fn decode(bytes: &'a [u8]) -> Result<Self, $crate::Error> {
-                match Self::usual(bytes) {
-                    Some((alternative, code, criticality, message)) => Ok(Self::of_alternative(
-                        alternative,
-                        code,
-                        criticality,
-                        $crate::Octets::borrowed(message),
-                    )),
-                    None => $crate::decode(bytes),
-                }
-            }
-
-            /// A PDU of the usual layout, read octet by octet: its alternative, its procedure
-            /// code and its criticality, in an octet each, then its message in one piece up
-            /// to the last octet. `None` for octets of another layout and for octets that are
-            /// no PDU, which the codec of the type reads or refuses: this is a shorter way to
-            /// what it gives, and the tests hold the two to the same PDU.
-            #[inline]
-            fn usual(bytes: &'a [u8]) -> Option<(u8, u8, $crate::Criticality, &'a [u8])> {
-                let [alternative, code, criticality, ref rest @ ..] = *bytes else {
-                    return None;
-                };
-                // No extension bit, and one of the three alternatives.
-                if alternative & 0x80 != 0 || alternative >> 5 > 2 {
-                    return None;
-                }
-                let criticality = *$crate::Criticality::ALL.get(usize::from(criticality >> 6))?;
-                // The length of the message in one octet or in two, and no fragment.
-                let message = match *rest {
-                    [length @ 1..=0x7f, ref message @ ..]
-                        if message.len() == usize::from(length) =>
-                    {
-                        message
-                    }
-                    [high @ 0x80..=0xbf, low, ref message @ ..]
-                        if !message.is_empty()
-                            && message.len() == usize::from(high & 0x3f) << 8 | usize::from(low) =>
-                    {
-                        message
-                    }
-                    _ => return None,
-                };
-                Some((alternative >> 5, code, criticality, message))
-            }
-
-            /// The PDU of an alternative, which is one of the three.
-            #[inline]
-            fn of_alternative(
-                alternative: u8,
-                code: u8,
-                criticality: $crate::Criticality,
-                value: $crate::Octets<'a>,
-            ) -> Self {
-                let direction = match alternative {
-                    0 => $crate::Direction::Initiating,
-                    1 => $crate::Direction::Successful,
-                    _ => $crate::Direction::Unsuccessful,
-                };
-                <Self as $crate::protocol::Pdu<'a>>::__of(direction, code, criticality, value)
+                $crate::decode(bytes)
             }
 
             /// The octets of this PDU, in aligned PER.
             pub fn encode(&self) -> Result<alloc::vec::Vec<u8>, $crate::Error> {
-                let value: &[u8] = <Self as $crate::protocol::Pdu<'a>>::value(self);
-                let mut octets = alloc::vec::Vec::with_capacity(value.len() + 6);
-                self.encode_into(&mut octets)?;
-                Ok(octets)
-            }
-
-            /// Append the octets of this PDU, in aligned PER, to `octets`: a buffer that is
-            /// kept from one PDU to the next is allocated once. After an error, `octets`
-            /// are as they were.
-            pub fn encode_into(&self, octets: &mut alloc::vec::Vec<u8>) -> Result<(), $crate::Error> {
-                // Octet by octet, as `decode` reads the usual layout: the alternative, the
-                // procedure code and the criticality, then the message in its open type. It
-                // is what the codec of the type writes, which the tests hold it to.
-                let alternative = match self.direction() {
-                    $crate::Direction::Initiating => 0,
-                    $crate::Direction::Successful => 1,
-                    $crate::Direction::Unsuccessful => 2,
-                };
-                let criticality = (self.criticality() as u8) << 6;
-                octets.extend_from_slice(&[alternative << 5, self.procedure_code(), criticality]);
-                $crate::Writer::new(octets).open_type(<Self as $crate::protocol::Pdu<'a>>::value(self));
-                Ok(())
+                $crate::encode(self)
             }
 
             /// The message that this PDU holds, as its type `T`, which borrows what it holds

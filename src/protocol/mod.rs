@@ -61,7 +61,7 @@ pub use build::{__Message, __message_of_protocol_ies, __set_ie};
 pub use errors::{__missing_ie, __undecodable_ie, __wrong_message, ie_name};
 pub use pdu::{
     check, check_structure, check_transfer, check_transfer_structure, holds_key, message_octets,
-    message_octets_as_its_type, of_message, protocol_ies, set_protocol_ies,
+    of_message, protocol_ies, set_protocol_ies,
 };
 pub use read::{
     __Entry, __Holds, __Source, __Walk, __pdu_holds, Ies, Items, Source, items_of_fields,

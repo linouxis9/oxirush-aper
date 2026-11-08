@@ -233,7 +233,7 @@ pub enum __Walk<'s, P: Protocol> {
 /// or octets that end early, the codec of the IE reads, as it reads it in a message: the
 /// two read the same IE, which the tests hold them to.
 #[inline(always)]
-pub(super) fn field<'s, P: Protocol>(
+fn field<'s, P: Protocol>(
     octets: &'s [u8],
     at: usize,
 ) -> Result<(u16, Criticality, Value<'s>, usize), Error> {
@@ -275,28 +275,6 @@ fn unusual<'s, P: Protocol>(
         None => Value::Fragmented(&octets[at..next]),
     };
     Ok((field.id(), field.criticality(), value, next))
-}
-
-/// The identifier of the IE that starts on the octet `at` of the octets of a container,
-/// and the octet after it, in the usual layout: none for what is otherwise, a length in
-/// fragments, a criticality of no value, or octets that end early.
-#[inline]
-fn skip(octets: &[u8], at: usize) -> Option<(u16, usize)> {
-    let [high, low, criticality, rest @ ..] = octets.get(at..)? else {
-        return None;
-    };
-    if criticality >> 6 == 3 {
-        return None;
-    }
-    let (length, header) = match rest {
-        [length @ 0..=0x7f, ..] => (usize::from(*length), 4),
-        [first @ 0x80..=0xbf, second, ..] => {
-            (usize::from(first & 0x3f) << 8 | usize::from(*second), 5)
-        }
-        _ => return None,
-    };
-    let next = at + header + length;
-    (next <= octets.len()).then_some((u16::from_be_bytes([*high, *low]), next))
 }
 
 impl<'s, P: Protocol> __Walk<'s, P> {
@@ -341,9 +319,9 @@ impl<'s, P: Protocol> __Walk<'s, P> {
             } => {
                 let (mut here, mut count, mut index) = (*at, *left, *position);
                 while count > 0 {
-                    // The identifier of the IE at `here`, and the octet after it, in the
-                    // usual layout; the walk reads what is otherwise.
-                    let Some((found, next)) = skip(octets, here) else {
+                    // The identifier of the IE at `here`, and the octet after it; the walk
+                    // gives the error of one that does not read.
+                    let Ok((found, _, _, next)) = field::<P>(octets, here) else {
                         break;
                     };
                     if found == id {
@@ -679,7 +657,7 @@ impl<'s, P: Protocol> Source<'s, P> {
 /// The extension bit of the octets of a message, and the count of the IEs of its
 /// container, in the two octets after the first (X.691 §11.9.4.1, §11.5.7.3).
 #[inline]
-pub(super) fn head(octets: &[u8]) -> Result<(bool, usize), Error> {
+fn head(octets: &[u8]) -> Result<(bool, usize), Error> {
     match octets {
         [] => Err(Error::new(crate::ErrorKind::Decode, "there are no octets")),
         [first, high, low, ..] => {
@@ -702,7 +680,7 @@ pub(super) fn head(octets: &[u8]) -> Result<(bool, usize), Error> {
 /// What a later release adds to the message after its container, which ends on the octet
 /// `at`, when its extension bit says so, and no octet after the message.
 #[inline]
-pub(super) fn tail(octets: &[u8], at: usize, extended: bool) -> Result<(), Error> {
+fn tail(octets: &[u8], at: usize, extended: bool) -> Result<(), Error> {
     if !extended && at == octets.len() {
         return Ok(());
     }
