@@ -1185,6 +1185,19 @@ fn the_field_after_an_aligned_bit_string_starts_in_its_last_octet() {
         w.bit_string(&short, 4, 4, false).unwrap();
     });
     assert_eq!(octets, [0b1101_0000]);
+    // Of two octets, the first bits of the second, and the field after them where they
+    // end.
+    let twelve = BitString::new(vec![0xab, 0xc0], 12).unwrap();
+    let octets = self::written(|w| {
+        w.bit(true);
+        w.bit_string(&twelve, 12, 12, false).unwrap();
+        w.bit(true);
+    });
+    assert_eq!(octets, [0b1101_0101, 0b1110_0100]);
+    let mut reader = Reader::new(&octets);
+    assert!(reader.bit().unwrap());
+    assert_eq!(reader.bit_string(12, 12, false).unwrap(), twelve);
+    assert!(reader.bit().unwrap());
 }
 
 /// A string of a known multiplier and of one size above two characters is octet-aligned
