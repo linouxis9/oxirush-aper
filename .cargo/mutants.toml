@@ -83,7 +83,7 @@ exclude_re = [
     'src/protocol/read\.rs:.*: delete match arm \[first, high, low, \.\.\] in head$',
     # The room that the writer of a message of protocol IEs reserves is no part of the
     # octets.
-    'src/protocol/pdu\.rs:.*: replace \+ with \* in message_octets$',
+    'src/protocol/pdu\.rs:.*: replace \+ with \* in written$',
     # The name that a message gives as the holder of itself, which its reader discards: the
     # errors of a message name it by its type.
     'src/protocol/read\.rs:.*: replace <impl __Holds<M> for M>::__message ',

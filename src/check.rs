@@ -221,6 +221,16 @@ pub enum Deviation<P: Diagnostics> {
         /// message.
         bit: usize,
     },
+    /// Extension additions after the IEs of the message, which its extension bit says
+    /// follow its container (X.691 §19.7 to §19.9): what a later version of the type of
+    /// the message adds to it, where a release of the specification adds IEs to the
+    /// container instead. A receiver of this version skips them and answers nothing for
+    /// them. The codec of the type, which has no place for them, writes the message
+    /// without them; `set_protocol_ies` of a PDU keeps them after the IEs that it writes.
+    ExtensionAdditions {
+        /// The bit of the octets of the message at which they start, after its container.
+        bit: usize,
+    },
     /// A procedure that this version of the specification does not have in the
     /// direction of the PDU, as one that a later version adds: the receiver does not
     /// comprehend its procedure code, and acts on the criticality of the PDU (clause
@@ -267,6 +277,7 @@ impl<P: Diagnostics> Deviation<P> {
             Self::RepeatedIe { .. }
             | Self::OutOfOrder { .. }
             | Self::NotCanonical { .. }
+            | Self::ExtensionAdditions { .. }
             | Self::UnknownProcedure { .. } => None,
             Self::__Protocol(never, _) => match *never {},
         }
@@ -322,8 +333,9 @@ impl<P: Diagnostics> Deviation<P> {
     ///
     /// `None` where the receiver goes on: for an IE of the criticality `ignore` that
     /// it does not comprehend or that is missing, for a procedure of that criticality,
-    /// which it ignores, for a criticality that is not the assigned one, and for an
-    /// encoding that is not the canonical one.
+    /// which it ignores, for a criticality that is not the assigned one, for an
+    /// encoding that is not the canonical one, and for extension additions, which it
+    /// skips.
     ///
     /// A deviation of an ERROR INDICATION is answered by none: clause 10.5 of both
     /// specifications has its receiver handle it locally, and send no ERROR INDICATION
@@ -345,7 +357,8 @@ impl<P: Diagnostics> Deviation<P> {
             }
             Self::PduCriticality { .. }
             | Self::IeCriticality { .. }
-            | Self::NotCanonical { .. } => None,
+            | Self::NotCanonical { .. }
+            | Self::ExtensionAdditions { .. } => None,
             Self::__Protocol(never, _) => match *never {},
         };
         cause.map(P::cause)
@@ -476,6 +489,11 @@ impl<P: Diagnostics> fmt::Display for Deviation<P> {
             } => write!(
                 formatter,
                 "the message is not written as its sender is to write it: at bit {bit}, {fault}"
+            ),
+            Self::ExtensionAdditions { bit } => write!(
+                formatter,
+                "extension additions of a later version of the type of the message follow \
+                 its IEs, from bit {bit}: a receiver of this version skips them"
             ),
             Self::UnknownProcedure {
                 procedure_code,

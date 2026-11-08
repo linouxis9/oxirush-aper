@@ -20,7 +20,7 @@
 //! of the protocol, by its marker type.
 
 use oxirush_toy::aper::BitString;
-use oxirush_toy::aper::protocol::{Pdu, holds_key, protocol_ies, set_protocol_ies};
+use oxirush_toy::aper::protocol::{Pdu, holds_key, message_octets, protocol_ies, set_protocol_ies};
 use oxirush_toy::toy::*;
 use oxirush_toy::{Direction, Error, ErrorKind, Ie, Octets, Presence, Toy};
 use oxirush_toy::{build_toy, extract_toy_ies, ie};
@@ -231,6 +231,7 @@ fn the_protocol_ies_of_a_pdu_are_read_and_set_as_they_are() -> Result<(), Error>
         protocol_ies: ProtocolIEContainer(mine.clone()),
     })?;
     assert_eq!(changed.value().as_slice(), &expected[..]);
+    assert_eq!(message_octets(&mine)?, expected);
     assert_eq!(
         protocol_ies(&private()).unwrap_err().kind(),
         ErrorKind::WrongMessage
@@ -240,6 +241,41 @@ fn the_protocol_ies_of_a_pdu_are_read_and_set_as_they_are() -> Result<(), Error>
     assert!(holds_key::<Toy>(Direction::Initiating, 1));
     assert!(holds_key::<Toy>(Direction::Successful, 1));
     assert!(!holds_key::<Toy>(Direction::Initiating, 2));
+    Ok(())
+}
+
+/// The octets of the message of `pdu` with its extension bit set and an extension addition
+/// after its container, which a later version of the type of the message adds (X.691
+/// §19.7 to §19.9): the bitmap of one addition, present, after its length less one, then
+/// its open type of one octet.
+fn with_additions(pdu: &TOYPDU<'_>) -> Vec<u8> {
+    let mut message = pdu.value().to_vec();
+    message[0] |= 0x80;
+    message.extend([0x01, 0x01, 0xaa]);
+    message
+}
+
+/// What a later version adds to a message after its container is kept as it is by the
+/// setter of its IEs, which does not touch it: the octets of the message are those that
+/// it had when its IEs are put back, and other IEs are written before the same
+/// additions.
+#[test]
+fn the_extension_additions_of_a_message_are_kept_when_its_ies_are_set() -> Result<(), Error> {
+    let mut pdu = release_request();
+    let message = with_additions(&pdu);
+    pdu.__set_value(Octets::from(message.clone()));
+    let mut again = pdu.clone();
+    set_protocol_ies(&mut again, &protocol_ies(&pdu)?)?;
+    assert_eq!(again.value().as_slice(), &message[..]);
+    let ies = pdu.protocol_ies()?.into_owned();
+    again.set_protocol_ies(ies)?;
+    assert_eq!(again.value().as_slice(), &message[..]);
+    let mine = vec![field(11, Criticality::Reject, &[0x00, 0x09])];
+    set_protocol_ies(&mut again, &mine)?;
+    let mut written = release_request();
+    set_protocol_ies(&mut written, &mine)?;
+    assert_eq!(again.value().as_slice(), &with_additions(&written)[..]);
+    assert_eq!(protocol_ies(&again)?, mine);
     Ok(())
 }
 

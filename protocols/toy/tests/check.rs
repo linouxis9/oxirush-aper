@@ -31,7 +31,7 @@ use oxirush_toy::aper::check::{Wrong, deviations};
 use oxirush_toy::aper::{decode_strict, decode_with_faults};
 use oxirush_toy::toy::*;
 use oxirush_toy::{Deviation, Direction, Error, ErrorKind, Fault, Faults, Octets, Presence};
-use oxirush_toy::{Toy, build_toy};
+use oxirush_toy::{Ie, Toy, build_toy, ie};
 
 /// What `check()` reports of `pdu`, which is the same for the PDU that its octets
 /// decode to. With the `inspect` feature, `tree` is the same message written as a
@@ -451,6 +451,66 @@ fn an_outcome_is_checked_against_the_object_set_of_its_direction() -> Result<(),
             "Cause (IE 15) is mandatory, and the message does not have it",
         ]
     );
+    Ok(())
+}
+
+/// What a later version of the type of a message adds after its container, which the
+/// extension bit says follows it (X.691 §19.7 to §19.9), is reported where it starts, by
+/// `check` and `check_structure`, after the IEs: a receiver of this version skips it and
+/// answers nothing for it, and the codec of the type, which has no place for it, writes
+/// the message without it. So is it after the container of a transfer.
+#[test]
+fn the_extension_additions_of_a_message_are_reported() -> Result<(), Error> {
+    let pdu = build_toy!(IGNORE ReleaseRequest,
+        REJECT UE_Core_ID(42u64),
+        REJECT UE_RAN_ID(7u32),
+    )?;
+    let TOYPDU::initiatingMessage(mut held) = pdu else {
+        panic!("an initiating message");
+    };
+    let container = held.value.to_vec();
+    let mut message = container.clone();
+    let end = message.len();
+    message[0] |= 0x80;
+    message.extend([0x01, 0x01, 0xaa]);
+    held.value = Octets::from(message);
+    let extended = TOYPDU::initiatingMessage(held);
+    let missing = Deviation::MissingIe {
+        id: 15,
+        name: "Cause",
+        criticality: Criticality::Ignore,
+    };
+    let additions = Deviation::ExtensionAdditions { bit: 8 * end };
+    assert_eq!(extended.check()?, [missing.clone(), additions.clone()]);
+    assert_eq!(extended.check_structure()?, [missing, additions.clone()]);
+    assert_eq!(
+        additions.to_string(),
+        format!(
+            "extension additions of a later version of the type of the message follow its \
+             IEs, from bit {}: a receiver of this version skips them",
+            8 * end
+        )
+    );
+    assert_eq!((additions.ie(), additions.cause()), (None, None));
+    assert!(additions.diagnostics_item().is_none() && additions.type_of_error().is_none());
+    let read: ReleaseRequest = extended.decode_value()?;
+    assert_eq!(oxirush_toy::encode(&read)?, container);
+
+    let mut transfer = oxirush_toy::encode(&SetupTransfer {
+        protocol_ies: ProtocolIEContainer(vec![ie::TransferKind::field_of::<SetupTransfer>(
+            TransferKind::ipv4,
+        )?]),
+    })?;
+    let end = transfer.len();
+    transfer[0] |= 0x80;
+    transfer.extend([0x01, 0x01, 0xaa]);
+    let tunnel = Deviation::MissingIe {
+        id: 29,
+        name: "Tunnel",
+        criticality: Criticality::Reject,
+    };
+    let additions = Deviation::ExtensionAdditions { bit: 8 * end };
+    assert_eq!(SetupTransfer::check(&transfer)?, [tunnel, additions]);
     Ok(())
 }
 

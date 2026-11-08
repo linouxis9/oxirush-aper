@@ -10,15 +10,23 @@ use super::{Direction, Field, Message, Pdu, Protocol, Transfer, object_set};
 use crate::check::{Deviation, Wrong, deviations, structure_deviations};
 use crate::{Criticality, Decode, Error, ErrorKind, Faults, Octets, Presence, Reader, Writer};
 
+/// A message of protocol IEs, as [`message_ies`] reads it.
+struct Read<'o, P: Protocol> {
+    /// Its IEs, in their order.
+    ies: Vec<P::Field<'o>>,
+    /// What of the message is in another form than the one that X.691 gives it, around
+    /// the values of its IEs, when its reader notes it.
+    faults: Faults,
+    /// The octet at which the extension additions after its container start, when it has
+    /// some.
+    additions: Option<usize>,
+}
+
 /// The protocol IEs of a message, which the ASN.1 has as a SEQUENCE of one container of
-/// protocol IEs, which a later release may add to: the additions are skipped. With
-/// `noting`, the faults of a reader that notes them too: what of the message is in another
-/// form than the one that X.691 gives it, around the values of its IEs, which are not read
-/// here.
-fn message_ies<'o, P: Protocol>(
-    octets: &'o [u8],
-    noting: bool,
-) -> Result<(Vec<P::Field<'o>>, Faults), Error> {
+/// protocol IEs, which a later release may add to: the additions are skipped, and the
+/// octet at which they start is noted. With `noting`, the faults of a reader that notes
+/// them too, around the values of its IEs, which are not read here.
+fn message_ies<P: Protocol>(octets: &[u8], noting: bool) -> Result<Read<'_, P>, Error> {
     let mut reader = match noting {
         true => Reader::noting(octets),
         false => Reader::new(octets),
@@ -33,26 +41,40 @@ fn message_ies<'o, P: Protocol>(
         Ok::<_, Error>(list)
     })();
     let ies = ies.map_err(|error| error.in_field("protocol_ies"))?;
+    // The container ends on an octet: its count and the value of each IE are aligned.
+    let additions = extended.then(|| reader.position() / 8);
     if extended {
         reader.skip_additions()?;
     }
     // The bits after the message, up to the end of its last octet, are padding.
     reader.align();
     reader.finish()?;
-    Ok((ies, *reader.faults()))
+    Ok(Read {
+        ies,
+        faults: *reader.faults(),
+        additions,
+    })
 }
 
 /// The octets of the message that has these protocol IEs, as the codec of the type writes
 /// them.
 pub fn message_octets<'f, F: Field<'f>>(ies: &[F]) -> Result<Vec<u8>, Error> {
+    written(ies, None)
+}
+
+/// The octets of the message that has these protocol IEs, then the octets of its
+/// extension additions when it has some, as they are.
+fn written<'f, F: Field<'f>>(ies: &[F], additions: Option<&[u8]>) -> Result<Vec<u8>, Error> {
     let values: usize = ies.iter().map(|ie| ie.value().len() + 5).sum();
     let mut octets = Vec::with_capacity(3 + values);
     let mut writer = Writer::new(&mut octets);
-    writer.bit(false);
+    writer.bit(additions.is_some());
     writer.size(ies.len(), 0, 65535)?;
     for ie in ies {
         ie.encode(&mut writer)?;
     }
+    // The container ends on an octet, where the additions start.
+    octets.extend_from_slice(additions.unwrap_or_default());
     Ok(octets)
 }
 
@@ -87,12 +109,14 @@ pub fn protocol_ies<'s, 'p: 's, X: Pdu<'p>>(
         return Err(none.of_message(name));
     }
     let ies = message_ies::<X::Protocol>(value, false).map_err(|error| error.of_message(name));
-    ies.map(|(ies, _)| ies)
+    ies.map(|read| read.ies)
 }
 
 /// Make `ies` the protocol IEs of the message of `pdu`: the PDU keeps its direction, its
 /// procedure code and its criticality, and its message is these IEs, in their order and
-/// as they are. Nothing is checked.
+/// as they are. The extension additions that a later version of the type of the message
+/// adds after its container, when it is one and has some, follow them as they were.
+/// Nothing is checked.
 ///
 /// # Errors
 ///
@@ -104,7 +128,11 @@ pub fn set_protocol_ies<'p, 'f, X: Pdu<'p>>(
     ies: &[<X::Protocol as Protocol>::Field<'f>],
 ) -> Result<(), Error> {
     message_of_protocol_ies(pdu)?;
-    let octets = message_octets(ies).map_err(|error| error.of_protocol_ies(ies.len()))?;
+    let message = pdu.value().as_slice();
+    let read = message_ies::<X::Protocol>(message, false).ok();
+    let additions = read.and_then(|read| Some(message[read.additions?..].to_vec()));
+    let octets = written(ies, additions.as_deref());
+    let octets = octets.map_err(|error| error.of_protocol_ies(ies.len()))?;
     pdu.__set_value(Octets::owned(octets));
     Ok(())
 }
@@ -156,10 +184,12 @@ pub fn holds_key<P: Protocol>(direction: Direction, code: u8) -> bool {
 /// | `UndecodableIe` | An IE of the object set whose value does not decode as its type |
 /// | `OutsideRoot` | An IE whose value is of a later version of its type: outside the root of an extensible constraint |
 /// | `NotCanonical` | What is written in another form than the one that ITU-T X.691 gives it |
+/// | `ExtensionAdditions` | What a later version of the type of the message adds after its IEs |
 /// | `UnknownProcedure` | A procedure that the specification does not have in the direction of the PDU |
 ///
 /// The criticality of the PDU comes first, then what each IE deviates in, in the order of
-/// the message, then the IEs that are missing, in the order of the object set.
+/// the message, then the IEs that are missing, in the order of the object set, then the
+/// extension additions.
 ///
 /// It reports, and refuses nothing. The macros build a message whatever its IEs are, a
 /// tree writes one, and the codec encodes and decodes it: a test of what a peer does with
@@ -202,7 +232,7 @@ pub fn check<'p, X: Pdu<'p>>(pdu: &X) -> Result<Vec<Deviation<X::Protocol>>, Err
 /// How `pdu` deviates from what the ASN.1 assigns its message, in the container of its
 /// IEs alone: the criticality of its procedure, and the object set of its IEs, their
 /// presence, their order, their repetition and their criticality, which is what clause
-/// 10.3 has a receiver answer. The values of the IEs are not decoded: what [`check`]
+/// 10.3 has a receiver answer, and the extension additions after them. The values of the IEs are not decoded: what [`check`]
 /// reports of them, `UndecodableIe`, `OutsideRoot` and `NotCanonical`, is not here. A
 /// receiver that decodes the IEs that it reads finds which of them does not decode then,
 /// as the error of the kind `UndecodableIe` of the macro or of `ie::<T>()`, which
@@ -298,10 +328,17 @@ fn container_deviations<P: Protocol>(
     if octets.is_empty() {
         return Err(Error::new(ErrorKind::Decode, "there are no octets"));
     }
-    let (ies, faults) = message_ies::<P>(octets, values)?;
+    let Read {
+        ies,
+        faults,
+        additions,
+    } = message_ies::<P>(octets, values)?;
     let listed: Vec<_> = ies.iter().map(|ie| (ie.id(), ie.criticality())).collect();
+    // What a later version of the type adds after the container, after the IEs.
+    let added = additions.map(|at| Deviation::ExtensionAdditions { bit: 8 * at });
     if !values {
         structure_deviations(set, &listed, found);
+        found.extend(added);
         return Ok(());
     }
     // What of the container itself is in another form than the one of X.691.
@@ -327,6 +364,7 @@ fn container_deviations<P: Protocol>(
         }
     };
     deviations(set, &listed, &value, found);
+    found.extend(added);
     Ok(())
 }
 
@@ -500,8 +538,9 @@ macro_rules! __pdu {
 
             /// Make `protocol_ies` the protocol IEs of the message of this PDU: the PDU keeps
             /// its direction, its procedure code and its criticality, and its message is
-            /// these IEs, in their order and as they are. With
-            /// [`protocol_ies`](Self::protocol_ies), this amends a message of any type:
+            /// these IEs, in their order and as they are, then the extension additions that
+            /// a later version of its type adds after them, when it has some, as they were.
+            /// With [`protocol_ies`](Self::protocol_ies), this amends a message of any type:
             ///
             /// ```
             #[doc = concat!("use ", stringify!($name), "::{Ie, ie, ", stringify!($bindings), "::*};")]
@@ -684,9 +723,10 @@ macro_rules! __pdu {
             /// How this PDU deviates from what the ASN.1 assigns its message, in the
             /// container of its IEs alone: the criticality of its procedure, and the object
             /// set of its IEs, the presence, the order, the repetition and the criticality of
-            #[doc = concat!("each, which is what clause 10.3 of ", $specification, " has a receiver answer. The values of")]
-            /// the IEs are not decoded, and what [`check`](Self::check) reports of them is not
-            /// here: `UndecodableIe`, `OutsideRoot` and `NotCanonical`.
+            #[doc = concat!("each, which is what clause 10.3 of ", $specification, " has a receiver answer, and the")]
+            /// extension additions after them. The values of the IEs are not decoded, and what
+            /// [`check`](Self::check) reports of them is not here: `UndecodableIe`,
+            /// `OutsideRoot` and `NotCanonical`.
             ///
             /// A receiver that checks the structure and reads the IEs that it needs, with the
             /// macro that extracts IEs or [`ie`](Self::ie), pays for those IEs alone: the

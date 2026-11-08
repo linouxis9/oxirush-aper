@@ -4,8 +4,21 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ## Unreleased
 
+### Added
+
+- `Deviation::ExtensionAdditions`: extension additions after the IEs of a message
+  or of a transfer, which its extension bit says follow its container (X.691
+  §19.7 to §19.9), what a later version of its type adds. `check` and
+  `check_structure` report them after the IEs, with the bit at which they start:
+  a receiver skips them and answers nothing for them, and the codec of the type,
+  which has no place for them, writes the message without them.
+
 ### Fixed
 
+- `set_protocol_ies` keeps the extension additions of the message after the IEs
+  that it writes, as they were: it wrote the message without them, and `check`
+  said nothing of them. The nightly fuzzing of oxirush-s1ap 0.4.0 found a RESET
+  ACKNOWLEDGE with some, which the target `exact` put back shorter.
 - Each path that `paths` lists selects its value, where the fuzzing of
   oxirush-ngap 0.6.0 and oxirush-s1ap 0.4.0 found two kinds of tree in which it
   did not:
