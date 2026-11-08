@@ -1,0 +1,247 @@
+name: Protocol mutants
+
+# The mutation testing of oxirush-ngap and oxirush-s1ap, which the Mutants workflow of
+# each calls, at the revision of this repository that its build/revisions records, with
+# the name of its protocol and what its own triggers say. cargo-mutants changes the code
+# of the crate at one place at a time, a mutant, and runs the tests on each: a mutant that
+# every test passes is code that no test checks. The .cargo/mutants.toml of the crate says
+# what it leaves alone, and why. Every mutant runs on the weekly schedule of the crate,
+# and when the run is started by hand with `full`; on the other nights after a day with a
+# commit, and when it is started by hand without `full`, the mutants of the code that the
+# commits of the last day changed; started by hand with `recheck`, the mutants that a file
+# of the repository names, as a missed.txt has them, again at the head. Each job keeps
+# its mutants.out, with the commit that it ran at, and a missed mutant fails it. A shard
+# takes every n-th mutant, so that the shards of a job last alike.
+on:
+  workflow_call:
+    inputs:
+      protocol:
+        description: The protocol of the crate, `ngap` or `s1ap`
+        required: true
+        type: string
+      weekly:
+        description: The cron of the schedule of the crate that runs every mutant
+        required: true
+        type: string
+      full:
+        description: Every mutant, rather than those of the last day's changes
+        type: boolean
+        default: false
+      parallel:
+        description: The shards of each job that run at once, rather than one
+        type: string
+        default: ""
+      recheck:
+        description: A file of the repository that names mutants, one a line, to run again at the head
+        type: string
+        default: ""
+
+# The plan reads the runs of the workflow of the crate, to find where the last one ended.
+permissions:
+  actions: read
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Without debug information each mutant builds and links faster.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  # What the run mutates: every mutant, the mutants of what the commits of the last day
+  # changed since the last commit before them, or nothing after a day without a commit;
+  # and the revision of oxirush-aper that build/revisions records, whose checkout has the
+  # script that runs named mutants again.
+  plan:
+    name: What to mutate
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      base: ${{ steps.plan.outputs.base }}
+      aper: ${{ steps.plan.outputs.aper }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEEKLY: ${{ inputs.weekly }}
+          SCHEDULE: ${{ github.event.schedule }}
+          FULL: ${{ inputs.full }}
+          RECHECK: ${{ inputs.recheck }}
+        run: |
+          # The head of the last run of the Mutants workflow on this branch that ended
+          # after its plan, or the empty tree: the commits after it are the ones to mutate,
+          # however late a run starts and however old the date of a commit is. A run whose
+          # plan succeeded and whose shards then failed, for a missed mutant as for a lost
+          # runner or a shard that ended early, is such a base too, and no later run
+          # mutates its commits again: it stays red until someone reads it, and is run
+          # again itself. A run of `recheck`, which mutates named mutants alone, is none.
+          runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow mutants.yml \
+            --branch "$GITHUB_REF_NAME" --status completed --limit 100 \
+            --json databaseId,conclusion \
+            --jq '.[] | select(.conclusion == "success" or .conclusion == "failure") | .databaseId')
+          base=
+          for run in $runs; do
+            base=$(gh run view "$run" --repo "$GITHUB_REPOSITORY" --json headSha,jobs --jq '
+              select(any(.jobs[]; (.name | endswith("What to mutate")) and .conclusion == "success")
+                and all(.jobs[]; (.name | contains("Mutants named by the file") | not)
+                  or .conclusion == "skipped"))
+              | .headSha')
+            if [ -n "$base" ]; then break; fi
+          done
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git hash-object -t tree /dev/null)
+          fi
+          if [ -n "$RECHECK" ]; then
+            mode=recheck
+          elif [ "$SCHEDULE" = "$WEEKLY" ] || [ "$FULL" = true ]; then
+            mode=full
+          elif [ "$base" != "$(git rev-parse HEAD)" ]; then
+            mode=diff
+          else
+            mode=none
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "aper=$(awk '$1 == "oxirush-aper" { print $2 }' build/revisions)" >> "$GITHUB_OUTPUT"
+
+  # The lines of the hand-written code that no test reaches: the summary of each file in
+  # the log, and each line in the report that the job keeps (cargo-llvm-cov 0.9.1): once
+  # in each run that mutates something. The generated bindings are measured with them,
+  # and left out of the summary.
+  coverage:
+    name: Coverage
+    needs: plan
+    if: needs.plan.outputs.mode != 'none'
+    runs-on: ubuntu-24.04
+    env:
+      GENERATED: src/(${{ inputs.protocol }}|registry|inspect_registry)\.rs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.9.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo llvm-cov --all-features --html --ignore-filename-regex "$GENERATED"
+      - run: cargo llvm-cov report --summary-only --ignore-filename-regex "$GENERATED"
+      - run: cargo llvm-cov report --lcov --output-path target/llvm-cov/lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            target/llvm-cov/html
+            target/llvm-cov/lcov.info
+
+  mutants:
+    name: Mutants (shard ${{ matrix.shard }} of 2)
+    needs: plan
+    if: needs.plan.outputs.mode == 'full'
+    runs-on: ubuntu-24.04
+    env:
+      # A test of a mutant that allocates without end fails once it has 4 GiB of
+      # address space, instead of taking the memory of the runner, which then dies.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --as=4294967296
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.parallel || '1') }}
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants@27.1.0
+      # cargo-mutants exits with 3 when a mutant made a test run until its timeout,
+      # before it says whether a mutant was missed: a mutant that makes a test loop
+      # forever is one that the tests see, and missed.txt has those that they do not.
+      - run: |
+          cargo mutants --shard ${{ matrix.shard }}/2 --sharding round-robin -j 2 || [ $? -eq 3 ]
+          test ! -s mutants.out/missed.txt
+      - if: always()
+        run: mkdir -p mutants.out && git rev-parse HEAD > mutants.out/commit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants.out-${{ matrix.shard }}
+          path: mutants.out
+
+  # The mutants that the file `recheck` names, as a missed.txt has them: each again at the
+  # head, in as many shards as every mutant. A name that is no mutant of the head, as one
+  # whose line has moved since, is not tried, and fails its shard as one that ends early
+  # does (.github/mutants-recheck.py of this repository).
+  recheck:
+    name: Mutants named by the file (shard ${{ matrix.shard }} of 2)
+    needs: plan
+    if: needs.plan.outputs.mode == 'recheck'
+    runs-on: ubuntu-24.04
+    env:
+      # A test of a mutant that allocates without end fails once it has 4 GiB of
+      # address space, instead of taking the memory of the runner, which then dies.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --as=4294967296
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: crate
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.parallel || '1') }}
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: crate
+      - uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.plan.outputs.aper }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants@27.1.0
+      - env:
+          NAMED: ${{ inputs.recheck }}
+        run: python3 ../oxirush-aper/.github/mutants-recheck.py "$NAMED" ${{ matrix.shard }} 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants.out-recheck-${{ matrix.shard }}
+          path: crate/mutants.out
+
+  # The mutants of the lines that the commits of the last day changed.
+  changes:
+    name: Mutants of the last day's changes
+    needs: plan
+    if: needs.plan.outputs.mode == 'diff'
+    runs-on: ubuntu-24.04
+    env:
+      # A test of a mutant that allocates without end fails once it has 4 GiB of
+      # address space, instead of taking the memory of the runner, which then dies.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --as=4294967296
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants@27.1.0
+      - run: |
+          git diff ${{ needs.plan.outputs.base }} HEAD > "$RUNNER_TEMP/changes.diff"
+          cargo mutants --in-diff "$RUNNER_TEMP/changes.diff" -j 2 || [ $? -eq 3 ]
+          test ! -s mutants.out/missed.txt
+      - if: always()
+        run: mkdir -p mutants.out && git rev-parse HEAD > mutants.out/commit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants.out-changes
+          path: mutants.out

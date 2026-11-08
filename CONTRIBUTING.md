@@ -12,7 +12,7 @@ README is for those who use the crate.
 |-----------|----------|-----------|
 | `src/` | The crate: the reader and the writer of the fields, the types of the values, `check`, the protocol traits and the bodies of the macros, `json` with `inspect` | yes |
 | `generator/` | The library that the generators of oxirush-ngap and oxirush-s1ap share, each of which adds the names of its protocol: it reads the ASN.1 with rasn-compiler and writes the bindings, the registry and what `inspect` needs | no |
-| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the oracle and its tests, the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`) | no |
+| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the oracle and its tests, the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`) | no |
 | `benches/` | The comparison of the crate with rasn, and the benchmarks of the fields | no |
 | `fuzz/` | The fuzz targets of the crate | no |
 | `family/` | A package of its own that runs the block of the README that uses oxirush-ngap, at the version that its manifest names, and compares what it prints with the README | no |
@@ -21,8 +21,8 @@ README is for those who use the crate.
 oxirush-ngap and oxirush-s1ap take `generator/` and `protocols/` from a
 checkout of this repository beside theirs, at the revision that their
 `build/revisions` records, and their CI calls the jobs of
-`.github/workflows/protocol.yml` and `protocol-reproduce.yml` at that
-revision. A change to either reaches them when they move to its revision:
+`.github/workflows/protocol.yml`, `protocol-reproduce.yml` and
+`protocol-mutants.yml` at that revision. A change to either reaches them when they move to its revision:
 `pin.py` writes it wherever they name it, and their CONTRIBUTING.md says
 what else a move takes.
 

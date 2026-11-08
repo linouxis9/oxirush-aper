@@ -25,6 +25,7 @@ ROOT = pathlib.Path.cwd()
 NAMES = ["oxirush-aper"]
 PLACES = [
     ".github/workflows/ci.yml",
+    ".github/workflows/mutants.yml",
     ".github/workflows/reproduce.yml",
 ]
 COMMIT = re.compile(r"[0-9a-f]{40}")
