@@ -50,11 +50,11 @@ def ran(command, **options):
 
 def written(protocol):
     """What the generator writes for a protocol crate and keeps: the bindings, and those
-    of the oracle, which TOY does not keep."""
+    for rasn of its benchmarks, which TOY does not keep."""
     bindings = [f"src/{protocol}.rs", "src/registry.rs", "src/inspect_registry.rs"]
     if protocol == "toy":
         return bindings
-    return [*bindings, "oracle/src/bindings.rs", "oracle/src/types.rs"]
+    return [*bindings, "rasn/src/bindings.rs"]
 
 
 def checkout(protocol):

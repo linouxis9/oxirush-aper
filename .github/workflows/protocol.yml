@@ -18,9 +18,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # The tests need no debug information: without it the bindings, and for the job
-  # of the oracle the types of the protocol once more with the codec of rasn, build
-  # faster and in less memory.
+  # The tests need no debug information: without it the bindings build faster and in
+  # less memory.
   CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
@@ -82,43 +81,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            crate
-            crate/oracle
+          workspaces: crate
       - run: cargo test --all-features
-      - run: cargo test
-        working-directory: crate/oracle
-
-  # The crate against its oracle: the same types with the codec of rasn, which each
-  # vector and each captured PDU, and what a peer may send in its place, is compared
-  # with. The oracle is a package of its own, which depends on the crate, and the
-  # crate does not depend on it. cargo is run from its directory, whose
-  # `.cargo/config.toml` builds the crate with its hooks; its manifest takes
-  # oxirush-aper from beside the repository, so its commands need no `--config`.
-  oracle:
-    name: The crate against the codec of rasn
-    needs: revisions
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: crate/oracle
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          path: crate
-      - uses: actions/checkout@v7
-        with:
-          repository: linouxis9/oxirush-aper
-          ref: ${{ needs.revisions.outputs.aper }}
-          path: oxirush-aper
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crate/oracle
-      - run: cargo test
-      - run: cargo clippy --all-targets -- -D warnings
 
   # What crates.io would hold of the crate: cargo makes the package, and its tests
   # are built and run from it alone, outside the repository, with every feature and
@@ -221,10 +185,9 @@ jobs:
       - run: cargo clippy --manifest-path benches/Cargo.toml --all-targets --all-features -- -D warnings
       - run: cargo bench --manifest-path benches/Cargo.toml --no-run
 
-  # Each target gives its octets to the crate and to its oracle, the codec of rasn,
-  # and compares what the two read and write.
+  # Each target gives its octets to the crate, and checks what it reads and writes.
   fuzz:
-    name: Fuzz the codec and the JSON forms against the oracle (6 minutes)
+    name: Fuzz the codec and the JSON forms (6 minutes)
     needs: revisions
     runs-on: ubuntu-24.04
     defaults:
@@ -304,7 +267,7 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
       - run: cargo fmt --check --manifest-path benches/Cargo.toml
-      - run: cargo fmt --check --manifest-path oracle/Cargo.toml
+      - run: cargo fmt --check --manifest-path rasn/Cargo.toml
       - run: cargo fmt --check --manifest-path fuzz/Cargo.toml
       # What the shared programs include of the protocol, which cargo fmt does not reach.
       - run: rustfmt --edition 2024 --check benches/src/protocol.rs benches/src/readers.rs

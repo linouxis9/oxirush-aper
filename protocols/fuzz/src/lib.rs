@@ -18,36 +18,18 @@
 //! What the fuzz targets do with what they are given: the programs of `fuzz_targets/`
 //! call these functions.
 //!
-//! A target does not only look for a panic. It gives the same octets to the crate and
-//! to the oracle of its tests, which has the same types with the codec of rasn, another
-//! implementation of aligned PER, and compares what the two make of them: the PDU, the
-//! protocol IEs of its message, the message that `decode_value` reads, and the JSON
-//! form of each value that a tree decodes. What one reads the other reads, as a value
-//! that both write as the same octets, and what one refuses the other refuses. And
-//! what was read is written and read again as the same.
-//!
-//! The crate differs from the oracle in one thing, which the comparison of the oracle
-//! names where it meets it: its bindings hold an INTEGER in 64 bits.
+//! A target does not only look for a panic: what the crate read is written and read
+//! again as the same, the PDU, the protocol IEs of its message, its message as its type
+//! and its tree.
 //!
 //! oxirush-ngap and oxirush-s1ap take this file from oxirush-aper. The package of each
 //! names its crate `codec`, whose module `hooks` names what is of the protocol.
 
-use codec::hooks::{self, BorrowedPdu as Borrowed, PDU_TYPE, Pdu, ROOT};
+use codec::hooks::{self, BorrowedPdu as Borrowed, Pdu, ROOT};
 use codec::tree::Value;
-use codec::{Deviation, Error, ErrorKind, aper, inspect};
+use codec::{Deviation, ErrorKind, aper, inspect};
 use libfuzzer_sys::arbitrary::{self, Arbitrary};
 use std::sync::LazyLock;
-
-/// A message that is a container of protocol IEs, as every message but the private one
-/// is, and which both protocols have: the codec of rasn reads the protocol IEs of any of
-/// them as this one.
-const ANY_MESSAGE: &str = "ErrorIndication";
-
-/// What the crate wrote of a value that it read, or why it read none, for the oracle.
-fn ours(written: &Result<Vec<u8>, Error>) -> Result<&[u8], String> {
-    let written = written.as_ref().map(Vec::as_slice);
-    written.map_err(ToString::to_string)
-}
 
 /// The octets of the open type that holds the message of a PDU.
 fn message<'p>(pdu: &'p Borrowed<'_>) -> &'p [u8] {
@@ -59,20 +41,14 @@ fn message<'p>(pdu: &'p Borrowed<'_>) -> &'p [u8] {
     }
 }
 
-/// A PDU, the protocol IEs of its message and the message as its type: each as the
-/// crate reads and writes it, and as the codec of rasn does.
+/// A PDU, the protocol IEs of its message and the message as its type, each as the crate
+/// reads and writes it.
 pub fn decode(octets: &[u8]) {
-    // The PDU, which both read or both refuse, and write back as the same octets.
-    let read = Borrowed::decode(octets);
-    let written = read
-        .as_ref()
-        .map_err(Clone::clone)
-        .and_then(Borrowed::encode);
-    oracle::same_octets(PDU_TYPE, octets, ours(&written));
-    let Ok(pdu) = read else {
+    // The PDU, which is written back as octets that are read as the same PDU.
+    let Ok(pdu) = Borrowed::decode(octets) else {
         return;
     };
-    let written = match written {
+    let written = match pdu.encode() {
         Ok(written) => written,
         Err(error) => panic!("a PDU that was decoded does not encode: {error}: {pdu:?}"),
     };
@@ -85,47 +61,30 @@ pub fn decode(octets: &[u8]) {
     // What the octets of the message have no part in.
     let _ = (pdu.to_string(), pdu.kind());
 
-    // The protocol IEs of the message, whatever the message is: rasn reads them as
-    // those of a message that is a container of protocol IEs and nothing else.
-    let theirs = oracle::read(ANY_MESSAGE, message(&pdu)).unwrap();
+    // The protocol IEs of the message, whatever the message is, which are put back as
+    // they were.
     match pdu.protocol_ies() {
         Ok(ies) => {
-            // Put back, they are the message that rasn writes of them.
             let ies = ies.into_owned();
             let mut again = pdu.clone();
             again.set_protocol_ies(ies.clone()).unwrap();
-            match &theirs {
-                Ok(theirs) => assert_eq!(message(&again), &theirs.octets[..], "{pdu:?}"),
-                Err(error) => panic!("{pdu:?} has protocol IEs here, and by rasn: {error}"),
-            }
             assert_eq!(again.protocol_ies(), Ok(ies));
             let _ = pdu.check();
         }
         // The private message has no protocol IEs, and its octets are not looked at.
         Err(error) if error.kind() == ErrorKind::WrongMessage => {}
-        Err(error) => assert!(theirs.is_err(), "{error}: {pdu:?}"),
+        Err(_) => {}
     }
 
-    // The message as its type.
-    if let Some((name, written)) = hooks::message_read_and_written(&pdu) {
-        oracle::same_octets(name, message(&pdu), ours(&written));
-    }
+    // The message as its type, which `decode_value` reads and the codec writes.
+    let _ = hooks::message_read_and_written(&pdu);
 }
 
-/// What a tree decoded as the type that the bindings name `name` is what the oracle
-/// reads in the same octets: the same JSON form, or no value for both.
-fn observed(name: &'static str, octets: &[u8], ours: &Result<Value, Error>) {
-    let ours = ours.as_ref().map(serde_json::Value::from);
-    oracle::same_json(name, octets, ours.as_ref().map_err(ToString::to_string));
-}
-
-/// The tree of a PDU, which gives the PDU back, and its paths. Each value that a tree
-/// decodes is compared with what the JSON Encoding Rules of rasn write of the same octets.
+/// The tree of a PDU, which gives the PDU back, and its paths.
 pub fn json(octets: &[u8]) {
     let Ok(pdu) = Borrowed::decode(octets) else {
         return;
     };
-    hooks::observe(Some(observed));
     // Every PDU has a tree, which is the PDU again: what its typed values have no place
     // for, and a message that does not decode, are octets in it.
     let tree = pdu.to_tree();

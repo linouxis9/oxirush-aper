@@ -129,7 +129,7 @@ pub fn our_pdu(pdu: &Pdu, message: codec::Octets<'static>) -> Pdu {
 /// A message of the rasn bindings: every message of the protocol but the private one is
 /// a SEQUENCE of its protocol IEs, with an extension marker, which decodes and encodes as
 /// this one, which both protocols have.
-pub type TheirMessage = oracle::bindings::InitialUEMessage;
+pub type TheirMessage = rasn_bindings::bindings::InitialUEMessage;
 
 /// The octets of the message of a rasn PDU.
 pub fn their_message(pdu: &TheirPdu) -> &[u8] {
@@ -142,7 +142,7 @@ pub fn their_message(pdu: &TheirPdu) -> &[u8] {
 }
 
 /// The rasn PDU of `pdu`, with the octets of another message.
-pub fn their_pdu(pdu: &TheirPdu, message: oracle::rasn::types::Any) -> TheirPdu {
+pub fn their_pdu(pdu: &TheirPdu, message: rasn_bindings::rasn::types::Any) -> TheirPdu {
     let mut pdu = pdu.clone();
     match &mut pdu {
         TheirPdu::initiatingMessage(pdu) => pdu.value = message,

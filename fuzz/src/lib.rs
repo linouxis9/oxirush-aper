@@ -20,13 +20,7 @@
 //!
 //! `fields` reads fields that the octets choose, with constraints that they choose,
 //! and writes back what it read: the writer gives every value one encoding, which the
-//! reader reads as the same value. `value` reads a value of one type with the crate
-//! and with rasn, another implementation of aligned PER: what one reads the other
-//! reads, as the same value, which both write as the same octets.
-
-mod value;
-
-pub use value::value;
+//! reader reads as the same value.
 
 use oxirush_aper::{BitString, Bits, ObjectIdentifier, Reader, UNBOUNDED, Writer};
 

@@ -16,8 +16,6 @@ name = "targets"
 [dependencies]
 libfuzzer-sys = "0.4"
 oxirush-aper = { path = ".." }
-# The other implementation that the `value` target compares the crate with.
-rasn = { version = "0.29.0", default-features = false, features = ["bytes"] }
 
 # Not part of any parent workspace.
 [workspace]
@@ -26,13 +24,6 @@ members = ["."]
 [[bin]]
 name = "fields"
 path = "fuzz_targets/fields.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "value"
-path = "fuzz_targets/value.rs"
 test = false
 doc = false
 bench = false

@@ -1,6 +1,6 @@
 name: Protocol reproduce
 
-# The bindings and the oracle of the tests of oxirush-ngap or oxirush-s1ap from the ASN.1
+# The bindings of oxirush-ngap or oxirush-s1ap, and those for rasn of their benchmarks, from the ASN.1
 # of the specification, and the vectors from pycrate: what the README of each says anyone
 # can check. The Reproduce workflow of each calls it, at the revision of this repository
 # that its build/revisions records, with the name of its protocol and the archive of its
@@ -69,8 +69,8 @@ jobs:
         run: |
           CARGO="$(command -v cargo)" cargo run --locked --manifest-path build/Cargo.toml
           rustfmt --edition 2024 "src/${{ inputs.protocol }}.rs" src/registry.rs \
-            src/inspect_registry.rs oracle/src/bindings.rs oracle/src/types.rs
-          git diff --exit-code -- src oracle
+            src/inspect_registry.rs rasn/src/bindings.rs
+          git diff --exit-code -- src rasn
       - name: The vectors, which pycrate writes as they are committed
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"

@@ -41,9 +41,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 oxirush-utils = { version = "0.2.1", optional = true, features = ["tree"] }
 
-[dev-dependencies]
-# The oracle of the tests: the codec of another implementation.
-rasn = { version = "0.29.0", default-features = false, features = ["bytes"] }
 
 [[test]]
 name = "json"

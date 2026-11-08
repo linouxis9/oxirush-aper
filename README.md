@@ -538,22 +538,17 @@ python3 benches/compare.py --core 3 --perf "sudo -n perf"
 
 ## Tests and fuzzing
 
-The worked examples of X.691 Annex A are reproduced octet for octet. Each
-field is tested against its clause and compared with
-[`rasn`](https://crates.io/crates/rasn) on generated values: `tests/rasn.rs`
-names the clauses where rasn 0.29 reads or writes otherwise. `fuzz/` has two
-[cargo-fuzz](https://crates.io/crates/cargo-fuzz) targets: `fields` reads
-fields and constraints that the octets choose and writes them back, and
-`value` reads a value of one type with this crate and with rasn, which must
-read the same value and write the same octets, or both refuse it. The Fuzz
-workflow runs them, and the six targets of oxirush-ngap and oxirush-s1ap,
+The worked examples of X.691 Annex A are reproduced octet for octet, and
+each field is tested against its clause. `fuzz/` has a
+[cargo-fuzz](https://crates.io/crates/cargo-fuzz) target, `fields`, which
+reads fields and constraints that the octets choose and writes them back.
+The Fuzz workflow runs it, and the six targets of oxirush-ngap and oxirush-s1ap,
 which edit and build PDUs through the trees of this crate too, an hour each
 night and four hours on Sunday.
 
 ```sh
 cargo test --all-features
 cargo +nightly fuzz run fields -- -max_total_time=60 -max_len=512
-cargo +nightly fuzz run value -- -max_total_time=60 -max_len=512
 ```
 
 Each Rust block of this page is checked with what it prints

@@ -1,4 +1,4 @@
-//! APER codecs that the bindings of the oracle use in place of rasn 0.29's.
+//! APER codecs that the bindings for rasn use in place of rasn 0.29's.
 
 use rasn::prelude::*;
 

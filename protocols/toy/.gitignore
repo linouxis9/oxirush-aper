@@ -1,2 +1,2 @@
-# What the generator writes for the oracle of a protocol crate: TOY has no oracle.
-/oracle/
+# What the generator writes for the bindings for rasn of a protocol crate, for its benchmarks: TOY has no benchmarks.
+/rasn/

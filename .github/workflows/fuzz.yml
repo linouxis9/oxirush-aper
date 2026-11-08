@@ -134,7 +134,6 @@ jobs:
       matrix:
         include:
           - { target: fields, max_len: 512 }
-          - { target: value, max_len: 512 }
           - { protocol: ngap, target: decode, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
           - { protocol: ngap, target: json, max_len: 4096, flags: -dict=fuzz/corpus/protocol.dict }
           - { protocol: ngap, target: paths, max_len: 4096 }
@@ -223,8 +222,8 @@ jobs:
           llvm_cov=$(find "$(rustc --print sysroot)" -name llvm-cov -type f | head -n 1)
           binary="fuzz/target-coverage/x86_64-unknown-linux-gnu/release/$TARGET"
           profile="fuzz/coverage/$TARGET/coverage.profdata"
-          # The crate, and oxirush-aper under a protocol; not the targets nor the oracle
-          ignore='/\.cargo/registry/|/rustc/|/fuzz/|/oracle/'
+          # The crate, and oxirush-aper under a protocol; not the targets
+          ignore='/\.cargo/registry/|/rustc/|/fuzz/'
           mkdir -p "$RUNNER_TEMP/coverage"
           "$llvm_cov" report "$binary" -instr-profile="$profile" -ignore-filename-regex="$ignore" \
             > "$RUNNER_TEMP/coverage/report.txt"

@@ -93,6 +93,18 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Removed
 
+- The oracle of the tests of the protocol crates, rasn, which the benchmarks
+  alone keep: `protocols/oracle/` and its tests `codec.rs` and `compare.rs`, the
+  comparison of a value with rasn (`read`, `same_octets`, `same_json`), the
+  observer of the hooks of a protocol crate (`hooks::observe`) and
+  `Protocol::jer`, which only the oracle read, and the list of its types that the
+  generator wrote, `oracle/src/types.rs`; `tests/rasn.rs`, the dev-dependency on
+  rasn, and the fuzz target `value`, which compared a value with rasn. The
+  bindings for rasn of a protocol crate, `rasn/src/bindings.rs`, which the
+  generator writes with the fix-ups of rasn's codec that they need, and
+  `protocols/rasn/`, their codecs in the place of rasn's, are those of the
+  benchmarks; the vectors of pycrate, the captures and the comparison with
+  Wireshark stay.
 - The family of the paths of a view and the functions of a view that only the
   protocol crates called: `view_parts`, `of_the_pdu` and `view_of_jer`.
 - `inspect::view`, and what the view of a PDU kept for edits that only a view

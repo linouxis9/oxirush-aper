@@ -21,8 +21,8 @@ version that is pinned here, builds it in the work directory (benches/compare/wo
 default, which git ignores), and prints the tables of the README, which it also writes
 to results.md in the work directory, with every figure in results.json:
 
-- the crate, and rasn 0.29.0 in the bindings of oracle/ (rasn-compiler 0.16, with the
-  SEQUENCE codec of oracle/src/per.rs in the place of rasn's derive);
+- the crate, and rasn 0.29.0 in the bindings of rasn/ (rasn-compiler 0.16, with the
+  SEQUENCE codec of protocols/rasn/src/per.rs in the place of rasn's derive);
 - hampi 0.7.2, its asn1-compiler on the ASN.1 of the specification, which
   build/extract_asn1.py takes out of the archive of 3GPP;
 - the asn1c code of Open5GS v2.8.0, built with meson from its repository;

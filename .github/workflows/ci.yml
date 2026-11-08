@@ -24,7 +24,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # With rasn as the oracle of tests/rasn.rs.
       - run: cargo test --all-features
       - run: cargo test
 
@@ -133,10 +132,8 @@ jobs:
           rustfmt --edition 2024 src/toy.rs src/registry.rs src/inspect_registry.rs
           git diff --exit-code -- src
 
-  # `value` compares the crate with rasn, another implementation, on the octets that
-  # it finds.
   fuzz:
-    name: Fuzz the fields, and a value against rasn (2 minutes)
+    name: Fuzz the fields (1 minute)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -146,7 +143,6 @@ jobs:
           workspaces: fuzz
       - run: cargo install cargo-fuzz --locked
       - run: cargo fuzz run fields -- -max_total_time=60 -max_len=512
-      - run: cargo fuzz run value -- -max_total_time=60 -max_len=512
 
   # The block of the README that uses oxirush-ngap: `family/` is a package of its own,
   # which takes it at the version of its manifest, so that the crate depends on none of

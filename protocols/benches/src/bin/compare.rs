@@ -21,7 +21,7 @@
 //! compare CODEC OPERATION ITERATIONS HEX
 //! ```
 //!
-//! `CODEC` is `ours`, the crate, or `rasn`, the rasn 0.29 bindings of `oracle/`.
+//! `CODEC` is `ours`, the crate, or `rasn`, the rasn 0.29 bindings of `rasn/`.
 //! `OPERATION` is
 //!
 //! - `envelope`: the PDU decoded, its message left as octets, as `decode` of
@@ -38,7 +38,7 @@
 
 use benches::counting::{Counting, allocations};
 use benches::{Borrowed, Pdu, TheirMessage, TheirPdu, codec, our_pdu, their_message, their_pdu};
-use oracle::rasn;
+use rasn_bindings::rasn;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -63,7 +63,7 @@ pub trait Theirs {
 
 impl<T: rasn::Encode> Theirs for T {
     fn open(&self) -> rasn::types::Any {
-        rasn::types::Any::new(oracle::encode(self).unwrap())
+        rasn::types::Any::new(rasn_bindings::encode(self).unwrap())
     }
 }
 
@@ -76,7 +76,7 @@ fn ours_typed<'o, T: codec::Decode<'o> + codec::Encode + 'o>(
 fn theirs_typed<T: rasn::Decode + rasn::Encode + 'static>(
     octets: &[u8],
 ) -> Result<Box<dyn Theirs>, String> {
-    Ok(Box::new(oracle::decode::<T>(octets)?))
+    Ok(Box::new(rasn_bindings::decode::<T>(octets)?))
 }
 
 fn ours_read<'o, T: codec::Decode<'o> + 'o>(octets: &'o [u8]) -> Result<(), codec::Error> {
@@ -85,7 +85,7 @@ fn ours_read<'o, T: codec::Decode<'o> + 'o>(octets: &'o [u8]) -> Result<(), code
 }
 
 fn theirs_read<T: rasn::Decode>(octets: &[u8]) -> Result<(), String> {
-    black_box(oracle::decode::<T>(octets)?);
+    black_box(rasn_bindings::decode::<T>(octets)?);
     Ok(())
 }
 
@@ -101,8 +101,8 @@ fn ours_decode(octets: &[u8]) {
 
 /// Decode a PDU and the value of each of its IEs with the rasn bindings, and drop them.
 fn theirs_decode(octets: &[u8]) {
-    let pdu: TheirPdu = oracle::decode(octets).unwrap();
-    let message: TheirMessage = oracle::decode(their_message(&pdu)).unwrap();
+    let pdu: TheirPdu = rasn_bindings::decode(octets).unwrap();
+    let message: TheirMessage = rasn_bindings::decode(their_message(&pdu)).unwrap();
     for ie in message.protocol_ies.0 {
         theirs_dropped(ie.id.0, ie.value.as_bytes())
             .unwrap()
@@ -156,12 +156,12 @@ fn main() {
             })
         }
         ("rasn", "envelope") => Box::new(|| {
-            black_box(oracle::decode::<TheirPdu>(black_box(octets)).unwrap());
+            black_box(rasn_bindings::decode::<TheirPdu>(black_box(octets)).unwrap());
         }),
         ("rasn", "decode") => Box::new(|| theirs_decode(black_box(octets))),
         ("rasn", "encode") => {
-            let pdu: TheirPdu = oracle::decode(octets).unwrap();
-            let message: TheirMessage = oracle::decode(their_message(&pdu)).unwrap();
+            let pdu: TheirPdu = rasn_bindings::decode(octets).unwrap();
+            let message: TheirMessage = rasn_bindings::decode(their_message(&pdu)).unwrap();
             let typed: Vec<_> = (message.protocol_ies.0.iter())
                 .map(|ie| {
                     (
@@ -171,16 +171,17 @@ fn main() {
                 })
                 .collect();
             Box::new(move || {
-                let fields = typed
-                    .iter()
-                    .map(|(ie, value)| oracle::bindings::ProtocolIEField {
-                        value: value.open(),
-                        ..ie.clone()
-                    });
+                let fields =
+                    typed
+                        .iter()
+                        .map(|(ie, value)| rasn_bindings::bindings::ProtocolIEField {
+                            value: value.open(),
+                            ..ie.clone()
+                        });
                 let mut message = message.clone();
                 message.protocol_ies.0 = fields.collect();
-                let message = rasn::types::Any::new(oracle::encode(&message).unwrap());
-                black_box(oracle::encode(&their_pdu(&pdu, message)).unwrap());
+                let message = rasn::types::Any::new(rasn_bindings::encode(&message).unwrap());
+                black_box(rasn_bindings::encode(&their_pdu(&pdu, message)).unwrap());
             })
         }
         (codec, operation) => panic!("no {operation} of {codec}"),

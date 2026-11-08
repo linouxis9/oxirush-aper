@@ -584,7 +584,7 @@ pub mod inspect {
     use oxirush_aper::{Error, ErrorKind, inspect::Decoded, json::Value};
 
     #[allow(clippy::extra_unused_type_parameters)]
-    pub(crate) fn __decode_typed<T>(_: &'static str, _: &[u8]) -> Result<Decoded, Error> {
+    pub(crate) fn __decode_typed<T>(_: &[u8]) -> Result<Decoded, Error> {
         Err(Error::new(ErrorKind::Value, "no tree"))
     }
 

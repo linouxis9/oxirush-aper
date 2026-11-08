@@ -130,8 +130,7 @@ macro_rules! __typed {
         // A type that borrows nothing leaves the lifetime without a use.
         #[allow(clippy::needless_lifetimes)]
         fn decode<'a>(raw: &'a [u8]) -> Result<$crate::inspect::Decoded, $crate::Error> {
-            let name = $crate::protocol::__type_name(stringify!($type));
-            crate::inspect::__decode_typed::<$type>(name, raw)
+            crate::inspect::__decode_typed::<$type>(raw)
         }
         #[allow(clippy::needless_lifetimes)]
         fn encode<'a>(value: &'a $crate::json::Value) -> Result<Vec<u8>, $crate::Error> {
@@ -627,15 +626,12 @@ pub(crate) fn any_message() -> Typed {
 /// encodes back to them: it does not when they hold what a later version of the type
 /// adds, which the value has no place for, or are in another form than the canonical
 /// one. `name` is the name of the type in the bindings.
-pub(crate) fn __decode_typed<'a, T>(
-    name: &'static str,
-    raw: &'a [u8],
-) -> Result<$crate::inspect::Decoded, Error>
+pub(crate) fn __decode_typed<'a, T>(raw: &'a [u8]) -> Result<$crate::inspect::Decoded, Error>
 where
     T: Decode<'a> + Encode + Tree,
 {
     let read: Result<T, Error> = $crate::decode(raw);
-    let shown = read.map(|value| {
+    read.map(|value| {
         let exact = $crate::encode(&value).is_ok_and(|octets| octets == raw);
         // Octets that do not come back are read again by the reader of the one encoding,
         // which says what of them is in another form.
@@ -644,16 +640,7 @@ where
             false => $crate::decode_strict::<T>(raw).err(),
         };
         (value.to_tree(), exact, refused)
-    });
-    // The oracle writes the form of the JSON Encoding Rules, which a tree has but for the
-    // well-known types.
-    #[cfg($hooks)]
-    if let Some(observer) = OBSERVER.get() {
-        let jer = |(value, ..): &$crate::inspect::Decoded| TABLES.jer(value.clone(), name);
-        observer(name, raw, &shown.as_ref().map(jer).map_err(Clone::clone));
-    }
-    let _ = name;
-    shown
+    })
 }
 
 /// The octets of the value of the type `T` that `value` writes in its JSON form.
@@ -665,20 +652,6 @@ where
     // A value that is read and does not encode is outside a constraint of its type.
     $crate::encode(&typed).map_err(|error| error.outside_its_type(<T as AsnType>::NAME))
 }
-
-#[cfg($hooks)]
-thread_local! {
-    /// What is told of each value that this thread decodes as a type of the registry:
-    /// the name of the type in the bindings, the octets, and the JSON form of the
-    /// value or why the octets are none. The tests of the oracle and the fuzz targets
-    /// compare them with what another codec makes of the same octets.
-    pub(crate) static OBSERVER: core::cell::Cell<Option<Observer>> =
-        const { core::cell::Cell::new(None) };
-}
-
-/// What observes the values that are decoded as a type of the registry.
-#[cfg($hooks)]
-pub(crate) type Observer = fn(&'static str, &[u8], &Result<Value, Error>);
 
 /// How a tree shows the values of a well-known type.
 pub(crate) use $crate::inspect::Form;
@@ -736,17 +709,13 @@ macro_rules! __hooks {
         #[cfg($cfg)]
         #[doc(hidden)]
         #[doc = concat!(
-            "What the fuzz targets of `fuzz/` and the tests of `oracle/` take from the inside of \
-     the crate. It is compiled with `--cfg ", stringify!($cfg), "`, which those two \
-     packages are built with, and is no part of the crate without: the fuzz build of \
-     another program, for which cargo-fuzz sets `fuzzing`, has the crate as every other \
-     build has it.\n\n\
-     Both compare what the crate does with what the codec of rasn does, which the oracle \
-     has. The oracle is no dependency of the crate, so the comparison is in them: this \
-     module gives them what needs the type of a message, which no function gives from a \
-     PDU, each value that a tree decodes, and the two ways in which the crate writes a \
-     message."
-        )]
+                    "What the fuzz targets of `fuzz/` take from the inside of the crate. It is \
+     compiled with `--cfg ", stringify!($cfg), "`, which that package is built with, and \
+     is no part of the crate without: the fuzz build of another program, for which \
+     cargo-fuzz sets `fuzzing`, has the crate as every other build has it.\n\n\
+     It gives them what needs the type of a message, which no function gives from a PDU, \
+     and the two ways in which the crate writes a message."
+                )]
         pub mod hooks {
             use crate::Error;
             use crate::$bindings::$pdu;
@@ -778,19 +747,6 @@ macro_rules! __hooks {
                 let name =
                     crate::registry::message_type_name(pdu.direction(), pdu.procedure_code())?;
                 Some((name, crate::registry::message_read_and_written(pdu)?))
-            }
-
-            /// What is told of each value that a tree decodes.
-            #[cfg(feature = "inspect")]
-            pub type Observer = fn(&'static str, &[u8], &Result<$crate::json::Value, Error>);
-
-            /// From here on, `observer` is told of each value that a tree of this thread decodes
-            /// as a type of the registry: the name of the type in the bindings, the octets, and
-            /// the value in the form of the JSON Encoding Rules, which the oracle writes, or why
-            /// the octets are none. `None` ends it.
-            #[cfg(feature = "inspect")]
-            pub fn observe(observer: Option<Observer>) {
-                crate::inspect::OBSERVER.set(observer);
             }
         }
     };

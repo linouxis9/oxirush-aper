@@ -16,7 +16,7 @@
 */
 
 //! The value of an IE by its identifier, as the crate types it and as the rasn bindings of
-//! `oracle/` type it: `compare`, which times the codecs on whole PDUs, decodes each IE of a
+//! `rasn/` type it: `compare`, which times the codecs on whole PDUs, decodes each IE of a
 //! PDU with them. They are written from the list of the IEs of `src/registry.rs`, each
 //! with its type, which is the same name in both. A transfer, which is octets that hold a
 //! value of a type, is its octets. oxirush-ngap and oxirush-s1ap take this file from
@@ -51,7 +51,7 @@ fn main() {
         let (ours_type, theirs_type) = match ty {
             "oxirush_aper::Octets<'a>" => (
                 "codec::aper::Octets<'_>".to_string(),
-                "oracle::rasn::types::OctetString".to_string(),
+                "rasn_bindings::rasn::types::OctetString".to_string(),
             ),
             ty => {
                 let path = ty.trim_end_matches("<'a>");
@@ -60,7 +60,7 @@ fn main() {
                 let life = if ty.ends_with("<'a>") { "<'_>" } else { "" };
                 (
                     format!("codec::{module}::{name}{life}"),
-                    format!("oracle::bindings::{name}"),
+                    format!("rasn_bindings::bindings::{name}"),
                 )
             }
         };
@@ -87,7 +87,7 @@ fn main() {
          the registry does not have.\n\
          pub fn ours(id: u16, octets: &[u8]) -> Option<Result<Box<dyn Ours + '_>, codec::Error>> {{\n\
          \x20   Some(match id {{\n{ours}        _ => return None,\n    }})\n}}\n\n\
-         /// The value of the IE `id` as the rasn bindings of `oracle/` type it.\n\
+         /// The value of the IE `id` as the rasn bindings of `rasn/` type it.\n\
          pub fn theirs(id: u16, octets: &[u8]) -> Option<Result<Box<dyn Theirs>, String>> {{\n\
          \x20   Some(match id {{\n{theirs}        _ => return None,\n    }})\n}}\n\n\
          /// Read the value of the IE `id` as the crate types it, and drop it.\n\

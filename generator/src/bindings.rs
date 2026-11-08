@@ -7,7 +7,7 @@
 //! bindings are the description that this backend reads: a struct is a SEQUENCE, an
 //! enum an ENUMERATED or a CHOICE, a tuple struct a type with a name, and the `rasn`
 //! attributes have the names that ASN.1 gives and the constraints. The same
-//! description becomes the oracle of the tests, with the codec of rasn, so that both
+//! description becomes the bindings for rasn of the benchmarks, so that both
 //! have the same types by construction.
 //!
 //! What the two protocols do not have is refused, and not written wrongly: a member

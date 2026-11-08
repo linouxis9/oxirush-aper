@@ -12,7 +12,7 @@ README is for those who use the crate.
 |-----------|----------|-----------|
 | `src/` | The crate: the reader and the writer of the fields, the types of the values, `check`, the protocol traits and the bodies of the macros, `json` with `inspect` | yes |
 | `generator/` | The library that the generators of oxirush-ngap and oxirush-s1ap share, each of which adds the names of its protocol: it reads the ASN.1 with rasn-compiler and writes the bindings, the registry and what `inspect` needs | no |
-| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the oracle and its tests, the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`), and TOY (`protocols/toy/`), the protocol that the generator writes from its own ASN.1, whose tests are those of what the generated crates share | no |
+| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the bindings for rasn of their benchmarks (`protocols/rasn/`), the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`), and TOY (`protocols/toy/`), the protocol that the generator writes from its own ASN.1, whose tests are those of what the generated crates share | no |
 | `benches/` | The comparison of the crate with rasn, and the benchmarks of the fields | no |
 | `fuzz/` | The fuzz targets of the crate | no |
 | `family/` | A package of its own that runs the block of the README that uses oxirush-ngap, at the revision that its manifest names, and compares what it prints with the README | no |
@@ -59,8 +59,8 @@ rustfmt --edition 2024 src/toy.rs src/registry.rs src/inspect_registry.rs
 `build/asn1.sha256` records the digest of each module, which the generator
 checks: write it again after a change of a module, with
 `sha256sum toy/*.asn > build/asn1.sha256` in the order of the list. The
-generator writes the bindings of an oracle too, in `oracle/`, which TOY does
-not keep.
+generator writes the bindings for rasn of the benchmarks too, in `rasn/`,
+which TOY, which has no benchmarks, does not keep.
 
 ## The README
 

@@ -14,7 +14,7 @@ bindings.
 
 The workflows call those of oxirush-aper (`uses: linouxis9/oxirush-aper/...@COMMIT`):
 they are the places that name its revision. The packages of `benches/`, `fuzz/` and
-`oracle/` take oxirush-aper from the checkout beside the repository, whose tools they
+`rasn/` take oxirush-aper from the checkout beside the repository, whose tools they
 build, and the crates come from crates.io.
 """
 import pathlib

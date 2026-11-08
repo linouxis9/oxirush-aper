@@ -744,33 +744,6 @@ fn the_json_encoding_rules_are_read_as_deep_as_256() {
     assert_eq!(holder, tree!({"otherTac": 3}));
 }
 
-/// The JSON Encoding Rules write a value as deep as 256, through its members, the types that
-/// another names and its lists.
-#[test]
-fn the_json_encoding_rules_write_as_deep_as_256() {
-    let jer = |value: Value| TOY.jer(value, "Node");
-    let readable = |levels: usize, link: &dyn Fn(Value) -> Value| {
-        let mut node = tree!({"tac": 258});
-        for _ in 1..levels {
-            node = link(node);
-        }
-        node
-    };
-    // Each next is two deeper, through the type that names the node: the TAC of level n
-    // is 2n - 1 deep
-    let next = |node: Value| tree!({"next": (node)});
-    let value = jer(readable(128, &next));
-    assert_eq!(deepest(&value, 128, by_next)["tac"], tree!("000102"));
-    let value = jer(readable(129, &next));
-    assert_eq!(deepest(&value, 129, by_next)["tac"], tree!(258));
-    // Each list of nodes is three deeper: the TAC of level n is 3n - 2 deep
-    let nodes = |node: Value| tree!({"nodes": [(node)]});
-    let value = jer(readable(86, &nodes));
-    assert_eq!(deepest(&value, 86, by_nodes)["tac"], tree!("000102"));
-    let value = jer(readable(87, &nodes));
-    assert_eq!(deepest(&value, 87, by_nodes)["tac"], tree!(258));
-}
-
 /// A tree that is written is read as deep as 256: through the members, the transfers, the
 /// lists and the IEs that a value holds.
 #[test]

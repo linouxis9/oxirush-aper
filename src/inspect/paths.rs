@@ -829,15 +829,6 @@ impl Protocol {
 }
 
 impl Protocol {
-    /// `value`, the tree of a value of the type that the bindings name `ty`, as the JSON
-    /// Encoding Rules (ITU-T X.697) write it: the values of the well-known types, which a
-    /// tree shows in their readable form, in the form of their ASN.1 type. The tests
-    /// compare it with what another implementation of these rules writes.
-    pub fn jer(&self, mut value: Value, ty: &'static str) -> Value {
-        self.to_jer(&mut value, Shape::Named(ty), 0);
-        value
-    }
-
     /// `value`, a value of `shape` that another implementation wrote in the JSON Encoding
     /// Rules (ITU-T X.697), as a tree has it: each value of a well-known type in its
     /// readable form, where that form gives the same value back. In those rules a string
@@ -877,40 +868,6 @@ impl Protocol {
                 let entry = self.entry_shape(shape);
                 for child in entries {
                     self.of_jer(child, entry, depth + 1);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// `value`, a value of `shape`, as the JSON Encoding Rules write it.
-    fn to_jer(&self, value: &mut Value, shape: Shape, depth: usize) {
-        if depth > WRITTEN {
-            return;
-        }
-        match shape {
-            Shape::Named(name) => {
-                if let Some(form) = (self.type_form)(name) {
-                    if let Ok(jer) = form.write(value) {
-                        *value = jer;
-                    }
-                    return;
-                }
-                match (self.kind_of)(name) {
-                    Some(Kind::Sequence(members) | Kind::Choice(members)) => {
-                        for (key, child) in value.as_object_mut().into_iter().flatten() {
-                            if let Some((_, of, _)) = member(members, key) {
-                                self.to_jer(child, *of, depth + 1);
-                            }
-                        }
-                    }
-                    Some(Kind::Is(is)) => self.to_jer(value, *is, depth + 1),
-                    None => {}
-                }
-            }
-            Shape::List(of) => {
-                for entry in value.as_array_mut().into_iter().flatten() {
-                    self.to_jer(entry, *of, depth + 1);
                 }
             }
             _ => {}
