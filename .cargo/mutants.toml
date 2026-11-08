@@ -62,6 +62,10 @@ exclude_re = [
     # - a transfer and an IE always have the member that holds their value, in which a
     #   segment that names none of their members is taken: none reaches these arms;
     'src/inspect/paths\.rs:.*: delete match arm Shape::(Transfer|Ie)\(.* in Protocol::no_member$',
+    # - the members of the entry of an IE are given their shape where the trees list the
+    #   paths of a tree, and nowhere else: the criticality beside an IE is a string, which
+    #   is listed whole, whatever its shape;
+    'src/inspect/trees\.rs:.*: replace match guard name != CRITICALITY with true in <impl Family for Trees<.*>>::member$',
     # - the arm for any list gives an entry of a list of IEs of an extension the same shape;
     'src/inspect/paths\.rs:.*: delete match arm Shape::List\(Shape::Extension\(.* in element$',
     # - a type whose one member is a list of IEs, a message, has members of the same shapes

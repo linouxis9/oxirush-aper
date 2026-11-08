@@ -1991,6 +1991,20 @@ fn an_ie_that_a_value_holds_alone_is_added_by_a_set() {
         [tree!({"criticality": "ignore", "ExtendedCause": "overload"})]
     );
     assert!(TOYPDU::from_tree(&tree).is_ok());
+    // `*` there is the value of the IE and the criticality beside it, which has no
+    // members: a bit string has its length, and the criticality refuses one.
+    let bits = tree!({"message": "SetupFailure", "ies": [
+        {"Cause": {"choice-Extensions": {"Algorithms": "c000", "criticality": "ignore"}}},
+    ]});
+    let star = format!("{held}/*");
+    assert_eq!(select(&bits, &star), [tree!("c000"), tree!("ignore")]);
+    let error = inspect::select(&bits, &format!("{star}/length")).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("\"length\" is not a member of this value"),
+        "{error}"
+    );
 }
 
 /// A set adds a member that its type has and the value has not as the last segment of its
@@ -2032,6 +2046,7 @@ fn a_member_of_the_name_of_its_ie_is_that_member_as_it_is_written() {
         "/toy/1/counts",
         "/toy/1/Counts/counts",
         "/toy/Counts/counts",
+        "/toy/Counts/Counts/counts",
     ] {
         assert_eq!(select(&tree, path), [tree!(7)], "{path}");
         assert_eq!(inspect::check_path("SetupRequest", path), Ok(()), "{path}");

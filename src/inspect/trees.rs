@@ -536,13 +536,8 @@ impl Trees<'_> {
         };
         match entry.get(name) {
             Some(value) => next.member(name, value, child),
-            // A member that an edit sets is added; one that is not there is nothing to go
-            // into.
-            None if edit.is_some() => {
-                if last && edit == Some(Edit::Set) {
-                    next.absent(name, child);
-                }
-            }
+            // A member that is not there: a set at the end of a path adds it, and nothing
+            // goes into it.
             None => next.absent_once(name, child),
         }
         Ok(())
@@ -603,8 +598,8 @@ impl Trees<'_> {
                     format!("{part:?} is not the IE here, which is {name}"),
                 ));
             }
-            // An entry without its IE: the IE that a set gives it.
-            None if next.edit() == Some(Edit::Set) && next.is_last() => {
+            // An entry without its IE: the IE that a set at the end of a path gives it.
+            None if next.is_last() => {
                 next.absent(part, at.value(protocol, Some(id), extended(shape)));
             }
             None => {}
@@ -795,9 +790,9 @@ impl Trees<'_> {
                     };
                     next.absent_once(part, value);
                     next.absent_once(CRITICALITY, at.of(Shape::Plain));
-                } else if let Some(id) = segment_id(protocol, part, true)?
-                    && known.is_none_or(|known| known == id)
-                {
+                } else if let Some(id) = segment_id(protocol, part, true)? {
+                    // Without a tree, an IE that a value holds alone is any IE: the walk
+                    // meets none whose identifier a place gives.
                     next.absent_once(part, at.value(protocol, Some(id), extended(shape)));
                 } else {
                     return Err(fault(
