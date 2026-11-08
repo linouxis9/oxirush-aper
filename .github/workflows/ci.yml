@@ -105,8 +105,8 @@ jobs:
       - run: cargo bench --manifest-path benches/Cargo.toml --no-run
 
   # TOY, a protocol that the generator writes from the ASN.1 of protocols/toy/toy as it
-  # writes NGAP and S1AP: its tests are those of what the generated crates share, and its
-  # bindings are those that the generator writes again.
+  # writes NGAP and S1AP, a member of the workspace: its tests are those of what the
+  # generated crates share, and its bindings are those that the generator writes again.
   toy:
     name: TOY, the generated protocol of the shared tests
     runs-on: ubuntu-24.04
@@ -121,7 +121,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            protocols/toy
+            .
             protocols/toy/build
       - run: cargo test --all-features
       - run: cargo test

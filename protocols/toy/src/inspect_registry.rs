@@ -33,6 +33,8 @@ oxirush_aper::__types! {
         Areas = [AreaItem];
         BroadcastPLMNs = [PLMNIdentity];
         Cause choice { "radioNetwork": CauseRadioNetwork, "nas": CauseNas, "protocol": CauseProtocol, "misc": CauseMisc, "choice-Extensions": ie };
+        ConnectionItem sequence { "uE-Core-ID"? _, "uE-RAN-ID"? _, "iE-Extensions"? extensions };
+        Connections = [ConnectionItem];
         ContainerBlob sequence { "tAC": TAC, "nodeName"? _, "message"? _, "iE-Extensions"? extensions };
         Counts sequence { "countUL": _, "countDL": _, "iE-Extensions"? extensions };
         CriticalityDiagnostics sequence { "procedureCode"? _, "triggeringMessage"? TriggeringMessage, "procedureCriticality"? Criticality, "iEsCriticalityDiagnostics"? CriticalityDiagnosticsIEList, "iE-Extensions"? extensions };
@@ -50,6 +52,7 @@ oxirush_aper::__types! {
         PrivateMessage sequence { "privateIEs": PrivateMessagePrivateIEs };
         PrivateMessagePrivateIEs = [AnonymousPrivateMessagePrivateIEs];
         ReleaseRequest sequence { "protocolIEs": ies };
+        SecurityContext sequence { "nextHopChainingCount": _, "nextHopNH": _, "iE-Extensions"? extensions };
         SetupFailure sequence { "protocolIEs": ies };
         SetupRequest sequence { "protocolIEs": ies };
         SetupResponse sequence { "protocolIEs": ies };
@@ -72,7 +75,7 @@ oxirush_aper::__types! {
         Criticality ["reject", "ignore", "notify"];
         ExtendedCause ["congestion", "overload"];
         Presence ["optional", "conditional", "mandatory"];
-        TransferKind ["ipv4", "ipv6"];
+        TransferKind ["ipv4", "ipv6", "ipv4v6"];
         TriggeringMessage ["initiating-message", "successful-outcome", "unsuccessful-outcome"];
         TypeOfError ["not-understood", "missing"];
     }

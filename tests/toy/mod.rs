@@ -15,10 +15,11 @@
    limitations under the License.
 */
 
-// A protocol of two procedures, written as the generator of the repository writes the
-// bindings and the registry of oxirush-ngap and oxirush-s1ap: the tests of
-// `oxirush_aper::protocol` and the README read and build its PDUs with the macros and the
-// readers of the crate, as those crates do.
+// A protocol of two procedures, written by hand as the generator of the repository writes
+// the bindings and the registry of oxirush-ngap and oxirush-s1ap: the README reads and
+// builds its PDUs with the macros and the readers of the crate, as those crates do, in the
+// package, where TOY (protocols/toy/), whose tests are those of the generated crates, is
+// not.
 //
 // ```text
 // Setup         reject  InitiatingMessage SetupRequest    [Identity reject mandatory,

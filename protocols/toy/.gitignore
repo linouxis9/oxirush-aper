@@ -1,4 +1,2 @@
 # What the generator writes for the oracle of a protocol crate: TOY has no oracle.
 /oracle/
-/target/
-/Cargo.lock

@@ -16,10 +16,12 @@ IMPORTS
 	Container,
 	Counts,
 	CriticalityDiagnostics,
+	FailureTransfer,
 	Items,
 	NAS-PDU,
 	NodeID,
 	NodeName,
+	SecurityContext,
 	SecurityKey,
 	TransferList,
 	Tunnel,
@@ -40,10 +42,12 @@ FROM TOY-Containers
 	id-Container,
 	id-Counts,
 	id-CriticalityDiagnostics,
+	id-FailureTransfer,
 	id-Items,
 	id-NAS-PDU,
 	id-NodeID,
 	id-NodeName,
+	id-SecurityContext,
 	id-SecurityKey,
 	id-TransferList,
 	id-Tunnel,
@@ -78,6 +82,7 @@ SetupResponse ::= SEQUENCE {
 
 SetupResponseIEs TOY-PROTOCOL-IES ::= {
 	{ ID id-NodeName			CRITICALITY ignore	TYPE NodeName				PRESENCE optional	}|
+	{ ID id-SecurityContext		CRITICALITY reject	TYPE SecurityContext		PRESENCE conditional	}|
 	{ ID id-CriticalityDiagnostics	CRITICALITY ignore	TYPE CriticalityDiagnostics	PRESENCE optional	},
 	...
 }
@@ -89,6 +94,7 @@ SetupFailure ::= SEQUENCE {
 
 SetupFailureIEs TOY-PROTOCOL-IES ::= {
 	{ ID id-Cause				CRITICALITY ignore	TYPE Cause					PRESENCE mandatory	}|
+	{ ID id-FailureTransfer		CRITICALITY ignore	TYPE OCTET STRING (CONTAINING FailureTransfer)	PRESENCE optional	}|
 	{ ID id-CriticalityDiagnostics	CRITICALITY ignore	TYPE CriticalityDiagnostics	PRESENCE optional	},
 	...
 }

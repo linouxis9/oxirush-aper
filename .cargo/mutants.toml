@@ -13,6 +13,10 @@
 # without its feature, a mutant of that code would build without it and pass.
 all_features = true
 
+# The tests of the workspace: those of the crate, and those of TOY, the generated protocol
+# whose tests are those of what the generated crates share (protocols/toy/).
+test_workspace = true
+
 # Mutants that no test can tell from the code, each with why, named by their function. A
 # column tells apart the mutants of the same name in one function.
 exclude_re = [

@@ -19,6 +19,12 @@ include = [
     "LICENSE",
 ]
 
+# TOY (protocols/toy/), the protocol whose tests are those of what the generated crates
+# share: a member, so that the tests of a mutant of the crate are its tests too
+# (.cargo/mutants.toml). `cargo test` at the root tests the crate alone.
+[workspace]
+members = ["protocols/toy"]
+
 [features]
 # The JSON forms of a value, as the trees of `oxirush-utils`, and the paths into the trees
 # of the application protocols on them.

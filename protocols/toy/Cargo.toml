@@ -2,7 +2,8 @@
 # whose bindings the generator of this repository writes from the ASN.1 modules of
 # `toy/`, as it writes those of oxirush-ngap and oxirush-s1ap. Its tests are the tests of
 # what the generated crates share: the codec of a PDU, the macros, the checks and their
-# diagnostics, the trees and their paths. It is not published.
+# diagnostics, the trees and their paths. It is not published, and is a member of the
+# workspace of oxirush-aper, whose mutants its tests run on.
 [package]
 name = "oxirush-toy"
 version = "0.0.0"
@@ -30,7 +31,3 @@ serde_core = { version = "1.0.220", optional = true, default-features = false, f
 [dev-dependencies]
 hex = "0.4"
 serde_json = "1.0.154"
-
-# Not part of any parent workspace.
-[workspace]
-members = ["."]

@@ -1,8 +1,9 @@
 """The mutants of generator/ against its own tests and the bindings that it writes: a
-mutant is caught when a test of generator/ fails, or when the bindings of oxirush-ngap or
-of oxirush-s1ap that it writes, formatted, differ from those that the generator writes
-unchanged, or when it fails to write them; missed when the tests pass and the bindings are the same, and unviable
-when it does not build. The tests check what those two protocols do not have. A mutant
+mutant is caught when a test of generator/ fails, or when the bindings of oxirush-ngap, of
+oxirush-s1ap or of TOY (protocols/toy/) that it writes, formatted, differ from those that
+the generator writes unchanged, or when it fails to write them; missed when the tests pass
+and the bindings are the same, and unviable when it does not build. The tests and TOY
+check what the two protocols do not have. A mutant
 that makes the tests or the generator run past 10 minutes, or take more than 8 GiB of
 address space, fails, and is caught: without the limits it took the runner down. The
 protocol crates are beside this repository, each with the ASN.1 of build/asn1.sha256
@@ -28,7 +29,7 @@ import sys
 import tomllib
 
 APER = pathlib.Path(__file__).resolve().parent.parent
-PROTOCOLS = ["ngap", "s1ap"]
+PROTOCOLS = ["ngap", "s1ap", "toy"]
 # What a run of the generator takes at most: thirty times what the unchanged one takes on
 # a runner, and twice the memory that it needs.
 SECONDS = 600
@@ -48,14 +49,19 @@ def ran(command, **options):
 
 
 def written(protocol):
-    """What the generator writes for a protocol crate: the bindings."""
-    return [
-        f"src/{protocol}.rs",
-        "src/registry.rs",
-        "src/inspect_registry.rs",
-        "oracle/src/bindings.rs",
-        "oracle/src/types.rs",
-    ]
+    """What the generator writes for a protocol crate and keeps: the bindings, and those
+    of the oracle, which TOY does not keep."""
+    bindings = [f"src/{protocol}.rs", "src/registry.rs", "src/inspect_registry.rs"]
+    if protocol == "toy":
+        return bindings
+    return [*bindings, "oracle/src/bindings.rs", "oracle/src/types.rs"]
+
+
+def checkout(protocol):
+    """The directory of a protocol crate: beside this repository, or TOY in it."""
+    if protocol == "toy":
+        return APER / "protocols" / "toy"
+    return APER.parent / f"oxirush-{protocol}"
 
 
 def tested():
@@ -71,7 +77,7 @@ def generate(protocol):
     """The digest of the formatted bindings of `protocol`, None when the generator
     fails or writes what rustfmt cannot read, or "unviable" when it does not build. The
     crate is left as it was."""
-    crate = APER.parent / f"oxirush-{protocol}"
+    crate = checkout(protocol)
     env = dict(os.environ, CARGO=subprocess.check_output(["which", "cargo"], text=True).strip())
     manifest = ["--manifest-path", "build/Cargo.toml"]
     quiet = {"cwd": crate, "env": env, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}

@@ -306,6 +306,7 @@ pub mod toy_constants {
     pub const ID_ERROR_INDICATION: ProcedureCode = ProcedureCode(3);
     pub const ID_EXTENDED_CAUSE: ProtocolIEID = ProtocolIEID(41);
     pub const ID_EXTENSION_INDEX: ProtocolIEID = ProtocolIEID(40);
+    pub const ID_FAILURE_TRANSFER: ProtocolIEID = ProtocolIEID(34);
     pub const ID_ITEM: ProtocolIEID = ProtocolIEID(23);
     pub const ID_ITEMS: ProtocolIEID = ProtocolIEID(22);
     pub const ID_NAS_PDU: ProtocolIEID = ProtocolIEID(30);
@@ -314,6 +315,7 @@ pub mod toy_constants {
     pub const ID_NOTIFICATION: ProcedureCode = ProcedureCode(5);
     pub const ID_PRIVATE_MESSAGE: ProcedureCode = ProcedureCode(4);
     pub const ID_RELEASE: ProcedureCode = ProcedureCode(2);
+    pub const ID_SECURITY_CONTEXT: ProtocolIEID = ProtocolIEID(33);
     pub const ID_SECURITY_KEY: ProtocolIEID = ProtocolIEID(21);
     pub const ID_SETUP: ProcedureCode = ProcedureCode(1);
     pub const ID_TRANSFER_KIND: ProtocolIEID = ProtocolIEID(31);
@@ -326,6 +328,7 @@ pub mod toy_constants {
     pub const MAX_PROTOCOL_EXTENSIONS: u64 = 65535;
     pub const MAX_PROTOCOL_IES: u64 = 65535;
     pub const MAXNOOF_AREAS: u64 = 16;
+    pub const MAXNOOF_CONNECTIONS: u64 = 65536;
     pub const MAXNOOF_ERRORS: u64 = 256;
     pub const MAXNOOF_ITEMS: u64 = 16;
     pub const MAXNOOF_TRANSFERS: u64 = 8;
@@ -1212,6 +1215,174 @@ pub mod toy_ies {
     }
     #[cfg(feature = "serde")]
     oxirush_utils::impl_serde!(CauseRadioNetwork);
+    /// `ConnectionItem ::= SEQUENCE`, with an extension marker.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct ConnectionItem {
+        pub ue_core_id: Option<UECoreID>,
+        pub ue_ran_id: Option<UERANID>,
+        pub ie_extensions: Option<ProtocolExtensionContainer<'static>>,
+    }
+    impl AsnType for ConnectionItem {
+        const NAME: &'static str = "ConnectionItem";
+    }
+    impl<'a> Decode<'a> for ConnectionItem {
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            let extended = reader.bit()?;
+            let present = reader.bits(3)?;
+            let ue_core_id = if present & 4 != 0 {
+                Some(UECoreID::decode(reader).map_err(in_field("ue_core_id"))?)
+            } else {
+                None
+            };
+            let ue_ran_id = if present & 2 != 0 {
+                Some(UERANID::decode(reader).map_err(in_field("ue_ran_id"))?)
+            } else {
+                None
+            };
+            let ie_extensions = if present & 1 != 0 {
+                Some(
+                    (ProtocolExtensionContainer::decode(reader)
+                        .map_err(in_field("ie_extensions"))?)
+                    .into_owned(),
+                )
+            } else {
+                None
+            };
+            if extended {
+                reader.skip_additions()?;
+            }
+            Ok(Self {
+                ue_core_id,
+                ue_ran_id,
+                ie_extensions,
+            })
+        }
+    }
+    impl Encode for ConnectionItem {
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.bit(false);
+            writer.bit(self.ue_core_id.is_some());
+            writer.bit(self.ue_ran_id.is_some());
+            writer.bit(self.ie_extensions.is_some());
+            if let Some(value) = &self.ue_core_id {
+                value.encode(writer).map_err(in_field("ue_core_id"))?;
+            }
+            if let Some(value) = &self.ue_ran_id {
+                value.encode(writer).map_err(in_field("ue_ran_id"))?;
+            }
+            if let Some(value) = &self.ie_extensions {
+                value.encode(writer).map_err(in_field("ie_extensions"))?;
+            }
+            Ok(())
+        }
+    }
+    #[cfg(feature = "inspect")]
+    impl Tree for ConnectionItem {
+        const NAME: &'static str = <Self as AsnType>::NAME;
+        fn to_tree(&self) -> Value {
+            let mut members = json::Members::new();
+            members.put_optional(
+                "uE-Core-ID",
+                self.ue_core_id.as_ref().map(|value| value.to_tree()),
+            );
+            members.put_optional(
+                "uE-RAN-ID",
+                self.ue_ran_id.as_ref().map(|value| value.to_tree()),
+            );
+            members.put_optional(
+                "iE-Extensions",
+                self.ie_extensions.as_ref().map(|value| value.to_tree()),
+            );
+            members.finish()
+        }
+        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+            let members = reading.members(value, names::ConnectionItem)?;
+            let ue_core_id = reading.optional(&members, "uE-Core-ID", UECoreID::from_tree)?;
+            let ue_ran_id = reading.optional(&members, "uE-RAN-ID", UERANID::from_tree)?;
+            let ie_extensions = reading.optional(
+                &members,
+                "iE-Extensions",
+                ProtocolExtensionContainer::from_tree,
+            )?;
+            Ok(Self {
+                ue_core_id,
+                ue_ran_id,
+                ie_extensions,
+            })
+        }
+    }
+    #[cfg(feature = "serde")]
+    oxirush_utils::impl_serde!(ConnectionItem);
+    /// `Connections ::= SEQUENCE (SIZE (1..65536)) OF ConnectionItem`.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct Connections(pub Vec<ConnectionItem>);
+    impl From<Connections> for Vec<ConnectionItem> {
+        #[inline]
+        fn from(value: Connections) -> Self {
+            value.0
+        }
+    }
+    impl From<Vec<ConnectionItem>> for Connections {
+        fn from(value: Vec<ConnectionItem>) -> Self {
+            Self(value)
+        }
+    }
+    impl AsnType for Connections {
+        const NAME: &'static str = "Connections";
+    }
+    impl<'a> Decode<'a> for Connections {
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self({
+                let mut list = Vec::new();
+                let (mut count, mut more) = reader.length()?;
+                loop {
+                    let size = list.len().saturating_add(count);
+                    if !more || size > 65536 {
+                        Reader::check_size(size, 1, 65536)?;
+                    }
+                    for _ in 0..count {
+                        list.push(ConnectionItem::decode(reader)?);
+                    }
+                    if !more {
+                        break;
+                    }
+                    (count, more) = reader.length_after(count)?;
+                }
+                list
+            }))
+        }
+    }
+    impl Encode for Connections {
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            Writer::check_size(self.0.len(), 1, 65536)?;
+            let mut left = &self.0[..];
+            loop {
+                let (count, more) = writer.length(left.len());
+                for item in &left[..count] {
+                    item.encode(writer)?;
+                }
+                left = &left[count..];
+                if !more {
+                    break;
+                }
+            }
+            Ok(())
+        }
+    }
+    #[cfg(feature = "inspect")]
+    impl Tree for Connections {
+        const NAME: &'static str = <Self as AsnType>::NAME;
+        fn to_tree(&self) -> Value {
+            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
+        }
+        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+            Ok(Self(reading.list(value, |value, reading| {
+                ConnectionItem::from_tree(value, reading)
+            })?))
+        }
+    }
+    #[cfg(feature = "serde")]
+    oxirush_utils::impl_serde!(Connections);
     /// `Container ::= OCTET STRING`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Container<'a>(pub Octets<'a>);
@@ -1415,7 +1586,7 @@ pub mod toy_ies {
                 .unsigned(0, 18446744073709551615, false)
                 .map_err(in_field("count_ul"))?;
             let count_dl = reader
-                .unsigned(0, 18446744073709551615, false)
+                .unsigned(0, 4000000000000, true)
                 .map_err(in_field("count_dl"))?;
             let ie_extensions = if present & 1 != 0 {
                 Some(
@@ -1444,7 +1615,7 @@ pub mod toy_ies {
                 .unsigned(self.count_ul, 0, 18446744073709551615, false)
                 .map_err(in_field("count_ul"))?;
             writer
-                .unsigned(self.count_dl, 0, 18446744073709551615, false)
+                .unsigned(self.count_dl, 0, 4000000000000, true)
                 .map_err(in_field("count_dl"))?;
             if let Some(value) = &self.ie_extensions {
                 value.encode(writer).map_err(in_field("ie_extensions"))?;
@@ -1471,7 +1642,7 @@ pub mod toy_ies {
                 reading.unsigned(value, 0, 18446744073709551615)
             })?;
             let count_dl = reading.member(&members, "countDL", |value, reading| {
-                reading.unsigned(value, 0, 18446744073709551615)
+                reading.unsigned(value, u64::MIN, u64::MAX)
             })?;
             let ie_extensions = reading.optional(
                 &members,
@@ -2568,6 +2739,108 @@ pub mod toy_ies {
     }
     #[cfg(feature = "serde")]
     oxirush_utils::impl_serde!(PLMNIdentity);
+    /// `SecurityContext ::= SEQUENCE`, with an extension marker.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct SecurityContext<'a> {
+        pub next_hop_chaining_count: u8,
+        pub next_hop_nh: SecurityKey<'a>,
+        pub ie_extensions: Option<ProtocolExtensionContainer<'static>>,
+    }
+    impl<'a> SecurityContext<'a> {
+        /// The same value, which borrows nothing and is kept as long as it is needed: a `SecurityContext<'static>`, which is the type to write in a struct. What the value borrowed from the octets that it was decoded from is copied.
+        #[doc(alias("to_owned", "owned", "keep"))]
+        pub fn into_owned(self) -> SecurityContext<'static> {
+            SecurityContext {
+                next_hop_chaining_count: self.next_hop_chaining_count,
+                next_hop_nh: self.next_hop_nh.into_owned(),
+                ie_extensions: self.ie_extensions,
+            }
+        }
+    }
+    impl AsnType for SecurityContext<'_> {
+        const NAME: &'static str = "SecurityContext";
+    }
+    impl<'a> Decode<'a> for SecurityContext<'a> {
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            let extended = reader.bit()?;
+            let present = reader.bits(1)?;
+            let next_hop_chaining_count = reader
+                .unsigned(0, 7, false)
+                .map_err(in_field("next_hop_chaining_count"))?
+                as u8;
+            let next_hop_nh = SecurityKey::decode(reader).map_err(in_field("next_hop_nh"))?;
+            let ie_extensions = if present & 1 != 0 {
+                Some(
+                    (ProtocolExtensionContainer::decode(reader)
+                        .map_err(in_field("ie_extensions"))?)
+                    .into_owned(),
+                )
+            } else {
+                None
+            };
+            if extended {
+                reader.skip_additions()?;
+            }
+            Ok(Self {
+                next_hop_chaining_count,
+                next_hop_nh,
+                ie_extensions,
+            })
+        }
+    }
+    impl Encode for SecurityContext<'_> {
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.bit(false);
+            writer.bit(self.ie_extensions.is_some());
+            writer
+                .unsigned(u64::from(self.next_hop_chaining_count), 0, 7, false)
+                .map_err(in_field("next_hop_chaining_count"))?;
+            self.next_hop_nh
+                .encode(writer)
+                .map_err(in_field("next_hop_nh"))?;
+            if let Some(value) = &self.ie_extensions {
+                value.encode(writer).map_err(in_field("ie_extensions"))?;
+            }
+            Ok(())
+        }
+    }
+    #[cfg(feature = "inspect")]
+    impl Tree for SecurityContext<'_> {
+        const NAME: &'static str = <Self as AsnType>::NAME;
+        fn to_tree(&self) -> Value {
+            let mut members = json::Members::new();
+            members.put(
+                "nextHopChainingCount",
+                json::unsigned(u64::from(self.next_hop_chaining_count)),
+            );
+            members.put("nextHopNH", self.next_hop_nh.to_tree());
+            members.put_optional(
+                "iE-Extensions",
+                self.ie_extensions.as_ref().map(|value| value.to_tree()),
+            );
+            members.finish()
+        }
+        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
+            let members = reading.members(value, names::SecurityContext)?;
+            let next_hop_chaining_count =
+                reading.member(&members, "nextHopChainingCount", |value, reading| {
+                    reading.unsigned(value, 0, 7).map(|number| number as u8)
+                })?;
+            let next_hop_nh = reading.member(&members, "nextHopNH", SecurityKey::from_tree)?;
+            let ie_extensions = reading.optional(
+                &members,
+                "iE-Extensions",
+                ProtocolExtensionContainer::from_tree,
+            )?;
+            Ok(Self {
+                next_hop_chaining_count,
+                next_hop_nh,
+                ie_extensions,
+            })
+        }
+    }
+    #[cfg(feature = "serde")]
+    oxirush_utils::impl_serde!(SecurityContext<'a>);
     impl core::fmt::Debug for SecurityKey<'_> {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             write!(formatter, "SecurityKey({} bits)", self.0.len())
@@ -2874,25 +3147,30 @@ pub mod toy_ies {
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
     pub enum TransferKind {
-        ipv4 = 0,
-        ipv6 = 1,
+        ipv6 = 10,
+        ipv4 = 5,
+        ipv4v6 = 7,
     }
     impl AsnType for TransferKind {
         const NAME: &'static str = "TransferKind";
     }
     impl TransferKind {
         /// The values in the order of their indexes in PER.
-        pub(crate) const VALUES: [Self; 2] = [Self::ipv4, Self::ipv6];
+        pub(crate) const VALUES: [Self; 3] = [Self::ipv4, Self::ipv6, Self::ipv4v6];
         /// The index of the value in PER.
         #[inline]
         fn index(&self) -> u64 {
-            *self as u64
+            match self {
+                Self::ipv4 => 0,
+                Self::ipv6 => 1,
+                Self::ipv4v6 => 2,
+            }
         }
     }
     impl<'a> Decode<'a> for TransferKind {
         #[inline]
         fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
-            Ok(Self::VALUES[reader.index(2, 0, true)? as usize])
+            Ok(Self::VALUES[reader.index(2, 1, true)? as usize])
         }
     }
     impl Encode for TransferKind {

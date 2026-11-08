@@ -1,7 +1,10 @@
 -- The information elements of TOY: each form that the generator writes once, a
 -- transfer of protocol IEs and one of a value, octets that carry a type, a list of
 -- single containers, extension containers whose IE has the type that the type it
--- extends gives it, the well-known types and the identifiers of a UE.
+-- extends gives it, a value that holds a key, a list of up to 65536 items, a count
+-- that two octets do not hold, a number of an extensible range, an ENUMERATED whose
+-- order its numbers and its addition give, the well-known types and the identifiers
+-- of a UE.
 
 TOY-IEs {
 iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
@@ -18,6 +21,7 @@ IMPORTS
 	id-Tunnel,
 	id-TransferKind,
 	maxnoofAreas,
+	maxnoofConnections,
 	maxnoofErrors,
 	maxnoofItems,
 	maxnoofTransfers
@@ -97,6 +101,19 @@ CauseRadioNetwork ::= ENUMERATED {
 	...
 }
 
+ConnectionItem ::= SEQUENCE {
+	uE-Core-ID			UE-Core-ID													OPTIONAL,
+	uE-RAN-ID			UE-RAN-ID													OPTIONAL,
+	iE-Extensions		ProtocolExtensionContainer { {ConnectionItem-ExtIEs} }	OPTIONAL,
+	...
+}
+
+ConnectionItem-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+Connections ::= SEQUENCE (SIZE(1..maxnoofConnections)) OF ConnectionItem
+
 Container ::= OCTET STRING
 
 ContainerBlob ::= SEQUENCE {
@@ -113,7 +130,7 @@ ContainerBlob-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
 
 Counts ::= SEQUENCE {
 	countUL				INTEGER (0..18446744073709551615),
-	countDL				INTEGER (0..18446744073709551615),
+	countDL				INTEGER (0..4000000000000, ...),
 	iE-Extensions		ProtocolExtensionContainer { {Counts-ExtIEs} }	OPTIONAL,
 	...
 }
@@ -217,6 +234,17 @@ NodeName ::= PrintableString (SIZE(1..150, ...))
 
 PLMNIdentity ::= OCTET STRING (SIZE(3))
 
+SecurityContext ::= SEQUENCE {
+	nextHopChainingCount	INTEGER (0..7),
+	nextHopNH				SecurityKey,
+	iE-Extensions			ProtocolExtensionContainer { {SecurityContext-ExtIEs} }	OPTIONAL,
+	...
+}
+
+SecurityContext-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
 SecurityKey ::= BIT STRING (SIZE(256))
 
 SetupTransfer ::= SEQUENCE {
@@ -246,9 +274,10 @@ TransferItem-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
 }
 
 TransferKind ::= ENUMERATED {
-	ipv4,
-	ipv6,
-	...
+	ipv6 (10),
+	ipv4 (5),
+	...,
+	ipv4v6 (7)
 }
 
 TransferList ::= SEQUENCE (SIZE(1..maxnoofTransfers)) OF TransferItem

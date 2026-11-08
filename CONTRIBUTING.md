@@ -33,8 +33,9 @@ change its IEs by name, and their readers of one IE by its marker type, are
 written once, in the module `protocol` of the crate. The generator in
 `generator/` writes the registry of each protocol from its ASN.1: the list of
 its procedures, its IEs and its transfers that the macros expand.
-`tests/toy/mod.rs` is a protocol of two procedures written as the generator
-writes one, which the tests and the README build and read.
+`tests/toy/mod.rs` is a protocol of two procedures written by hand as the
+generator writes one, which the README builds and reads: it is in the package,
+where the examples of the README run, and TOY is not.
 
 `protocols/toy/` is TOY, a protocol of five procedures whose ASN.1 modules,
 in `protocols/toy/toy/`, have one of each form that the generator writes: a
@@ -43,7 +44,12 @@ of single containers, an IE of an extension that has the type that the type
 it extends gives it, the well-known types and the identifiers of a UE. The
 generator writes its bindings as it writes those of oxirush-ngap and
 oxirush-s1ap, and its tests are the tests of what the generated crates
-share. To write them again, from `protocols/toy/`:
+share, which the protocol crates do not hold again. It is a member of the
+workspace of the crate: `cargo test -p oxirush-toy` runs them, cargo-mutants
+runs them on each mutant of the crate (`test_workspace` in
+`.cargo/mutants.toml`), and `.github/mutants-generator.py` compares its
+bindings as it compares those of the protocol crates. To write them again,
+from `protocols/toy/`:
 
 ```sh
 CARGO="$(command -v cargo)" cargo run --locked --manifest-path build/Cargo.toml

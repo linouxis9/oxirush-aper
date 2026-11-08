@@ -693,7 +693,7 @@ pub(crate) use $crate::inspect::Typed;
 /// one of these types. See [Octets that carry a type](self#octets-that-carry-a-type).
 ///
 /// The IE then has, in place of its octets, that type under that name, which [`select`],
-/// [`paths`] and the edits go into and `with_tree` of the PDU encodes back. Nothing in a
+/// [`paths`] and the edits go into and `from_tree` of the PDU encodes back. Nothing in a
 /// message says which type octets carry, so `to_tree` leaves them as they are, and a path
 /// through the name of a type on octets that were not opened is an error that says so.
 ///

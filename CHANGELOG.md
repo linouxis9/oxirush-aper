@@ -160,6 +160,19 @@ All notable changes to `oxirush-aper` are recorded here.
 - The feature `std` holds the register, a lock of the standard library:
   without it, no protocol is registered. The build of the CI for
   `thumbv7em-none-eabihf` takes `inspect` and not every feature.
+- TOY (`protocols/toy/`), a protocol of five procedures that the generator
+  writes from its own ASN.1 modules as it writes NGAP and S1AP, with one of each
+  form that the generator writes. Its tests are those of what the generated
+  crates share, which oxirush-ngap and oxirush-s1ap held twice: the codec and the
+  `Display` of a PDU, its keys, the memory that a claimed count reserves, the
+  macros and the readers, `check` and the Criticality Diagnostics, the errors,
+  the trees and their paths. It is a member of the workspace of the crate and
+  is not published: `cargo test` at the root tests the crate alone, `cargo test
+  -p oxirush-toy` TOY, and cargo-mutants runs both on each mutant of the crate.
+  The mutants of the generator are judged on its bindings too. The tests of
+  `oxirush_aper::protocol` on the protocol written by hand in `tests/toy/` are
+  those of TOY now; the README keeps that protocol for its examples, which run
+  where TOY is not, in the package.
 
 ## 0.1.0 - 2026-10-24
 
