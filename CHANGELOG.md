@@ -35,6 +35,10 @@ All notable changes to `oxirush-aper` are recorded here.
   `Reader::index(root, additions, extensible)` reads the index of an
   `ENUMERATED` and of a `CHOICE`, as `Writer::index` writes it, and its error
   says that the type has no such index.
+- The generator writes no `new` for a `SEQUENCE`: a struct literal builds one,
+  with its members by their names. The `new` of a bit string of one size, which
+  refuses a number that its bits do not hold, stays. The macro of the
+  protocols builds the criticality diagnostics of a protocol with literals.
 - The inspection tables of a protocol write the names of the members of each
   `SEQUENCE`, of the alternatives of each `CHOICE` and of the values of each
   `ENUMERATED` once, in its module `names`, which the trees of the bindings and
@@ -87,6 +91,7 @@ All notable changes to `oxirush-aper` are recorded here.
 | `reader.unsigned(0, 255)`, `writer.unsigned(v, 0, 255)` | `reader.unsigned(0, 255, false)`, `writer.unsigned(v, 0, 255, false)` |
 | `reader.unsigned_extensible(0, 255)` (and of each form) | `reader.unsigned(0, 255, true)` |
 | `reader.enumerated(root, additions, ext)`, `reader.choice(...)` | `reader.index(root, additions, ext)` |
+| `GUAMI::new(plmn, region, set, pointer, None)` (of the bindings) | `GUAMI { plmn_identity, amf_region_id, amf_set_id, amf_pointer, ie_extensions: None }` |
 
 ### Added
 

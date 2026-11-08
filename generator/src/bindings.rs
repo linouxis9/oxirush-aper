@@ -110,8 +110,6 @@ struct Definition {
     extensible: bool,
     shape: Shape,
     docs: Vec<String>,
-    /// The parameters of `new` that take what converts into their type.
-    into: BTreeSet<String>,
     /// The alternatives that a `From` gives, by the type that it converts.
     from: Vec<String>,
 }
@@ -291,7 +289,6 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
                     extensible: attributes.non_exhaustive,
                     shape,
                     docs: attributes.docs,
-                    into: BTreeSet::new(),
                     from: Vec::new(),
                 })));
             }
@@ -346,12 +343,12 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
                     extensible: attributes.non_exhaustive,
                     shape,
                     docs: attributes.docs,
-                    into: BTreeSet::new(),
                     from: Vec::new(),
                 })));
             }
-            // What rasn-compiler writes beside a type: its `new`, and the conversions
-            // into a CHOICE from the types that one alternative alone has.
+            // What rasn-compiler writes beside a type: its `new`, which a struct literal
+            // says, and the conversions into a CHOICE from the types that one
+            // alternative alone has.
             Item::Impl(item) => {
                 let of = tokens(&item.self_ty).replace(' ', "");
                 let definition = entries.iter_mut().rev().find_map(|entry| match entry {
@@ -360,21 +357,7 @@ fn entries(items: &[Item]) -> Result<Vec<Entry>> {
                 });
                 let definition = definition.with_context(|| format!("an impl of {of}"))?;
                 match &item.trait_ {
-                    None => {
-                        for inner in &item.items {
-                            let syn::ImplItem::Fn(function) = inner else {
-                                continue;
-                            };
-                            for input in &function.sig.inputs {
-                                let syn::FnArg::Typed(input) = input else {
-                                    continue;
-                                };
-                                if tokens(&input.ty).starts_with("impl Into") {
-                                    definition.into.insert(tokens(&input.pat));
-                                }
-                            }
-                        }
-                    }
+                    None => {}
                     Some((_, path, _)) => {
                         let written = tokens(path);
                         ensure!(
@@ -1115,9 +1098,9 @@ impl Bindings {
         writeln!(out, "#[derive({debug}Clone, PartialEq, Eq, Hash{copy})]")?;
         // An extensible CHOICE or ENUMERATED takes alternatives and values in a later
         // version, which a `match` of a caller leaves room for. A SEQUENCE that takes a
-        // member in a later version changes its `new`, which breaks a caller whatever
-        // the attribute says: on a struct it would only forbid a literal, and a pattern
-        // without `..`.
+        // member in a later version breaks the literal of a caller whatever the
+        // attribute says: on a struct it would forbid the literal, the one way to build
+        // it.
         if definition.extensible && !matches!(definition.shape, Shape::Sequence(_)) {
             writeln!(out, "#[non_exhaustive]")?;
         }
@@ -1134,31 +1117,8 @@ impl Bindings {
                     )?;
                 }
                 writeln!(out, "}}")?;
-                // `new`, as rasn-compiler writes it.
-                writeln!(out, "impl{life} {declared} {{")?;
-                let parameters: Vec<String> = members
-                    .iter()
-                    .map(|member| {
-                        let ty = self.member_ty(member, "'a");
-                        match definition.into.contains(&member.name) {
-                            true => format!("{}: impl Into<{ty}>", member.name),
-                            false => format!("{}: {ty}", member.name),
-                        }
-                    })
-                    .collect();
-                writeln!(
-                    out,
-                    "pub fn new({}) -> Self {{ Self {{",
-                    parameters.join(", ")
-                )?;
-                for member in members {
-                    match definition.into.contains(&member.name) {
-                        true => writeln!(out, "{0}: {0}.into(),", member.name)?,
-                        false => writeln!(out, "{},", member.name)?,
-                    }
-                }
-                writeln!(out, "}} }}")?;
                 if borrows {
+                    writeln!(out, "impl{life} {declared} {{")?;
                     self.owned_doc(out, name)?;
                     if self.plain.contains(name) {
                         writeln!(out, "#[inline]")?;
@@ -1176,9 +1136,8 @@ impl Bindings {
                         };
                         writeln!(out, "{}: {owned},", member.name)?;
                     }
-                    writeln!(out, "}} }}")?;
+                    writeln!(out, "}} }} }}")?;
                 }
-                writeln!(out, "}}")?;
                 self.asn_type(out, &named, &definition.asn)?;
                 self.sequence_codec(out, definition, members, &declared, &named)?;
                 self.sequence_json(out, members, name, &named)?;
@@ -2500,30 +2459,6 @@ mod tests {
             error.contains("an attribute that the backend does not read: # [serde (transparent)]"),
             "{error}"
         );
-    }
-
-    /// What rasn-compiler writes in an `impl` is of the type that it names, wherever that
-    /// type is: its `new` takes what converts into a member's type.
-    #[test]
-    fn an_impl_is_of_the_type_that_it_names() {
-        let derive = "#[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]";
-        let items = format!(
-            "{derive} #[rasn(delegate, value(\"0..=7\"))] pub struct Count(pub u8); \
-             {derive} #[rasn(automatic_tags)] pub struct First {{ pub count: Count }} \
-             {derive} #[rasn(automatic_tags)] pub struct Second {{ pub count: Count }} \
-             impl First {{ pub fn new(count: impl Into<Count>) -> Self {{ \
-             Self {{ count: count.into() }} }} }}"
-        );
-        let text = described(&items, Keys::default()).unwrap().text;
-        let new = |of: &str| {
-            let at = text.find(&format!("impl {of} {{\npub fn new(")).unwrap();
-            text[at..].lines().nth(1).unwrap().to_string()
-        };
-        assert_eq!(
-            new("First"),
-            "pub fn new(count: impl Into<Count>) -> Self { Self {"
-        );
-        assert_eq!(new("Second"), "pub fn new(count: Count) -> Self { Self {");
     }
 
     /// A well-known number that is a bit string has one size, which is its number of

@@ -666,6 +666,7 @@ fn a_deviation_says_its_ie_its_item_and_its_cause() -> Result<(), Error> {
             ie_criticality: Criticality::Reject,
             ie_id: ProtocolIEID(9),
             type_of_error: TypeOfError::not_understood,
+            ie_extensions: None,
         })
     );
     assert_eq!(

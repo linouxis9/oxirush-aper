@@ -20,15 +20,6 @@ const SHARED: &str = r#"    #[doc = " `ProtocolIE-Field`: an IE of a protocol IE
         pub criticality: Criticality,
         pub value: Any,
     }
-    impl ProtocolIEField {
-        pub fn new(id: impl Into<ProtocolIEID>, criticality: Criticality, value: Any) -> Self {
-            Self {
-                id: id.into(),
-                criticality,
-                value,
-            }
-        }
-    }
     #[doc = " `ProtocolIE-Container`: the IEs of a message."]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
     #[rasn(delegate, size("0..=65535"), identifier = "ProtocolIE-Container")]
@@ -41,19 +32,6 @@ const SHARED: &str = r#"    #[doc = " `ProtocolIE-Field`: an IE of a protocol IE
         pub criticality: Criticality,
         #[rasn(identifier = "extensionValue")]
         pub extension_value: Any,
-    }
-    impl ProtocolExtensionField {
-        pub fn new(
-            id: impl Into<ProtocolExtensionID>,
-            criticality: Criticality,
-            extension_value: Any,
-        ) -> Self {
-            Self {
-                id: id.into(),
-                criticality,
-                extension_value,
-            }
-        }
     }
     #[doc = " `ProtocolExtensionContainer`: the `iE-Extensions` of a type."]
     #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]

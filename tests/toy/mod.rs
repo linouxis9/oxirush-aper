@@ -382,55 +382,27 @@ pub mod toy {
         unspecified,
     }
 
-    /// `CriticalityDiagnostics-IE-Item`.
+    /// `CriticalityDiagnostics-IE-Item`, whose extensions the toy does not have.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct CriticalityDiagnosticsIEItem {
         pub ie_criticality: Criticality,
         pub ie_id: ProtocolIEID,
         pub type_of_error: TypeOfError,
-    }
-    impl CriticalityDiagnosticsIEItem {
-        pub fn new(
-            ie_criticality: Criticality,
-            ie_id: ProtocolIEID,
-            type_of_error: TypeOfError,
-            _: Option<()>,
-        ) -> Self {
-            Self {
-                ie_criticality,
-                ie_id,
-                type_of_error,
-            }
-        }
+        pub ie_extensions: Option<()>,
     }
 
     /// `CriticalityDiagnostics-IE-List`.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct CriticalityDiagnosticsIEList(pub Vec<CriticalityDiagnosticsIEItem>);
 
-    /// `CriticalityDiagnostics`.
+    /// `CriticalityDiagnostics`, whose extensions the toy does not have.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct CriticalityDiagnostics {
         pub procedure_code: Option<ProcedureCode>,
         pub triggering_message: Option<TriggeringMessage>,
         pub procedure_criticality: Option<Criticality>,
         pub ies_criticality_diagnostics: Option<CriticalityDiagnosticsIEList>,
-    }
-    impl CriticalityDiagnostics {
-        pub fn new(
-            procedure_code: Option<ProcedureCode>,
-            triggering_message: Option<TriggeringMessage>,
-            procedure_criticality: Option<Criticality>,
-            ies_criticality_diagnostics: Option<CriticalityDiagnosticsIEList>,
-            _: Option<()>,
-        ) -> Self {
-            Self {
-                procedure_code,
-                triggering_message,
-                procedure_criticality,
-                ies_criticality_diagnostics,
-            }
-        }
+        pub ie_extensions: Option<()>,
     }
 
     /// A message of a PDU, of one direction.

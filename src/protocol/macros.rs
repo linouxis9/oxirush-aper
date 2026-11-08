@@ -759,12 +759,12 @@ macro_rules! __protocol {
                 id: u16,
                 type_of_error: crate::$bindings::TypeOfError,
             ) -> crate::$bindings::CriticalityDiagnosticsIEItem {
-                crate::$bindings::CriticalityDiagnosticsIEItem::new(
-                    criticality,
-                    crate::$bindings::ProtocolIEID(id),
+                crate::$bindings::CriticalityDiagnosticsIEItem {
+                    ie_criticality: criticality,
+                    ie_id: crate::$bindings::ProtocolIEID(id),
                     type_of_error,
-                    None,
-                )
+                    ie_extensions: None,
+                }
             }
 
             fn criticality_diagnostics(
@@ -772,19 +772,21 @@ macro_rules! __protocol {
                 criticality: $crate::Criticality,
                 items: Option<Vec<crate::$bindings::CriticalityDiagnosticsIEItem>>,
             ) -> crate::$bindings::CriticalityDiagnostics {
-                use crate::$bindings::TriggeringMessage;
+                use crate::$bindings::{
+                    CriticalityDiagnosticsIEList, ProcedureCode, TriggeringMessage,
+                };
                 let message = |direction| match direction {
                     $crate::Direction::Initiating => TriggeringMessage::$initiating,
                     $crate::Direction::Successful => TriggeringMessage::$successful,
                     $crate::Direction::Unsuccessful => TriggeringMessage::$unsuccessful,
                 };
-                crate::$bindings::CriticalityDiagnostics::new(
-                    triggering.map(|(code, _)| crate::$bindings::ProcedureCode(code)),
-                    triggering.map(|(_, direction)| message(direction)),
-                    Some(criticality),
-                    items.map(crate::$bindings::CriticalityDiagnosticsIEList),
-                    None,
-                )
+                crate::$bindings::CriticalityDiagnostics {
+                    procedure_code: triggering.map(|(code, _)| ProcedureCode(code)),
+                    triggering_message: triggering.map(|(_, direction)| message(direction)),
+                    procedure_criticality: Some(criticality),
+                    ies_criticality_diagnostics: items.map(CriticalityDiagnosticsIEList),
+                    ie_extensions: None,
+                }
             }
         }
 
