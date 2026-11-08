@@ -2,7 +2,7 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
-## Unreleased
+## 0.2.1 - 2026-11-08
 
 ### Added
 
