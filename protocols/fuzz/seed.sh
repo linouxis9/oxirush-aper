@@ -1,7 +1,8 @@
 #!/bin/sh
 # Start the corpus of each target that reads octets from the vectors of the crate,
 # from the PDUs that other implementations sent and from those that a fuzzer found a
-# fault with: one file for each of tests/fixtures that has no more than 4096 octets.
+# fault with: one file for each PDU of tests/fixtures and of the corpus of the comparison
+# with Wireshark, tests/wireshark/corpus.tsv, that has no more than 4096 octets.
 # The targets that build their input with `arbitrary` pick the PDUs of the fixtures
 # themselves, and need none. Run it from the root of the repository of the crate,
 # oxirush-ngap or oxirush-s1ap:
@@ -11,7 +12,7 @@ set -eu
 mkdir -p fuzz/corpus/decode fuzz/corpus/json fuzz/corpus/paths fuzz/corpus/exact
 number=0
 grep -hv '^#' tests/fixtures/messages.tsv tests/fixtures/vectors.tsv tests/fixtures/later.tsv \
-    tests/fixtures/captured.tsv tests/fixtures/fuzzed.tsv |
+    tests/fixtures/captured.tsv tests/fixtures/fuzzed.tsv tests/wireshark/corpus.tsv |
     while IFS="$(printf '\t')" read -r name octets rest; do
         [ "${#octets}" -le 8192 ] || continue
         number=$((number + 1))
