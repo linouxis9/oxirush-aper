@@ -1,0 +1,6 @@
+# TOY, the protocol of the tests of oxirush-aper, whose fixtures tests/fixtures.rs
+# writes: FIXTURES=write cargo test -p oxirush-toy --all-features --test fixtures
+# A message with additions of a later version after the extension marker of its
+# type, which a receiver of this version skips.
+# Message/variant	wire bytes	procedure code	PDU alternative	wire bytes without the additions
+ReleaseRequest/later	00024017800003000a0002002a000b00020007000f4001240101aa	2	0	00024014000003000a0002002a000b00020007000f400124

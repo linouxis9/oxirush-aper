@@ -1,0 +1,4 @@
+# TOY, the protocol of the tests of oxirush-aper, whose fixtures tests/fixtures.rs
+# writes: FIXTURES=write cargo test -p oxirush-toy --all-features --test fixtures
+# No implementation but this one speaks TOY: no PDU is captured.
+# Message/variant	wire bytes	procedure code	PDU alternative

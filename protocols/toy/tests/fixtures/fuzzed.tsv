@@ -1,0 +1,4 @@
+# TOY, the protocol of the tests of oxirush-aper, whose fixtures tests/fixtures.rs
+# writes: FIXTURES=write cargo test -p oxirush-toy --all-features --test fixtures
+# PDUs that a fuzzer found a fault with, which the tests read as they read the vectors.
+# name	octets

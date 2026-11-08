@@ -1,0 +1,10 @@
+# TOY, the protocol of the tests of oxirush-aper, whose fixtures tests/fixtures.rs
+# writes: FIXTURES=write cargo test -p oxirush-toy --all-features --test fixtures
+# One message of each procedure, with its mandatory IEs and nothing else.
+# Message	wire bytes	procedure code	PDU alternative
+SetupRequest	0001000f000001001a0008000000010002f839	1	0
+SetupResponse	20010003000000	1	1
+SetupFailure	40010008000001000f400168	1	2
+ReleaseRequest	00024014000003000a00020001000b00020002000f400104	2	0
+ErrorIndication	00034003000000	3	0
+Notification	00054009000001000c00024003	5	0

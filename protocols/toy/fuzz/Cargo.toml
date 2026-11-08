@@ -1,0 +1,73 @@
+# The fuzz targets of TOY, for cargo-fuzz: those of `protocols/fuzz/`, which oxirush-ngap
+# and oxirush-s1ap run on their protocols, on the protocol of the tests of oxirush-aper,
+# whose PDUs are small. A package of its own, which is not published. The targets name
+# the crate `codec`, and take what is of the protocol from its module `hooks`
+# (`--cfg oxirush_toy_hooks`).
+[package]
+name = "oxirush-toy-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# What the targets do, which the programs call.
+[lib]
+name = "targets"
+path = "../../fuzz/src/lib.rs"
+
+[dependencies]
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+serde_json = "1"
+
+[dependencies.codec]
+package = "oxirush-toy"
+path = ".."
+features = ["inspect"]
+
+# Not part of the workspace of oxirush-aper.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "decode"
+path = "../../fuzz/fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json"
+path = "../../fuzz/fuzz_targets/json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "paths"
+path = "../../fuzz/fuzz_targets/paths.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "exact"
+path = "../../fuzz/fuzz_targets/exact.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "edit"
+path = "../../fuzz/fuzz_targets/edit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tree"
+path = "../../fuzz/fuzz_targets/tree.rs"
+test = false
+doc = false
+bench = false

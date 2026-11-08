@@ -4,6 +4,10 @@
 /fuzz/target/
 /fuzz/corpus/
 /fuzz/artifacts/
+/protocols/toy/fuzz/target/
+/protocols/toy/fuzz/corpus/
+/protocols/toy/fuzz/artifacts/
+/protocols/toy/fuzz/coverage/
 Cargo.lock
 # The generator of TOY runs locked, as those of the protocol crates do.
 !/protocols/toy/build/Cargo.lock

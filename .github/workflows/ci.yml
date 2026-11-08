@@ -144,6 +144,34 @@ jobs:
       - run: cargo install cargo-fuzz --locked
       - run: cargo fuzz run fields -- -max_total_time=60 -max_len=512
 
+  # The targets of protocols/fuzz/, which oxirush-ngap and oxirush-s1ap run on their
+  # protocols, on TOY, a minute each: its PDUs are small, so that a fault of the trees,
+  # the paths or the checks that the generated crates share shows at the commit, before
+  # a protocol crate takes it. Each corpus starts from the PDUs of its tests/fixtures.
+  toy-fuzz:
+    name: Fuzz TOY (6 minutes)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: protocols/toy
+    env:
+      # What the targets take from the inside of TOY.
+      RUSTFLAGS: --cfg oxirush_toy_hooks
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: protocols/toy/fuzz
+      - run: cargo install cargo-fuzz --locked
+      - run: ../fuzz/seed.sh
+      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
+      - run: cargo fuzz run json -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
+      - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096
+      - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
+      - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0
+
   # The block of the README that uses oxirush-ngap: `family/` is a package of its own,
   # which takes it at the version of its manifest, so that the crate depends on none of
   # the family. It compares what the block prints with the README.

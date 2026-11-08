@@ -5,14 +5,21 @@
 # with Wireshark, tests/wireshark/corpus.tsv, that has no more than 4096 octets.
 # The targets that build their input with `arbitrary` pick the PDUs of the fixtures
 # themselves, and need none. Run it from the root of the repository of the crate,
-# oxirush-ngap or oxirush-s1ap:
+# oxirush-ngap or oxirush-s1ap, or from protocols/toy:
 #
 #     ../oxirush-aper/protocols/fuzz/seed.sh
+#     ../fuzz/seed.sh
 set -eu
 mkdir -p fuzz/corpus/decode fuzz/corpus/json fuzz/corpus/paths fuzz/corpus/exact
 number=0
-grep -hv '^#' tests/fixtures/messages.tsv tests/fixtures/vectors.tsv tests/fixtures/later.tsv \
-    tests/fixtures/captured.tsv tests/fixtures/fuzzed.tsv tests/wireshark/corpus.tsv |
+# The fixtures, and the corpus of the comparison with Wireshark where the crate has one
+files=
+for file in tests/fixtures/messages.tsv tests/fixtures/vectors.tsv tests/fixtures/later.tsv \
+    tests/fixtures/captured.tsv tests/fixtures/fuzzed.tsv tests/wireshark/corpus.tsv; do
+    if [ -f "$file" ]; then files="$files $file"; fi
+done
+# shellcheck disable=SC2086 # the names of the files, which have no space
+grep -hv '^#' $files |
     while IFS="$(printf '\t')" read -r name octets rest; do
         [ "${#octets}" -le 8192 ] || continue
         number=$((number + 1))
