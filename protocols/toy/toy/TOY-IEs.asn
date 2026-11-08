@@ -1,0 +1,298 @@
+-- The information elements of TOY: each form that the generator writes once, a
+-- transfer of protocol IEs and one of a value, octets that carry a type, a list of
+-- single containers, extension containers whose IE has the type that the type it
+-- extends gives it, the well-known types and the identifiers of a UE.
+
+TOY-IEs {
+iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
+toy (0) modules (3) toy-IEs (2) }
+
+DEFINITIONS AUTOMATIC TAGS ::=
+
+BEGIN
+
+IMPORTS
+	id-ExtendedCause,
+	id-ExtensionIndex,
+	id-Item,
+	id-Tunnel,
+	id-TransferKind,
+	maxnoofAreas,
+	maxnoofErrors,
+	maxnoofItems,
+	maxnoofTransfers
+FROM TOY-Constants
+
+	Criticality,
+	ProcedureCode,
+	ProtocolIE-ID,
+	TriggeringMessage
+FROM TOY-CommonDataTypes
+
+	ProtocolExtensionContainer{},
+	ProtocolIE-Container{},
+	ProtocolIE-SingleContainer{},
+	TOY-PROTOCOL-EXTENSION,
+	TOY-PROTOCOL-IES
+FROM TOY-Containers;
+
+Algorithms ::= BIT STRING (SIZE(16, ...))
+
+AreaItem ::= SEQUENCE {
+	tAC					TAC,
+	broadcastPLMNs		BroadcastPLMNs,
+	iE-Extensions		ProtocolExtensionContainer { {AreaItem-ExtIEs} } OPTIONAL,
+	...
+}
+
+AreaItem-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+Areas ::= SEQUENCE (SIZE(1..maxnoofAreas)) OF AreaItem
+
+BroadcastPLMNs ::= SEQUENCE (SIZE(1..6)) OF PLMNIdentity
+
+Cause ::= CHOICE {
+	radioNetwork		CauseRadioNetwork,
+	nas					CauseNas,
+	protocol			CauseProtocol,
+	misc				CauseMisc,
+	choice-Extensions	ProtocolIE-SingleContainer { {Cause-ExtIEs} }
+}
+
+Cause-ExtIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-ExtendedCause	CRITICALITY ignore	TYPE ExtendedCause	PRESENCE mandatory },
+	...
+}
+
+CauseMisc ::= ENUMERATED {
+	control-processing-overload,
+	unspecified,
+	...
+}
+
+CauseNas ::= ENUMERATED {
+	normal-release,
+	deregister,
+	unspecified,
+	...
+}
+
+CauseProtocol ::= ENUMERATED {
+	transfer-syntax-error,
+	abstract-syntax-error-reject,
+	abstract-syntax-error-ignore-and-notify,
+	message-not-compatible-with-receiver-state,
+	semantic-error,
+	abstract-syntax-error-falsely-constructed-message,
+	unspecified,
+	...
+}
+
+CauseRadioNetwork ::= ENUMERATED {
+	unspecified,
+	user-inactivity,
+	release-due-to-ran-generated-reason,
+	...
+}
+
+Container ::= OCTET STRING
+
+ContainerBlob ::= SEQUENCE {
+	tAC					TAC,
+	nodeName			NodeName													OPTIONAL,
+	message				OCTET STRING (SIZE(1..9600))								OPTIONAL,
+	iE-Extensions		ProtocolExtensionContainer { {ContainerBlob-ExtIEs} }	OPTIONAL,
+	...
+}
+
+ContainerBlob-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+Counts ::= SEQUENCE {
+	countUL				INTEGER (0..18446744073709551615),
+	countDL				INTEGER (0..18446744073709551615),
+	iE-Extensions		ProtocolExtensionContainer { {Counts-ExtIEs} }	OPTIONAL,
+	...
+}
+
+Counts-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+CriticalityDiagnostics ::= SEQUENCE {
+	procedureCode				ProcedureCode									OPTIONAL,
+	triggeringMessage			TriggeringMessage								OPTIONAL,
+	procedureCriticality		Criticality										OPTIONAL,
+	iEsCriticalityDiagnostics	CriticalityDiagnostics-IE-List				OPTIONAL,
+	iE-Extensions				ProtocolExtensionContainer { {CriticalityDiagnostics-ExtIEs} }	OPTIONAL,
+	...
+}
+
+CriticalityDiagnostics-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+CriticalityDiagnostics-IE-List ::= SEQUENCE (SIZE(1..maxnoofErrors)) OF CriticalityDiagnostics-IE-Item
+
+CriticalityDiagnostics-IE-Item ::= SEQUENCE {
+	iECriticality		Criticality,
+	iE-ID				ProtocolIE-ID,
+	typeOfError			TypeOfError,
+	iE-Extensions		ProtocolExtensionContainer { {CriticalityDiagnostics-IE-Item-ExtIEs} }	OPTIONAL,
+	...
+}
+
+CriticalityDiagnostics-IE-Item-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+ExtendedCause ::= ENUMERATED {
+	congestion,
+	overload,
+	...
+}
+
+FailureTransfer ::= SEQUENCE {
+	cause				Cause,
+	iE-Extensions		ProtocolExtensionContainer { {FailureTransfer-ExtIEs} }	OPTIONAL,
+	...
+}
+
+FailureTransfer-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+GTP-TEID ::= OCTET STRING (SIZE(4))
+
+GTPTunnel ::= SEQUENCE {
+	transportLayerAddress	TransportLayerAddress,
+	gTP-TEID				GTP-TEID,
+	iE-Extensions			ProtocolExtensionContainer { {GTPTunnel-ExtIEs} }	OPTIONAL,
+	...
+}
+
+GTPTunnel-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+IndexOfItem ::= INTEGER (1..8, ...)
+
+IndexOfTransfer ::= INTEGER (1..4, ...)
+
+Item ::= SEQUENCE {
+	item-ID				INTEGER (0..255),
+	cause				Cause												OPTIONAL,
+	iE-Extensions		ProtocolExtensionContainer { {Item-ExtIEs} }	OPTIONAL,
+	...
+}
+
+Item-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	{ ID id-ExtensionIndex	CRITICALITY ignore	EXTENSION IndexOfItem	PRESENCE optional },
+	...
+}
+
+ItemIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-Item	CRITICALITY reject	TYPE Item	PRESENCE mandatory },
+	...
+}
+
+Items ::= SEQUENCE (SIZE(1..maxnoofItems)) OF ProtocolIE-SingleContainer { {ItemIEs} }
+
+NAS-PDU ::= OCTET STRING
+
+NodeID ::= CHOICE {
+	macro-NodeID		BIT STRING (SIZE(20)),
+	home-NodeID			BIT STRING (SIZE(28)),
+	choice-Extensions	ProtocolIE-SingleContainer { {NodeID-ExtIEs} }
+}
+
+NodeID-ExtIEs TOY-PROTOCOL-IES ::= {
+	...
+}
+
+NodeName ::= PrintableString (SIZE(1..150, ...))
+
+PLMNIdentity ::= OCTET STRING (SIZE(3))
+
+SecurityKey ::= BIT STRING (SIZE(256))
+
+SetupTransfer ::= SEQUENCE {
+	protocolIEs		ProtocolIE-Container		{ {SetupTransferIEs} },
+	...
+}
+
+SetupTransferIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-Tunnel			CRITICALITY reject	TYPE Tunnel			PRESENCE mandatory	}|
+	{ ID id-TransferKind	CRITICALITY reject	TYPE TransferKind	PRESENCE optional	},
+	...
+}
+
+TAC ::= OCTET STRING (SIZE(3))
+
+TransferItem ::= SEQUENCE {
+	transfer-ID			INTEGER (0..255),
+	setupTransfer		OCTET STRING (CONTAINING SetupTransfer),
+	failureTransfer		OCTET STRING (CONTAINING FailureTransfer)			OPTIONAL,
+	iE-Extensions		ProtocolExtensionContainer { {TransferItem-ExtIEs} }	OPTIONAL,
+	...
+}
+
+TransferItem-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	{ ID id-ExtensionIndex	CRITICALITY ignore	EXTENSION IndexOfTransfer	PRESENCE optional },
+	...
+}
+
+TransferKind ::= ENUMERATED {
+	ipv4,
+	ipv6,
+	...
+}
+
+TransferList ::= SEQUENCE (SIZE(1..maxnoofTransfers)) OF TransferItem
+
+TransportLayerAddress ::= BIT STRING (SIZE(1..160, ...))
+
+Tunnel ::= CHOICE {
+	gTPTunnel			GTPTunnel,
+	choice-Extensions	ProtocolIE-SingleContainer { {Tunnel-ExtIEs} }
+}
+
+Tunnel-ExtIEs TOY-PROTOCOL-IES ::= {
+	...
+}
+
+TypeOfError ::= ENUMERATED {
+	not-understood,
+	missing,
+	...
+}
+
+UE-Core-ID ::= INTEGER (0..1099511627775)
+
+UE-ID-pair ::= SEQUENCE {
+	uE-Core-ID			UE-Core-ID,
+	uE-RAN-ID			UE-RAN-ID,
+	iE-Extensions		ProtocolExtensionContainer { {UE-ID-pair-ExtIEs} }	OPTIONAL,
+	...
+}
+
+UE-ID-pair-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
+	...
+}
+
+UE-IDs ::= CHOICE {
+	uE-ID-pair			UE-ID-pair,
+	uE-Core-ID			UE-Core-ID,
+	choice-Extensions	ProtocolIE-SingleContainer { {UE-IDs-ExtIEs} }
+}
+
+UE-IDs-ExtIEs TOY-PROTOCOL-IES ::= {
+	...
+}
+
+UE-RAN-ID ::= INTEGER (0..4294967295)
+
+END

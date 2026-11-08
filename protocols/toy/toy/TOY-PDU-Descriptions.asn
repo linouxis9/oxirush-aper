@@ -1,0 +1,123 @@
+-- The PDU of TOY and its elementary procedures.
+
+TOY-PDU-Descriptions {
+iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
+toy (0) modules (3) toy-PDU-Descriptions (0) }
+
+DEFINITIONS AUTOMATIC TAGS ::=
+
+BEGIN
+
+IMPORTS
+	Criticality,
+	ProcedureCode
+FROM TOY-CommonDataTypes
+
+	ErrorIndication,
+	Notification,
+	PrivateMessage,
+	ReleaseRequest,
+	SetupFailure,
+	SetupRequest,
+	SetupResponse
+FROM TOY-PDU-Contents
+
+	id-ErrorIndication,
+	id-Notification,
+	id-PrivateMessage,
+	id-Release,
+	id-Setup
+FROM TOY-Constants;
+
+TOY-ELEMENTARY-PROCEDURE ::= CLASS {
+	&InitiatingMessage				,
+	&SuccessfulOutcome							OPTIONAL,
+	&UnsuccessfulOutcome						OPTIONAL,
+	&procedureCode				ProcedureCode	UNIQUE,
+	&criticality				Criticality	DEFAULT ignore
+}
+WITH SYNTAX {
+	INITIATING MESSAGE			&InitiatingMessage
+	[SUCCESSFUL OUTCOME			&SuccessfulOutcome]
+	[UNSUCCESSFUL OUTCOME		&UnsuccessfulOutcome]
+	PROCEDURE CODE				&procedureCode
+	[CRITICALITY				&criticality]
+}
+
+TOY-PDU ::= CHOICE {
+	initiatingMessage			InitiatingMessage,
+	successfulOutcome			SuccessfulOutcome,
+	unsuccessfulOutcome			UnsuccessfulOutcome,
+	...
+}
+
+InitiatingMessage ::= SEQUENCE {
+	procedureCode	TOY-ELEMENTARY-PROCEDURE.&procedureCode		({TOY-ELEMENTARY-PROCEDURES}),
+	criticality		TOY-ELEMENTARY-PROCEDURE.&criticality			({TOY-ELEMENTARY-PROCEDURES}{@procedureCode}),
+	value			TOY-ELEMENTARY-PROCEDURE.&InitiatingMessage	({TOY-ELEMENTARY-PROCEDURES}{@procedureCode})
+}
+
+SuccessfulOutcome ::= SEQUENCE {
+	procedureCode	TOY-ELEMENTARY-PROCEDURE.&procedureCode		({TOY-ELEMENTARY-PROCEDURES}),
+	criticality		TOY-ELEMENTARY-PROCEDURE.&criticality			({TOY-ELEMENTARY-PROCEDURES}{@procedureCode}),
+	value			TOY-ELEMENTARY-PROCEDURE.&SuccessfulOutcome	({TOY-ELEMENTARY-PROCEDURES}{@procedureCode})
+}
+
+UnsuccessfulOutcome ::= SEQUENCE {
+	procedureCode	TOY-ELEMENTARY-PROCEDURE.&procedureCode		({TOY-ELEMENTARY-PROCEDURES}),
+	criticality		TOY-ELEMENTARY-PROCEDURE.&criticality			({TOY-ELEMENTARY-PROCEDURES}{@procedureCode}),
+	value			TOY-ELEMENTARY-PROCEDURE.&UnsuccessfulOutcome	({TOY-ELEMENTARY-PROCEDURES}{@procedureCode})
+}
+
+TOY-ELEMENTARY-PROCEDURES TOY-ELEMENTARY-PROCEDURE ::= {
+	TOY-ELEMENTARY-PROCEDURES-CLASS-1			|
+	TOY-ELEMENTARY-PROCEDURES-CLASS-2,
+	...
+}
+
+TOY-ELEMENTARY-PROCEDURES-CLASS-1 TOY-ELEMENTARY-PROCEDURE ::= {
+	setup,
+	...
+}
+
+TOY-ELEMENTARY-PROCEDURES-CLASS-2 TOY-ELEMENTARY-PROCEDURE ::= {
+	release					|
+	errorIndication			|
+	privateMessage			|
+	notification,
+	...
+}
+
+setup TOY-ELEMENTARY-PROCEDURE ::= {
+	INITIATING MESSAGE		SetupRequest
+	SUCCESSFUL OUTCOME		SetupResponse
+	UNSUCCESSFUL OUTCOME	SetupFailure
+	PROCEDURE CODE			id-Setup
+	CRITICALITY				reject
+}
+
+release TOY-ELEMENTARY-PROCEDURE ::= {
+	INITIATING MESSAGE		ReleaseRequest
+	PROCEDURE CODE			id-Release
+	CRITICALITY				ignore
+}
+
+errorIndication TOY-ELEMENTARY-PROCEDURE ::= {
+	INITIATING MESSAGE		ErrorIndication
+	PROCEDURE CODE			id-ErrorIndication
+	CRITICALITY				ignore
+}
+
+privateMessage TOY-ELEMENTARY-PROCEDURE ::= {
+	INITIATING MESSAGE		PrivateMessage
+	PROCEDURE CODE			id-PrivateMessage
+	CRITICALITY				ignore
+}
+
+notification TOY-ELEMENTARY-PROCEDURE ::= {
+	INITIATING MESSAGE		Notification
+	PROCEDURE CODE			id-Notification
+	CRITICALITY				ignore
+}
+
+END

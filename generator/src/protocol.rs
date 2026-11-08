@@ -88,6 +88,9 @@ pub fn generate(protocol: &Protocol) -> Result<()> {
     // What rasn-compiler resolves is written as bindings for rasn, which become the
     // oracle of the tests.
     let output = Path::new(ORACLE);
+    if let Some(directory) = output.parent() {
+        fs::create_dir_all(directory).context("make the directory of the oracle")?;
+    }
 
     let warnings = Compiler::<RasnBackend, _>::new_with_config(config)
         .add_asn_sources_by_path(files.iter())

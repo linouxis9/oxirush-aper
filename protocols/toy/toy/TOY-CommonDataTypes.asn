@@ -1,0 +1,30 @@
+-- The common types of TOY, a protocol of a few procedures in the form of the application
+-- protocols of 3GPP, which the generator of oxirush-aper writes bindings for as it writes
+-- them for those protocols: the tests of the protocol crates run on its PDUs.
+
+TOY-CommonDataTypes {
+iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
+toy (0) modules (3) toy-CommonDataTypes (3) }
+
+DEFINITIONS AUTOMATIC TAGS ::=
+
+BEGIN
+
+Criticality		::= ENUMERATED { reject, ignore, notify }
+
+Presence		::= ENUMERATED { optional, conditional, mandatory }
+
+PrivateIE-ID	::= CHOICE {
+	local				INTEGER (0..65535),
+	global				OBJECT IDENTIFIER
+}
+
+ProcedureCode		::= INTEGER (0..255)
+
+ProtocolExtensionID	::= INTEGER (0..65535)
+
+ProtocolIE-ID		::= INTEGER (0..65535)
+
+TriggeringMessage	::= ENUMERATED { initiating-message, successful-outcome, unsuccessful-outcome }
+
+END

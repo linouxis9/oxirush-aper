@@ -450,25 +450,8 @@ mod tests {
     }
 
     #[test]
-    fn an_enumerated_value_has_the_names_of_its_type_wherever_a_path_finds_it() {
+    fn the_enumerations_are_listed_in_the_order_of_their_names() {
         assert!(ENUMERATIONS.windows(2).all(|pair| pair[0].0 < pair[1].0));
-        let names = |message: &str, path: &str| enumerated_at(message, &format!("/{ROOT}/{path}"));
-        let release = |path: &str| names("UEContextReleaseCommand", path).unwrap();
-        // An alternative of a CHOICE, however the path is written.
-        let nas = release("Cause/nas").expect("an ENUMERATED");
-        assert!(nas.contains(&"normal-release") && !nas.contains(&"unspecified-failure"));
-        assert_eq!(release("cause/Nas"), Some(nas));
-        // A CHOICE.
-        assert_eq!(release("Cause"), None);
-        // A member of the entries of a list, through an optional member.
-        let error = names(
-            "ErrorIndication",
-            "CriticalityDiagnostics/iEsCriticalityDiagnostics/0/typeOfError",
-        );
-        assert_eq!(error.unwrap(), Some(&["not-understood", "missing"][..]));
-        // What `check_path` refuses is refused.
-        assert!(names("UEContextReleaseCommand", "Cause/nsa").is_err());
-        assert!(names("NoSuchMessage", "Cause/nas").is_err());
     }
 
     #[test]
@@ -512,81 +495,6 @@ mod tests {
                 assert!(other.is_none(), "{ty}: {name} and {other:?}");
             }
         }
-    }
-
-    /// The tree of a message that ASN.1 names `name` and that has `ies` for IEs.
-    fn tree_of(name: &str, ies: Value) -> Value {
-        tree!({"message": name, "ies": ies})
-    }
-
-    #[test]
-    fn the_name_of_an_ie_selects_its_value() {
-        let value = tree!({"radioNetwork": "unspecified"});
-        let entry = tree!({"Cause": &value, "criticality": "reject"});
-        let mut tree = tree_of("UEContextReleaseCommand", tree!([&entry]));
-        let path = |rest: &str| format!("/{ROOT}/Cause/{rest}");
-        assert_eq!(select(&tree, &format!("/{ROOT}/Cause")).unwrap(), [&value]);
-        assert_eq!(select(&tree, &path("radioNetwork")).unwrap(), [&tree!("unspecified")]);
-        assert!(select(&tree, &path("nas")).unwrap().is_empty());
-        // A name that the value cannot have is refused with its members, with a tree and
-        // without one.
-        let refused = select(&tree, &path("misspelled")).unwrap_err();
-        assert_eq!(refused.kind(), crate::ErrorKind::Path);
-        let text = refused.to_string();
-        assert!(text.contains("is not a member of Cause, which has radioNetwork"), "{text}");
-        let checked = |rest: &str| check_path("UEContextReleaseCommand", &path(rest));
-        assert_eq!(checked("misspelled"), Err(refused.clone()));
-        assert_eq!(checked("nas"), Ok(()));
-        let deeper = checked("radioNetwork/deeper").unwrap_err().to_string();
-        assert!(deeper.contains("which has none"), "{deeper}");
-        // An edit takes the same path: the value changes, and its criticality stays.
-        set(&mut tree, &path("nas"), tree!("normal-release")).unwrap();
-        let edited = tree!({"Cause": {"nas": "normal-release"}, "criticality": "reject"});
-        assert_eq!(tree["ies"][0], edited);
-        let before = tree.clone();
-        assert_eq!(set(&mut tree, &path("misspelled"), tree!(1)), Err(refused));
-        let kept = remove(&mut tree, &path("nas")).unwrap_err();
-        assert_eq!(kept.kind(), crate::ErrorKind::Value);
-        assert!(kept.to_string().contains("a CHOICE has one alternative"), "{kept}");
-        assert_eq!(tree, before);
-        // An IE goes out whole, and one that the message does not have is inserted.
-        remove(&mut tree, &format!("/{ROOT}/Cause")).unwrap();
-        assert_eq!(tree["ies"], tree!([]));
-        insert(&mut tree, &format!("/{ROOT}/-"), entry.clone()).unwrap();
-        assert_eq!(tree["ies"], tree!([&entry]));
-    }
-
-    #[test]
-    fn the_name_of_the_ie_stays_after_its_position() {
-        let value = tree!({"radioNetwork": "unspecified"});
-        let entry = tree!({"Cause": &value});
-        let mut tree = tree_of("UEContextReleaseCommand", tree!([&entry]));
-        let path = |rest: &str| format!("/{ROOT}/{rest}");
-        // After its position, and after its name, which selects it already.
-        for named in ["0", "0/Cause", "0/cause", "Cause/Cause", "*/Cause"] {
-            assert_eq!(select(&tree, &path(named)).unwrap(), [&value], "{named}");
-            let member = select(&tree, &path(&format!("{named}/radioNetwork"))).unwrap();
-            assert_eq!(member, [&tree!("unspecified")], "{named}");
-        }
-        // The name of another IE is no member of its value.
-        let other = IE_NAMES.iter().find(|(id, _)| Some(*id) != ie_id("Cause"));
-        let other = path(&format!("0/{}", other.unwrap().1));
-        let refused = select(&tree, &other).unwrap_err();
-        assert!(refused.to_string().contains("is not a member of Cause"), "{refused}");
-        let checked = |rest: &str| check_path("UEContextReleaseCommand", &path(rest));
-        assert_eq!(checked("Cause/Cause/nas"), Ok(()));
-        assert!(checked("Cause/Cause/misspelled").is_err());
-        let names = |rest: &str| enumerated_at("UEContextReleaseCommand", &path(rest));
-        assert_eq!(names("*/Cause/nas"), names("Cause/nas"));
-        assert!(names("*/Cause/nas").unwrap().is_some());
-        // An edit takes the same path, and an insertion or a removal the entry.
-        set(&mut tree, &path("0/Cause/nas"), tree!("normal-release")).unwrap();
-        let edited = select(&tree, &path("Cause")).unwrap();
-        assert_eq!(edited, [&tree!({"nas": "normal-release"})]);
-        insert(&mut tree, &path("0"), entry.clone()).unwrap();
-        assert_eq!(select(&tree, &path("*/Cause")).unwrap().len(), 2);
-        remove(&mut tree, &path("1")).unwrap();
-        assert_eq!(select(&tree, &path("Cause")).unwrap(), [&value]);
     }
 
     #[test]

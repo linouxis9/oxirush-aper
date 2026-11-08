@@ -1,0 +1,16 @@
+[package]
+name = "oxirush-toy-generator"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "oxirush-toy-generator"
+path = "main.rs"
+
+[dependencies]
+# The generator of the protocols, in this repository.
+generator = { package = "oxirush-aper-generator", path = "../../../generator" }
+anyhow = "1"

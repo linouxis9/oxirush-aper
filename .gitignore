@@ -5,5 +5,7 @@
 /fuzz/corpus/
 /fuzz/artifacts/
 Cargo.lock
+# The generator of TOY runs locked, as those of the protocol crates do.
+!/protocols/toy/build/Cargo.lock
 /mutants.out*/
 /generator-missed.txt

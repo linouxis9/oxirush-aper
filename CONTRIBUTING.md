@@ -12,7 +12,7 @@ README is for those who use the crate.
 |-----------|----------|-----------|
 | `src/` | The crate: the reader and the writer of the fields, the types of the values, `check`, the protocol traits and the bodies of the macros, `json` with `inspect` | yes |
 | `generator/` | The library that the generators of oxirush-ngap and oxirush-s1ap share, each of which adds the names of its protocol: it reads the ASN.1 with rasn-compiler and writes the bindings, the registry and what `inspect` needs | no |
-| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the oracle and its tests, the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`) | no |
+| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the oracle and its tests, the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`), and TOY (`protocols/toy/`), the protocol that the generator writes from its own ASN.1, whose tests are those of what the generated crates share | no |
 | `benches/` | The comparison of the crate with rasn, and the benchmarks of the fields | no |
 | `fuzz/` | The fuzz targets of the crate | no |
 | `family/` | A package of its own that runs the block of the README that uses oxirush-ngap, at the version that its manifest names, and compares what it prints with the README | no |
@@ -35,6 +35,26 @@ written once, in the module `protocol` of the crate. The generator in
 its procedures, its IEs and its transfers that the macros expand.
 `tests/toy/mod.rs` is a protocol of two procedures written as the generator
 writes one, which the tests and the README build and read.
+
+`protocols/toy/` is TOY, a protocol of five procedures whose ASN.1 modules,
+in `protocols/toy/toy/`, have one of each form that the generator writes: a
+transfer of protocol IEs and one of a value, octets that carry a type, a list
+of single containers, an IE of an extension that has the type that the type
+it extends gives it, the well-known types and the identifiers of a UE. The
+generator writes its bindings as it writes those of oxirush-ngap and
+oxirush-s1ap, and its tests are the tests of what the generated crates
+share. To write them again, from `protocols/toy/`:
+
+```sh
+CARGO="$(command -v cargo)" cargo run --locked --manifest-path build/Cargo.toml
+rustfmt --edition 2024 src/toy.rs src/registry.rs src/inspect_registry.rs
+```
+
+`build/asn1.sha256` records the digest of each module, which the generator
+checks: write it again after a change of a module, with
+`sha256sum toy/*.asn > build/asn1.sha256` in the order of the list. The
+generator writes the bindings of an oracle too, in `oracle/`, which TOY does
+not keep.
 
 ## The README
 

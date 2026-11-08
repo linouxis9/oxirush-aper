@@ -1,0 +1,142 @@
+-- The messages of TOY: a setup and its answers, a release, an error indication, a
+-- notification and the private message.
+
+TOY-PDU-Contents {
+iso (1) identified-organization (3) dod (6) internet (1) private (4) enterprise (1)
+toy (0) modules (3) toy-PDU-Contents (1) }
+
+DEFINITIONS AUTOMATIC TAGS ::=
+
+BEGIN
+
+IMPORTS
+	Algorithms,
+	Areas,
+	Cause,
+	Container,
+	Counts,
+	CriticalityDiagnostics,
+	Items,
+	NAS-PDU,
+	NodeID,
+	NodeName,
+	SecurityKey,
+	TransferList,
+	Tunnel,
+	UE-Core-ID,
+	UE-IDs,
+	UE-RAN-ID
+FROM TOY-IEs
+
+	PrivateIE-Container{},
+	ProtocolIE-Container{},
+	TOY-PRIVATE-IES,
+	TOY-PROTOCOL-IES
+FROM TOY-Containers
+
+	id-Algorithms,
+	id-Areas,
+	id-Cause,
+	id-Container,
+	id-Counts,
+	id-CriticalityDiagnostics,
+	id-Items,
+	id-NAS-PDU,
+	id-NodeID,
+	id-NodeName,
+	id-SecurityKey,
+	id-TransferList,
+	id-Tunnel,
+	id-UE-Core-ID,
+	id-UE-IDs,
+	id-UE-RAN-ID
+FROM TOY-Constants;
+
+SetupRequest ::= SEQUENCE {
+	protocolIEs		ProtocolIE-Container		{ {SetupRequestIEs} },
+	...
+}
+
+SetupRequestIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-Areas				CRITICALITY reject	TYPE Areas					PRESENCE mandatory	}|
+	{ ID id-NodeName			CRITICALITY ignore	TYPE NodeName				PRESENCE optional	}|
+	{ ID id-NodeID				CRITICALITY reject	TYPE NodeID					PRESENCE optional	}|
+	{ ID id-Items				CRITICALITY reject	TYPE Items					PRESENCE optional	}|
+	{ ID id-TransferList		CRITICALITY reject	TYPE TransferList			PRESENCE optional	}|
+	{ ID id-Container			CRITICALITY ignore	TYPE Container				PRESENCE optional	}|
+	{ ID id-SecurityKey			CRITICALITY reject	TYPE SecurityKey			PRESENCE optional	}|
+	{ ID id-Algorithms			CRITICALITY reject	TYPE Algorithms				PRESENCE optional	}|
+	{ ID id-Counts				CRITICALITY ignore	TYPE Counts					PRESENCE optional	}|
+	{ ID id-Tunnel				CRITICALITY ignore	TYPE Tunnel					PRESENCE optional	},
+	...
+}
+
+SetupResponse ::= SEQUENCE {
+	protocolIEs		ProtocolIE-Container		{ {SetupResponseIEs} },
+	...
+}
+
+SetupResponseIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-NodeName			CRITICALITY ignore	TYPE NodeName				PRESENCE optional	}|
+	{ ID id-CriticalityDiagnostics	CRITICALITY ignore	TYPE CriticalityDiagnostics	PRESENCE optional	},
+	...
+}
+
+SetupFailure ::= SEQUENCE {
+	protocolIEs		ProtocolIE-Container		{ {SetupFailureIEs} },
+	...
+}
+
+SetupFailureIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-Cause				CRITICALITY ignore	TYPE Cause					PRESENCE mandatory	}|
+	{ ID id-CriticalityDiagnostics	CRITICALITY ignore	TYPE CriticalityDiagnostics	PRESENCE optional	},
+	...
+}
+
+ReleaseRequest ::= SEQUENCE {
+	protocolIEs		ProtocolIE-Container		{ {ReleaseRequestIEs} },
+	...
+}
+
+ReleaseRequestIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-UE-Core-ID			CRITICALITY reject	TYPE UE-Core-ID				PRESENCE mandatory	}|
+	{ ID id-UE-RAN-ID			CRITICALITY reject	TYPE UE-RAN-ID				PRESENCE mandatory	}|
+	{ ID id-Cause				CRITICALITY ignore	TYPE Cause					PRESENCE mandatory	}|
+	{ ID id-NAS-PDU				CRITICALITY reject	TYPE NAS-PDU				PRESENCE optional	},
+	...
+}
+
+ErrorIndication ::= SEQUENCE {
+	protocolIEs		ProtocolIE-Container		{ {ErrorIndicationIEs} },
+	...
+}
+
+ErrorIndicationIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-UE-Core-ID			CRITICALITY ignore	TYPE UE-Core-ID				PRESENCE optional	}|
+	{ ID id-UE-RAN-ID			CRITICALITY ignore	TYPE UE-RAN-ID				PRESENCE optional	}|
+	{ ID id-Cause				CRITICALITY ignore	TYPE Cause					PRESENCE optional	}|
+	{ ID id-CriticalityDiagnostics	CRITICALITY ignore	TYPE CriticalityDiagnostics	PRESENCE optional	},
+	...
+}
+
+Notification ::= SEQUENCE {
+	protocolIEs		ProtocolIE-Container		{ {NotificationIEs} },
+	...
+}
+
+NotificationIEs TOY-PROTOCOL-IES ::= {
+	{ ID id-UE-IDs				CRITICALITY reject	TYPE UE-IDs					PRESENCE mandatory	}|
+	{ ID id-Cause				CRITICALITY ignore	TYPE Cause					PRESENCE optional	},
+	...
+}
+
+PrivateMessage ::= SEQUENCE {
+	privateIEs		PrivateIE-Container		{ {PrivateMessageIEs} },
+	...
+}
+
+PrivateMessageIEs TOY-PRIVATE-IES ::= {
+	...
+}
+
+END
