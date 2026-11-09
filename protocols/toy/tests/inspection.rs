@@ -1405,7 +1405,7 @@ fn a_path_is_checked_against_a_message_without_a_tree() {
         (
             "ReleaseRequest",
             "/toy/Cause/value/nas",
-            "is not a member of Cause",
+            "a path is the tree's names joined: write `/toy/Cause/nas`",
         ),
         ("ReleaseRequest", "/toy/NoSuchIE", "is not an IE of TOY"),
         (
@@ -1423,6 +1423,87 @@ fn a_path_is_checked_against_a_message_without_a_tree() {
         let error = inspect::check_path(message, path).unwrap_err().to_string();
         assert!(error.contains(reason), "{message} {path}: {error}");
     }
+}
+
+/// A path is the names of the tree joined: after the name of an IE, the next name is a
+/// member of its value, and `value`, which no tree has there, is refused with the path
+/// that the names of the tree write, by every call that takes a path. A value whose type
+/// has a member `value`, a bit string with its length, keeps it.
+#[test]
+fn a_path_is_the_names_of_the_tree_and_value_after_an_ie_is_refused() {
+    let joined = |written: &str, path: &str| {
+        format!("a path is the tree's names joined: write `{written}`, at {path}")
+    };
+    let mut tree = release_request().to_tree();
+    let before = tree.clone();
+    assert_eq!(
+        select(&tree, "/toy/Cause/radioNetwork"),
+        [tree!("user-inactivity")]
+    );
+    for (path, written) in [
+        ("/toy/Cause/value/radioNetwork", "/toy/Cause/radioNetwork"),
+        ("/toy/UE-RAN-ID/value", "/toy/UE-RAN-ID"),
+        ("/toy/cause/VALUE/radio-network", "/toy/cause/radio-network"),
+        ("/toy/2/value/radioNetwork", "/toy/2/radioNetwork"),
+        ("/toy/@id=15/value", "/toy/@id=15"),
+        ("/toy/Cause/Cause/value", "/toy/Cause/Cause"),
+        ("/toy/*/value", "/toy/*"),
+        // An IE that the message does not have, and an identifier that has no type.
+        ("/toy/NAS-PDU/value", "/toy/NAS-PDU"),
+        ("/toy/@id=60000/value", "/toy/@id=60000"),
+    ] {
+        let error = inspect::select(&tree, path).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Path, "{path}");
+        assert_eq!(error.to_string(), joined(written, path));
+        assert!(inspect::select(&tree, written).is_ok(), "{written}");
+        for refused in [
+            inspect::set(&mut tree, path, tree!(1)),
+            inspect::remove(&mut tree, path),
+            inspect::insert(&mut tree, path, tree!(1)),
+            inspect::open(&mut tree, path),
+            inspect::check_path("ReleaseRequest", path),
+            inspect::enumerated_at("ReleaseRequest", path).map(|_| ()),
+        ] {
+            let refused = refused.map_err(|error| error.to_string());
+            assert_eq!(refused, Err(joined(written, path)));
+        }
+    }
+    assert_eq!(tree, before);
+    // Each `value` after an IE goes: in a transfer, in a list of single containers, and
+    // not that of a bit string whose size varies.
+    let setup = sent(&setup_request()).unwrap();
+    let items = sent(&with_items()).unwrap();
+    let address = "gTPTunnel/transportLayerAddress/value";
+    for (tree, path, written) in [
+        (
+            &setup,
+            "/toy/TransferList/value/0/setupTransfer/Tunnel/value/gTPTunnel".to_string(),
+            format!("{TRANSFER}/Tunnel/gTPTunnel"),
+        ),
+        (
+            &setup,
+            format!("{TRANSFER}/Tunnel/value/{address}"),
+            format!("{TRANSFER}/Tunnel/{address}"),
+        ),
+        (
+            &items,
+            "/toy/Items/0/Item/value/item-ID".to_string(),
+            "/toy/Items/0/Item/item-ID".to_string(),
+        ),
+        (
+            &items,
+            "/toy/Items/value/0/item-ID".to_string(),
+            "/toy/Items/0/item-ID".to_string(),
+        ),
+    ] {
+        let error = inspect::select(tree, &path).unwrap_err().to_string();
+        assert_eq!(error, joined(&written, &path));
+        assert!(inspect::select(tree, &written).is_ok(), "{written}");
+    }
+    let tree = with_algorithms(24).to_tree();
+    assert_eq!(select(&tree, "/toy/Algorithms/value"), [tree!("c00000")]);
+    let checked = inspect::check_path("SetupRequest", "/toy/Algorithms/value");
+    assert_eq!(checked, Ok(()));
 }
 
 #[test]

@@ -351,7 +351,7 @@ pub fn many_ies(counts: &[usize]) -> Vec<Input> {
     let input = |count: &usize| {
         let octets = protocol::many_ies(*count).encode().unwrap();
         let description = format!("{count} IEs of one name, {} octets", octets.len());
-        let last = format!("{}/{}/value", protocol::ROOT, count - 1);
+        let last = format!("{}/{}", protocol::ROOT, count - 1);
         let message = Message::new(octets, Some(&last), Some((&last, tree!(2))), None);
         Input {
             name: format!("ies-{count}").leak(),

@@ -21,7 +21,10 @@
 //! The root is short for the IEs of the message. In a list of IEs, a name or a position
 //! selects the value of an IE, as the IEs of a NAS message are selected, and its entry
 //! for a removal or an insertion; after the value, `criticality` is the criticality
-//! beside it, and the name of the IE may follow once. In a container of IEs, as a
+//! beside it, and the name of the IE may follow once. A path is the names of the tree
+//! joined: the name after an IE is a member of its value, and `value`, which no tree has
+//! there, is refused with the path without it, but where the value has a member of that
+//! name, as a bit string with its length. In a container of IEs, as a
 //! transfer, a segment that names no member is taken in its list, and an IE that a value
 //! holds alone goes by its name after the member that holds it, or by its identifier in
 //! digits when it has none. A value has the members that its type gives it, read against
@@ -32,12 +35,13 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cell::Cell;
 
 use oxirush_utils::tree::{self, Edit, Family, Key, Listed, Map, Next, Place, Root, Step, Value};
 
 use super::paths::{
-    Owner, element, element_of, error, extended, fault, held_id, member, no_position, not_an_id,
-    position, refusal, refuse, segment_id,
+    Owner, code, element, element_of, error, extended, fault, held_id, member, no_position,
+    not_an_id, position, refusal, refuse, segment_id,
 };
 use super::{Kind, Member, Protocol, Sent, Shape, foreign, same_name};
 use crate::{Error, ErrorKind};
@@ -51,6 +55,9 @@ const PROTOCOL_IES: &str = "protocolIEs";
 const CRITICALITY: &str = "criticality";
 /// The member of a value that is the octets that it is sent as.
 const OCTETS: &str = "octets";
+/// The name that a path may write after the name of an IE for its value, which no tree
+/// has there.
+const VALUE: &str = "value";
 
 /// What the family knows of a place of a tree.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -134,6 +141,9 @@ struct Trees<'e> {
     /// What makes, of octets and of the name of a type that they may carry, the value
     /// that a tree shows: for `open`.
     opens: Option<Opener<'e>>,
+    /// Where the path has `value` after the name of an IE, which the walk refused: the
+    /// position of that segment in the path as it is written.
+    joined: Cell<Option<usize>>,
 }
 
 impl<'e> Trees<'e> {
@@ -142,6 +152,7 @@ impl<'e> Trees<'e> {
             protocol,
             message: None,
             opens: None,
+            joined: Cell::new(None),
         }
     }
 }
@@ -386,6 +397,61 @@ impl Trees<'_> {
         }
     }
 
+    /// Whether the value at `place`, of `shape`, has a member `value`: a bit string whose
+    /// size varies has one, and a value that the tables do not describe where its tree
+    /// has one.
+    fn has_value(&self, protocol: &Protocol, place: &Place<'_, At>, shape: Shape) -> bool {
+        match protocol.members(self.as_written(protocol, shape), None) {
+            Some(members) => member(&members, VALUE).is_some(),
+            None => (place.value().and_then(Value::as_object))
+                .is_some_and(|members| members.keys().any(|name| same_name(name, VALUE))),
+        }
+    }
+
+    /// `done`, the end of a walk of `path` in `tree`, or the error that says the path of
+    /// the names of the tree where the path has `value` after the name of an IE: without
+    /// it, and without each `value` after another IE that a walk of that path meets. An
+    /// edit that refused the path for another reason, as an IE that is not there, and an
+    /// opening that opened nothing say this, which a walk of `tree` that selects finds.
+    fn joined<T>(
+        &self,
+        done: Result<T, tree::Error>,
+        tree: &Value,
+        path: &str,
+    ) -> Result<T, Error> {
+        let walked = |path: &str| {
+            let again = Trees {
+                opens: None,
+                joined: Cell::new(None),
+                ..*self
+            };
+            let _ = tree::places_in(&again, tree, path);
+            again.joined.get()
+        };
+        let index = match self.joined.get() {
+            None if done.is_err() || self.opens.is_some() => walked(path),
+            index => index,
+        };
+        let Some(mut index) = index else {
+            return done.map_err(error);
+        };
+        let mut parts = tree::segments(path).map_err(error)?;
+        let written = loop {
+            parts.remove(index);
+            let written: String = parts
+                .iter()
+                .map(|part| format!("/{}", tree::escape(part)))
+                .collect();
+            match walked(&written) {
+                Some(again) => index = again,
+                None => break written,
+            }
+        };
+        let reason = format!("a path is the tree's names joined: write `{written}`");
+        let refused = tree::Error::new(tree::ErrorKind::Refused, path, reason);
+        Err(error(refused.with_code(code(ErrorKind::Path))))
+    }
+
     /// The shape of a value of `shape` as a tree writes it: a transfer as its decoded
     /// value. A transfer that is its octets is read before its shape is.
     fn as_written(&self, protocol: &Protocol, shape: Shape) -> Shape {
@@ -411,6 +477,18 @@ impl Trees<'_> {
             return Err(not_an_id(part));
         }
         let shape = protocol.resolved(at.shape);
+        // `value` after the name of an IE, or after its position, where its type has no
+        // such member: the name after an IE is one of its value.
+        if (at.ie.is_some() || at.any_ie.is_some())
+            && same_name(part, VALUE)
+            && !self.has_value(protocol, place, shape)
+        {
+            self.joined.set(next.index());
+            return Err(refusal(
+                ErrorKind::Path,
+                "a path is the tree's names joined",
+            ));
+        }
         // The criticality beside the value of an IE, where its type has no such member.
         if at.ie.is_some() && same_name(part, CRITICALITY) {
             let shape = self.as_written(protocol, shape);
@@ -959,7 +1037,8 @@ pub fn select<'v>(
     tree: &'v Value,
     path: &str,
 ) -> Result<Vec<&'v Value>, Error> {
-    tree::select_in(&Trees::new(protocol), tree, path).map_err(error)
+    let trees = Trees::new(protocol);
+    trees.joined(tree::select_in(&trees, tree, path), tree, path)
 }
 
 /// Whether `path` can select a value in a message of `protocol` that ASN.1 names
@@ -974,7 +1053,8 @@ pub fn check_path(protocol: &'static Protocol, message: &str, path: &str) -> Res
         message: Some(message),
         ..Trees::new(protocol)
     };
-    let places = tree::places_in(&trees, &Value::Null, path).map_err(error)?;
+    let places = tree::places_in(&trees, &Value::Null, path);
+    let places = trees.joined(places, &Value::Null, path)?;
     if !places.is_empty() {
         return Ok(());
     }
@@ -1018,7 +1098,8 @@ pub fn enumerated_at(
         message: Some(message),
         ..Trees::new(protocol)
     };
-    let places = tree::places_in(&trees, &Value::Null, path).map_err(error)?;
+    let places = tree::places_in(&trees, &Value::Null, path);
+    let places = trees.joined(places, &Value::Null, path)?;
     // The value is of one type, wherever the path finds it.
     let mut names = None;
     for place in places {
@@ -1064,7 +1145,9 @@ pub fn set(
     path: &str,
     value: Value,
 ) -> Result<(), Error> {
-    tree::set_in(&Trees::new(protocol), tree, path, value).map_err(error)
+    let trees = Trees::new(protocol);
+    let done = tree::set_in(&trees, tree, path, value);
+    trees.joined(done, tree, path)
 }
 
 /// Take the values at `path` out of `tree`, the tree of a PDU of `protocol`: an IE, a
@@ -1074,7 +1157,9 @@ pub fn set(
 ///
 /// A path that selects nothing, and a member that its type always has.
 pub fn remove(protocol: &'static Protocol, tree: &mut Value, path: &str) -> Result<(), Error> {
-    tree::remove_in(&Trees::new(protocol), tree, path).map_err(error)
+    let trees = Trees::new(protocol);
+    let done = tree::remove_in(&trees, tree, path);
+    trees.joined(done, tree, path)
 }
 
 /// Add `value` to a list of `tree`, the tree of a PDU of `protocol`: before each entry
@@ -1089,7 +1174,9 @@ pub fn insert(
     path: &str,
     value: Value,
 ) -> Result<(), Error> {
-    tree::insert_in(&Trees::new(protocol), tree, path, value).map_err(error)
+    let trees = Trees::new(protocol);
+    let done = tree::insert_in(&trees, tree, path, value);
+    trees.joined(done, tree, path)
 }
 
 /// Decode, in `tree`, the tree of a PDU of `protocol`, the octets that `path` takes as a
@@ -1109,5 +1196,6 @@ pub fn open(protocol: &'static Protocol, tree: &mut Value, path: &str) -> Result
         opens: Some(&opened),
         ..Trees::new(protocol)
     };
-    tree::open_in(&trees, tree, path).map_err(error)
+    let done = tree::open_in(&trees, tree, path);
+    trees.joined(done, tree, path)
 }

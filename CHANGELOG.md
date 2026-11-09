@@ -16,6 +16,15 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Changed
 
+- A path of `inspect` is the names of the tree joined: `value` after the name of an
+  IE, or after its position, where its value has no member of that name, is refused
+  by `select`, `check_path`, `enumerated_at`, `set`, `remove`, `insert` and `open`
+  with the path that the names of the tree write, without it and without each such
+  `value` after another IE: ``a path is the tree's names joined: write
+  `/ngap/Cause/nas`, at /ngap/Cause/value/nas``. The `value` of a bit string whose
+  size varies stays, with its `length`. The paths refused it as a name that the
+  value has not, or as a path that selects nothing where the IE is not there, and
+  `check_path` took it after an identifier that has no type; `open` opened nothing.
 - oxirush-utils 0.2.2, whose readers of a tree refuse a name that a type has not
   with the nearest of its names, where it has more than twelve.
 - The writer of the test of a README, `protocols/tests/readme.py`, compiles the

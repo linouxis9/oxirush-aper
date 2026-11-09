@@ -53,7 +53,7 @@ const KINDS: [ErrorKind; 10] = [
 ];
 
 /// The code that the engine carries for an error of this kind.
-fn code(kind: ErrorKind) -> u16 {
+pub(super) fn code(kind: ErrorKind) -> u16 {
     let at = KINDS.iter().position(|known| *known == kind);
     at.map_or(u16::MAX, |at| at as u16)
 }
