@@ -502,8 +502,8 @@ fn entry_of(path: &str) -> Option<String> {
 ///
 /// An edit that the tree or the PDU refuses is an error, never a panic, and a PDU that
 /// `from_tree` writes is one that the crate wrote ([`written_pdu`]). Only what was edited
-/// changes: each IE of the message that no path of an edit was under has the entry that
-/// it had in the tree.
+/// changes: where no edit took an IE of the message out or put one in, each IE that no
+/// path of an edit was under has the entry that it had in the tree.
 pub fn edit(input: Edits) {
     let pool = &*POOL;
     let Some(pdu) = pool
@@ -518,9 +518,14 @@ pub fn edit(input: Edits) {
         return;
     }
     let pick = |number: u16| paths[usize::from(number) % paths.len()].clone();
+    let count = |tree: &Value| tree.get("ies").and_then(Value::as_array).map(Vec::len);
     let mut tree = before.clone();
     let mut edited = Vec::new();
+    // Whether an edit took an IE of the message out or put one in, which moves those
+    // after it: a removal and an insertion leave as many IEs, in other places.
+    let mut moved = false;
     for edit in input.edits.iter().take(8) {
+        let ies = count(&tree);
         let (path, done) = match edit {
             Edit::Set { path, to } => {
                 let (path, _) = pick(*path);
@@ -579,6 +584,7 @@ pub fn edit(input: Edits) {
                 (entry, done)
             }
         };
+        moved |= count(&tree) != ies;
         if done {
             edited.push(path);
         }
@@ -590,6 +596,9 @@ pub fn edit(input: Edits) {
     written_pdu(&changed);
 
     // Only what was edited changes, IE by IE, where the edits kept every IE where it was
+    if moved {
+        return;
+    }
     let Some(touched) = edited
         .iter()
         .map(|path| ie_of(path))
