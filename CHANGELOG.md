@@ -2,7 +2,11 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
-## Unreleased
+## 0.3.0 - 2026-11-09
+
+A path of `inspect` is the names of the tree joined: `value` after the name of an
+IE is refused, with the path to write. oxirush-ngap 0.7 and oxirush-s1ap 0.5 take
+this version.
 
 ### Added
 
