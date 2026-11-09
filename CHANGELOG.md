@@ -16,6 +16,8 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Changed
 
+- oxirush-utils 0.2.2, whose readers of a tree refuse a name that a type has not
+  with the nearest of its names, where it has more than twelve.
 - The writer of the test of a README, `protocols/tests/readme.py`, compiles the
   test with the features that `required-features` of the `[[test]]` named `readme`
   of the crate's Cargo.toml names, and always where it names none: it compiled it

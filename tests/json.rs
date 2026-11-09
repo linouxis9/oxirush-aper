@@ -538,9 +538,8 @@ fn a_member_that_the_type_has_not_and_one_that_it_lacks_are_refused() {
     assert_eq!(kind, ErrorKind::Path);
     assert_eq!(
         why,
-        "this is not a value of Sample: \"other\" is not a member that its type has: it has \
-         flag, id, rate, small, kind, either, octets, plmn, fixed-bits, mask, address, \
-         day-of-week, few, name, printable, visible, object, open, list, absent, later"
+        "this is not a value of Sample: \"other\" is not a member that its type has: the \
+         nearest of its 21 is either"
     );
 
     let mut without = written();
