@@ -768,8 +768,11 @@ pub fn transfer(input: Transfer) {
         return;
     };
     let mut tree = pdu.to_tree();
-    // The places that hold the values that `paths` lists: an IE, a member, an entry
+    // The places that hold the values that `paths` lists: an IE, a member, an entry. Each
+    // once, in the order of the paths: a list of 65535 entries has as many places, and a
+    // search of those found before for each of them is longer than a timeout.
     let mut places: Vec<String> = Vec::new();
+    let mut found = std::collections::HashSet::new();
     for (path, _) in inspect::paths(&tree) {
         let Some(below) = path.strip_prefix(ROOT) else {
             continue;
@@ -778,7 +781,7 @@ pub fn transfer(input: Transfer) {
         for segment in below.split('/').skip(1) {
             place.push('/');
             place.push_str(segment);
-            if place.len() < path.len() && !places.contains(&place) {
+            if place.len() < path.len() && found.insert(place.clone()) {
                 places.push(place.clone());
             }
         }
