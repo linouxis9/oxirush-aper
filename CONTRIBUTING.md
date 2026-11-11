@@ -15,8 +15,7 @@ README is for those who use the crate.
 | `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the bindings for rasn of their benchmarks (`protocols/rasn/`), the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`), and TOY (`protocols/toy/`), the protocol that the generator writes from its own ASN.1, whose tests are those of what the generated crates share | no |
 | `benches/` | The comparison of the crate with rasn, and the benchmarks of the fields | no |
 | `fuzz/` | The fuzz targets of the crate | no |
-| `family/` | A package of its own that runs the block of the README that uses oxirush-ngap, at the version that its manifest names, and compares what it prints with the README | no |
-| `tests/` | The tests of the crate, among them `tests/readme.rs`, which checks each Rust block of the README with what it prints, and `tests/toy/`, a protocol written as the generator writes one | yes |
+| `tests/` | The tests of the crate, among them `tests/readme.rs`, which checks each Rust block of the README with what it prints | yes |
 
 oxirush-ngap and oxirush-s1ap take `generator/` and `protocols/` from a
 checkout of this repository beside theirs, at the revision that their
@@ -34,10 +33,6 @@ change its IEs by name, and their readers of one IE by its marker type, are
 written once, in the module `protocol` of the crate. The generator in
 `generator/` writes the registry of each protocol from its ASN.1: the list of
 its procedures, its IEs and its transfers that the macros expand.
-`tests/toy/mod.rs` is a protocol of two procedures written by hand as the
-generator writes one, which the README builds and reads: it is in the package,
-where the examples of the README run, and TOY is not.
-
 `protocols/toy/` is TOY, a protocol of five procedures whose ASN.1 modules,
 in `protocols/toy/toy/`, have one of each form that the generator writes: a
 transfer of protocol IEs, which an IE contains too, and one of a value, octets

@@ -2,6 +2,17 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
+## Unreleased
+
+### Removed
+
+- The section "The macros of a protocol crate" of the README, with the protocol
+  of two procedures written by hand for it in `tests/toy/`: the macros are shown
+  on NGAP and S1AP in the READMEs of oxirush-ngap and oxirush-s1ap, and tested
+  on TOY, the generated protocol of `protocols/toy/`.
+- The section "With oxirush-ngap" of the README, with `family/`, the package
+  that ran its one block. No API changes.
+
 ## 0.3.0 - 2026-11-09
 
 A path of `inspect` is the names of the tree joined: `value` after the name of an

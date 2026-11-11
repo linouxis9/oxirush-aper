@@ -8,13 +8,11 @@
 //! that its page shows under its block.
 //!
 //! A page is the README, or the documentation of the crate: the `//!` lines
-//! of `src/lib.rs`. A block that is checked opens with ` ```rust `; one that
-//! opens with ` ```rust,ignore ` uses oxirush-ngap, and the package of
-//! `family/` runs it. The output of a block is the `json` and `text` blocks
-//! that follow it with nothing but blank lines between them. A block that
-//! shows no output prints none. A block that has a `main` is run as the
-//! documentation test runs it: its function calls `main`, and an error that
-//! `main` returns fails the test.
+//! of `src/lib.rs`. A block that is checked opens with ` ```rust `. The output
+//! of a block is the `json` and `text` blocks that follow it with nothing but
+//! blank lines between them. A block that shows no output prints none. A
+//! block that has a `main` is run as the documentation test runs it: its
+//! function calls `main`, and an error that `main` returns fails the test.
 //!
 //! After a change of the code of a Rust block of a page, write the file
 //! again and run the tests once more:
@@ -26,16 +24,9 @@
 
 use std::fmt::Write;
 
-// The toy protocol, which the blocks of the macros of a protocol crate include at the root
-// of their documentation test: the functions of the blocks have it from here.
-include!("toy/mod.rs");
-
 #[rustfmt::skip]
 #[path = "readme/blocks.rs"]
 mod blocks;
-
-/// The line of a block that includes the toy protocol.
-const TOY: &str = r#"include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/toy/mod.rs"));"#;
 
 /// The pages: the README, and the file whose documentation is the front page
 /// of the crate's.
@@ -130,8 +121,7 @@ fn generated(examples: &[Example]) -> String {
         last = page;
         writeln!(file, "\n/// The Rust block {of_page} of {page}.").unwrap();
         writeln!(file, "fn block_{rank}() {{").unwrap();
-        // The toy protocol is at the root of this crate.
-        for code in example.code.lines().filter(|code| *code != TOY) {
+        for code in example.code.lines() {
             match code.is_empty() {
                 true => writeln!(file).unwrap(),
                 false => writeln!(file, "    {code}").unwrap(),
@@ -154,9 +144,6 @@ const HEAD: &str = r#"// The Rust blocks of the README and of the documentation,
 #![allow(unused)]
 
 use std::cell::RefCell;
-
-// The toy protocol, for the blocks that include it.
-use super::{ie, toy};
 
 thread_local!(static PRINTED: RefCell<String> = const { RefCell::new(String::new()) });
 
