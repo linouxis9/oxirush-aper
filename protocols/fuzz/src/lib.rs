@@ -281,6 +281,9 @@ pub fn exact(octets: &[u8]) {
 /// with `arbitrary` start from, and what their trees hold.
 struct Pool {
     pdus: Vec<Pdu>,
+    /// For each PDU, whether its tree has more than [`MOST_VALUES`] values: the
+    /// targets skip such a PDU
+    long: Vec<bool>,
     /// Each IE of the trees, as a tree has it: its name with its value
     ies: Vec<Value>,
     /// The values of the trees, by the last segment of their paths
@@ -310,6 +313,36 @@ const FIXTURES: [&str; 4] = [
     )),
 ];
 
+/// The largest tree, in values (the tree itself and every member and entry at any
+/// depth), that the pool-based targets work on. A target converts its PDU to a tree,
+/// lists its paths, reads the tree back, and does the same again for the PDU it wrote:
+/// five passes or more over the tree. In a fuzz build that takes seconds for a list of
+/// 65,535 entries, on every input that picks that PDU, while most inputs take
+/// milliseconds. The limit is twice 16,384, so the fixture lists of about 16,384
+/// entries, which are also encoded in fragments, are still used.
+const MOST_VALUES: usize = 32_768;
+
+/// The number of values in a tree: the tree itself and every member and entry at any
+/// depth.
+fn values_of(tree: &Value) -> usize {
+    let held = match tree {
+        Value::Array(entries) => entries.iter().map(values_of).sum(),
+        Value::Object(members) => members.values().map(values_of).sum(),
+        _ => 0,
+    };
+    1 + held
+}
+
+impl Pool {
+    /// The PDU that `base` picks, or `None` if its tree has more than [`MOST_VALUES`]
+    /// values. Skipped PDUs keep their index in the pool, so an existing corpus input
+    /// still picks the same PDU as before.
+    fn pdu(&self, base: u16) -> Option<&Pdu> {
+        let at = usize::from(base) % self.pdus.len().max(1);
+        self.pdus.get(at).filter(|_| !self.long[at])
+    }
+}
+
 static POOL: LazyLock<Pool> = LazyLock::new(|| {
     let unhex = |text: &str| -> Vec<u8> {
         let digit = |c: u8| (c as char).to_digit(16).unwrap_or(0) as u8;
@@ -327,11 +360,13 @@ static POOL: LazyLock<Pool> = LazyLock::new(|| {
                 .map(Borrowed::into_owned)
         })
         .collect();
+    let mut long = Vec::new();
     let mut ies = Vec::new();
     let mut values = std::collections::BTreeMap::<String, Vec<Value>>::new();
     let mut names = Vec::new();
     for pdu in &pdus {
         let tree = pdu.to_tree();
+        long.push(values_of(&tree) > MOST_VALUES);
         if let Some(Value::Array(entries)) = tree.get("ies") {
             ies.extend(entries.iter().cloned());
         }
@@ -351,6 +386,7 @@ static POOL: LazyLock<Pool> = LazyLock::new(|| {
     names.dedup();
     Pool {
         pdus,
+        long,
         ies,
         values,
         names,
@@ -506,10 +542,7 @@ fn entry_of(path: &str) -> Option<String> {
 /// path of an edit was under has the entry that it had in the tree.
 pub fn edit(input: Edits) {
     let pool = &*POOL;
-    let Some(pdu) = pool
-        .pdus
-        .get(usize::from(input.base) % pool.pdus.len().max(1))
-    else {
+    let Some(pdu) = pool.pdu(input.base) else {
         return;
     };
     let before = pdu.to_tree();
@@ -670,10 +703,7 @@ enum Change {
 /// that `from_tree` writes is one that the crate wrote ([`written_pdu`]).
 pub fn tree(input: Build) {
     let pool = &*POOL;
-    let Some(pdu) = pool
-        .pdus
-        .get(usize::from(input.base) % pool.pdus.len().max(1))
-    else {
+    let Some(pdu) = pool.pdu(input.base) else {
         return;
     };
     let mut tree = pdu.to_tree();
@@ -761,16 +791,13 @@ pub struct Transfer {
 /// read as is written and read again as the same.
 pub fn transfer(input: Transfer) {
     let pool = &*POOL;
-    let Some(pdu) = pool
-        .pdus
-        .get(usize::from(input.base) % pool.pdus.len().max(1))
-    else {
+    let Some(pdu) = pool.pdu(input.base) else {
         return;
     };
     let mut tree = pdu.to_tree();
     // The places that hold the values that `paths` lists: an IE, a member, an entry. Each
-    // once, in the order of the paths: a list of 65535 entries has as many places, and a
-    // search of those found before for each of them is longer than a timeout.
+    // place is kept once, in the order of the paths. A set detects duplicates: searching
+    // the list of places for each new one would be quadratic in their number.
     let mut places: Vec<String> = Vec::new();
     let mut found = std::collections::HashSet::new();
     for (path, _) in inspect::paths(&tree) {
@@ -817,10 +844,7 @@ pub struct Jer {
 pub fn jer(input: Jer) {
     use codec::aper::protocol::Field;
     let pool = &*POOL;
-    let Some(pdu) = pool
-        .pdus
-        .get(usize::from(input.base) % pool.pdus.len().max(1))
-    else {
+    let Some(pdu) = pool.pdu(input.base) else {
         return;
     };
     let Ok(fields) = pdu.protocol_ies() else {

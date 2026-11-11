@@ -4,6 +4,16 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ## Unreleased
 
+### Changed
+
+- The fuzz targets of `protocols/fuzz/` that start from a fixture PDU (`edit`,
+  `tree`, `transfer` and `jer`) skip PDUs whose tree has more than 32,768 values.
+  Each of these targets makes five or more passes over the tree, and an input
+  that picked the NG SETUP RESPONSE with 65,535 slices from the oxirush-ngap
+  vectors took 3 to 5 seconds per execution in a fuzz build. Skipped PDUs keep
+  their index in the pool, so existing corpus inputs still pick the same PDU. No
+  API changes.
+
 ### Removed
 
 - The section "The macros of a protocol crate" of the README, with the protocol
