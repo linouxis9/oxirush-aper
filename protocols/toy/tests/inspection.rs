@@ -2135,6 +2135,8 @@ fn an_ie_that_a_value_holds_alone_is_added_by_a_set() {
     ]});
     let star = format!("{held}/*");
     assert_eq!(select(&bits, &star), [tree!("c000"), tree!("ignore")]);
+    // `check_path` takes the same path without a tree.
+    assert_eq!(inspect::check_path("SetupFailure", &star), Ok(()));
     let error = inspect::select(&bits, &format!("{star}/length")).unwrap_err();
     assert!(
         error
