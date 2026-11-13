@@ -1,0 +1,370 @@
+name: Crate fuzz
+
+# The fuzzing of the crates of the family, which the Fuzz workflow of each calls at a
+# revision of this repository: the targets of its fuzz/, longer than the minute that
+# each has at a push, an hour each every day and `weekly-minutes` on the weekly schedule
+# of the caller, within the six hours that GitHub gives a job; the minutes of `minutes`
+# when the caller is started by hand. The fuzzing of a run ends within `hours`, eight by
+# default: when the targets, in rounds of as many as run at once, would take longer,
+# each runs its share of them. The corpus of each target is kept from one run to
+# the next in the cache of the repository that calls, and grows; the seeds of a target
+# are added to it each time. On the weekly schedule, and when `report` is set, each
+# corpus is then minimized (`cargo fuzz cmin`) before it is kept, and the coverage of
+# the crate by the minimized corpus (`cargo fuzz coverage`) is kept for 30 days, as a
+# report and as pages: what no input reaches is what a target or a seed is to reach
+# next. A crash or a timeout fails the job, which keeps the input and the log: the input
+# goes into a test or the seeds with its fix.
+#
+# With `protocol`, the targets are those of protocols/fuzz/ of this repository, which
+# oxirush-ngap and oxirush-s1ap share: when the crate calls, it is fuzzed at its commit,
+# with the checkout of oxirush-aper at the revision that its build/revisions records
+# beside it; when oxirush-aper calls, the crate is at the head of its default branch, as
+# the CI of this repository checks it out, with this commit beside it. Their seeds are
+# those of seed.sh, the PDUs of tests/fixtures and of tests/wireshark/corpus.tsv of the
+# crate, and their dictionary.
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: >-
+          The targets, a JSON list of objects: `target`; and, as a target needs them,
+          `max_len`, `flags` (one option of libFuzzer), `features` (of the fuzz package),
+          `seeds` (a directory of inputs copied into the corpus), `dir` (the directory of
+          fuzz/, if not the root of the workspace) and `name` (a word put before the name
+          of the target in its cache and its artifacts)
+        type: string
+        default: ""
+      protocol:
+        description: "`ngap` or `s1ap`: the targets of protocols/fuzz/ with that crate"
+        type: string
+        default: ""
+      weekly:
+        description: The cron of the schedule of the caller that runs long and minimizes
+        required: true
+        type: string
+      weekly-minutes:
+        description: Minutes for each target on the weekly schedule
+        type: number
+        default: 240
+      minutes:
+        description: Minutes for each target, rather than those of the schedule
+        type: number
+        default: 0
+      report:
+        description: Minimize each corpus and report its coverage, as on the weekly schedule
+        type: boolean
+        default: false
+      hours:
+        description: >-
+          The hours within which the fuzzing of a run ends, all targets together; the
+          minutes of each are fewer when their rounds would take longer
+        type: number
+        default: 8
+      parallel:
+        description: The targets that run at once
+        type: number
+        default: 1
+      weekly-parallel:
+        description: The targets that run at once on the weekly schedule
+        type: number
+        default: 1
+      setup:
+        description: >-
+          Commands that each job runs in the directory of fuzz/ before it fuzzes, with
+          TARGET and NAME of its target
+        type: string
+        default: ""
+      path:
+        description: The directory in which the repository that calls is checked out
+        type: string
+        default: ""
+      coverage-ignore:
+        description: A regular expression of the files that the coverage leaves out
+        type: string
+        default: '/\.cargo/registry/|/rustc/|/fuzz/'
+
+# The plan reads the runs of the Fuzz workflow of the crate, to find where the last one
+# ended.
+permissions:
+  actions: read
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # What runs and for how long: the targets, the crate and oxirush-aper at their
+  # revisions, `weekly-minutes` for each target on the weekly schedule, an hour on the
+  # other days, with or without a commit. When the crate calls, the summary of the run
+  # lists its commits that no run had fuzzed before.
+  plan:
+    name: How long
+    runs-on: ubuntu-24.04
+    outputs:
+      seconds: ${{ steps.plan.outputs.seconds }}
+      timeout: ${{ steps.plan.outputs.timeout }}
+      weekly: ${{ steps.plan.outputs.weekly }}
+      targets: ${{ steps.plan.outputs.targets }}
+      crate: ${{ steps.plan.outputs.crate }}
+      crate-revision: ${{ steps.plan.outputs.crate-revision }}
+      aper-revision: ${{ steps.plan.outputs.aper-revision }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGETS: ${{ inputs.targets }}
+          PROTOCOL: ${{ inputs.protocol }}
+          WEEKLY: ${{ inputs.weekly }}
+          SCHEDULE: ${{ github.event.schedule }}
+          MINUTES: ${{ inputs.minutes }}
+          WEEKLY_MINUTES: ${{ inputs.weekly-minutes }}
+          REPORT: ${{ inputs.report }}
+          PARALLEL: ${{ inputs.parallel }}
+          WEEKLY_PARALLEL: ${{ inputs.weekly-parallel }}
+          HOURS: ${{ inputs.hours }}
+        run: |
+          empty=$(git hash-object -t tree /dev/null)
+          crate=$GITHUB_REPOSITORY
+          crate_revision=$GITHUB_SHA
+          aper_revision=
+          base=
+          if [ -n "$PROTOCOL" ] && [ ! -f build/revisions ]; then
+            # oxirush-aper calls: the crate at the head of its default branch, with this
+            # commit. The Fuzz workflow of this repository lists its own commits.
+            crate=linouxis9/oxirush-$PROTOCOL
+            crate_revision=$(git ls-remote "https://github.com/$crate" HEAD | cut -f 1)
+            aper_revision=$GITHUB_SHA
+          else
+            # The crate calls, at its commit, and with `protocol` with the revision of
+            # oxirush-aper that its build/revisions records. The head of the last run of
+            # its Fuzz workflow on this branch that ended after its plan, or the empty
+            # tree, is where the commits that this run fuzzes first start, however late a
+            # run starts and however old the date of a commit is. A run whose plan
+            # succeeded and whose fuzzing then failed, for a crash as for a lost runner,
+            # is such a base too: it stays red until someone reads it, and is run again
+            # itself.
+            if [ -n "$PROTOCOL" ]; then
+              aper_revision=$(awk '$1 == "oxirush-aper" { print $2 }' build/revisions)
+            fi
+            runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow fuzz.yml \
+              --branch "$GITHUB_REF_NAME" --status completed --limit 100 \
+              --json databaseId,conclusion \
+              --jq '.[] | select(.conclusion == "success" or .conclusion == "failure") | .databaseId')
+            for run in $runs; do
+              base=$(gh run view "$run" --repo "$GITHUB_REPOSITORY" --json headSha,jobs --jq '
+                select(any(.jobs[]; (.name | endswith("How long")) and .conclusion == "success"))
+                | .headSha')
+              if [ -n "$base" ]; then break; fi
+            done
+            if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              base=$empty
+            fi
+          fi
+          if [ -n "$PROTOCOL" ]; then
+            # The targets of protocols/fuzz/. Those that read octets take the dictionary
+            # that seed.sh writes: the header of each message and each IE of each
+            # message. Those that build their input with `arbitrary` try inputs of any
+            # length from the start.
+            dict=-dict=fuzz/corpus/protocol.dict
+            TARGETS=$(jq -cn --arg p "$PROTOCOL" --arg dict "$dict" '
+              [{target: "decode", max_len: 4096, flags: $dict},
+               {target: "json", max_len: 4096, flags: $dict},
+               {target: "paths", max_len: 4096},
+               {target: "exact", max_len: 4096, flags: $dict},
+               {target: "edit", max_len: 1024, flags: "-len_control=0"},
+               {target: "tree", max_len: 1024, flags: "-len_control=0"},
+               {target: "transfer", max_len: 1024, flags: "-len_control=0"},
+               {target: "jer", max_len: 1024, flags: "-len_control=0"}]
+              | map(. + {dir: "oxirush-\($p)", name: $p})')
+          fi
+          if [ "$SCHEDULE" = "$WEEKLY" ] || [ "$REPORT" = true ]; then
+            weekly=true
+          else
+            weekly=false
+          fi
+          if [ "$MINUTES" != 0 ]; then
+            minutes=$MINUTES
+          elif [ "$SCHEDULE" = "$WEEKLY" ]; then
+            minutes=$WEEKLY_MINUTES
+          else
+            minutes=60
+          fi
+          # The targets run in rounds of as many as run at once, and the fuzzing of the
+          # last round ends within `hours` of the start: a target runs less than its
+          # minutes when its share of them is less.
+          if [ "$weekly" = true ]; then parallel=$WEEKLY_PARALLEL; else parallel=$PARALLEL; fi
+          count=$(jq length <<< "$TARGETS")
+          rounds=$(((count + parallel - 1) / parallel))
+          share=$((HOURS * 60 / rounds))
+          if [ "$minutes" -gt "$share" ]; then minutes=$share; fi
+          # The build, the corpus and the upload besides, and on the weekly schedule the
+          # minimized corpus and its coverage: the job's limit is the minutes and these,
+          # never past the six hours of a job (355 minutes), so that a target never runs
+          # longer than its job may.
+          extra=30
+          if [ "$weekly" = true ]; then extra=60; fi
+          if [ "$minutes" -gt $((355 - extra)) ]; then minutes=$((355 - extra)); fi
+          timeout=$((minutes + extra))
+          {
+            echo "seconds=$((minutes * 60))"
+            echo "timeout=$timeout"
+            echo "weekly=$weekly"
+            echo "targets=$(jq -c . <<< "$TARGETS")"
+            echo "crate=$crate"
+            echo "crate-revision=$crate_revision"
+            echo "aper-revision=$aper_revision"
+          } >> "$GITHUB_OUTPUT"
+          {
+            if [ -n "$aper_revision" ]; then
+              echo "Each target of $crate $crate_revision, with oxirush-aper $aper_revision, runs $minutes minutes."
+            else
+              echo "Each target runs $minutes minutes."
+            fi
+            echo
+            if [ -z "$base" ]; then
+              :
+            elif [ "$base" = "$empty" ]; then
+              echo "No run of this branch ended after its plan: every commit is fuzzed first."
+            elif [ "$base" = "$(git rev-parse HEAD)" ]; then
+              echo "No commit since the last run, at $base."
+            else
+              echo "Fuzzed first, since $base:"
+              echo
+              git log --format='- %h %s' "$base..HEAD"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    needs: plan
+    if: needs.plan.outputs.seconds != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ fromJSON(needs.plan.outputs.timeout) }}
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ needs.plan.outputs.weekly == 'true' && inputs.weekly-parallel || inputs.parallel }}
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      TARGET: ${{ matrix.target }}
+      NAME: ${{ matrix.name }}
+      MAX_LEN: ${{ matrix.max_len }}
+      FEATURES: ${{ matrix.features }}
+      # fuzz/ from the root of the workspace, and the word of the target in the names of
+      # its cache and its artifacts
+      FUZZ: ${{ matrix.dir && format('{0}/', matrix.dir) || '' }}fuzz
+      KEY: ${{ matrix.name && format('{0}-', matrix.name) || '' }}${{ matrix.target }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir || '.' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ needs.plan.outputs.crate }}
+          ref: ${{ needs.plan.outputs.crate-revision }}
+          path: ${{ inputs.protocol && format('oxirush-{0}', inputs.protocol) || inputs.path }}
+      - if: needs.plan.outputs.aper-revision
+        uses: actions/checkout@v7
+        with:
+          repository: linouxis9/oxirush-aper
+          ref: ${{ needs.plan.outputs.aper-revision }}
+          path: oxirush-aper
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.FUZZ }}
+      - run: cargo install cargo-fuzz@0.13.2 --locked
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.FUZZ }}/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ env.KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-${{ env.KEY }}-
+      # The seeds of the target, copied into its corpus; those of a protocol: the PDUs of
+      # tests/fixtures and of tests/wireshark/corpus.tsv, each also under a procedure code
+      # that the specification does not have, and the dictionary.
+      - if: matrix.seeds
+        env:
+          SEEDS: ${{ matrix.seeds }}
+        run: mkdir -p "fuzz/corpus/$TARGET" && cp "$SEEDS"/* "fuzz/corpus/$TARGET/"
+      - if: inputs.protocol
+        run: ../oxirush-aper/protocols/fuzz/seed.sh
+      - if: inputs.setup
+        run: ${{ inputs.setup }}
+      # The corpus takes what the run finds. An input that takes more than 30 seconds is
+      # a timeout.
+      - name: Fuzz ${{ matrix.target }} for ${{ needs.plan.outputs.seconds }} seconds
+        shell: bash
+        env:
+          FUZZ_SECONDS: ${{ needs.plan.outputs.seconds }}
+          FLAGS: ${{ matrix.flags }}
+        run: |
+          mkdir -p "fuzz/corpus/$TARGET"
+          # FLAGS is one option, or none
+          cargo fuzz run ${FEATURES:+--features "$FEATURES"} "$TARGET" "fuzz/corpus/$TARGET" -- \
+            -max_total_time="$FUZZ_SECONDS" -timeout=30 ${MAX_LEN:+-max_len="$MAX_LEN"} ${FLAGS:+"$FLAGS"} 2>&1 |
+            tee "$RUNNER_TEMP/fuzz.log"
+      # On the weekly schedule: the inputs that reach nothing that the others do not are
+      # dropped.
+      - name: Minimize the corpus
+        if: needs.plan.outputs.weekly == 'true'
+        run: |
+          before=$(find "fuzz/corpus/$TARGET" -type f | wc -l)
+          cargo fuzz cmin ${FEATURES:+--features "$FEATURES"} "$TARGET" "fuzz/corpus/$TARGET" \
+            ${MAX_LEN:+-- -max_len="$MAX_LEN"}
+          after=$(find "fuzz/corpus/$TARGET" -type f | wc -l)
+          echo "The corpus of ${NAME:+$NAME }$TARGET: $before inputs, $after once minimized." \
+            >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ${{ env.FUZZ }}/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ env.KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # On the weekly schedule: the regions, functions and lines that the corpus reaches,
+      # file by file, and the pages of the sources with the count of each line.
+      - name: Coverage of the corpus
+        if: needs.plan.outputs.weekly == 'true'
+        env:
+          IGNORE: ${{ inputs.coverage-ignore }}
+        run: |
+          cargo fuzz coverage ${FEATURES:+--features "$FEATURES"} "$TARGET" "fuzz/corpus/$TARGET" \
+            --target-dir fuzz/target-coverage
+          llvm_cov=$(find "$(rustc --print sysroot)" -name llvm-cov -type f | head -n 1)
+          binary="fuzz/target-coverage/x86_64-unknown-linux-gnu/release/$TARGET"
+          profile="fuzz/coverage/$TARGET/coverage.profdata"
+          mkdir -p "$RUNNER_TEMP/coverage"
+          "$llvm_cov" report "$binary" -instr-profile="$profile" -ignore-filename-regex="$IGNORE" \
+            > "$RUNNER_TEMP/coverage/report.txt"
+          "$llvm_cov" show "$binary" -instr-profile="$profile" -ignore-filename-regex="$IGNORE" \
+            -format=html -output-dir="$RUNNER_TEMP/coverage/pages"
+          {
+            echo "Coverage by the corpus of ${NAME:+$NAME }$TARGET:"
+            echo
+            echo '```'
+            head -n 2 "$RUNNER_TEMP/coverage/report.txt"
+            tail -n 1 "$RUNNER_TEMP/coverage/report.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The report and the pages, for 30 days. An upload that fails, as when GitHub's
+      # artifact service is down, leaves the job green: its fuzzing found nothing, and
+      # the next weekly run reports the coverage again.
+      - uses: actions/upload-artifact@v4
+        if: needs.plan.outputs.weekly == 'true'
+        continue-on-error: true
+        with:
+          name: coverage-${{ env.KEY }}
+          path: ${{ runner.temp }}/coverage
+          retention-days: 30
+      # The input of the crash or of the timeout, to reproduce it with
+      # `cargo fuzz run TARGET FILE`, and the log.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-${{ env.KEY }}
+          path: |
+            ${{ env.FUZZ }}/artifacts/${{ matrix.target }}
+            ${{ runner.temp }}/fuzz.log

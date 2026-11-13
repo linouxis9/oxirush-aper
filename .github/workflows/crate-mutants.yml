@@ -1,24 +1,30 @@
-name: Protocol mutants
+name: Crate mutants
 
-# The mutation testing of oxirush-ngap and oxirush-s1ap, which the Mutants workflow of
-# each calls, at the revision of this repository that its build/revisions records, with
-# the name of its protocol and the inputs of the run. cargo-mutants changes the code of
-# the crate at one place at a time, a mutant, and runs the tests on each: a mutant that
-# every test passes is code that no test checks. The .cargo/mutants.toml of the crate
-# says what it leaves alone, and why. The Mutants workflow of the crate is run by hand
-# before a release: with `full`, every mutant; without it, the mutants of the code that
-# the commits since the last run changed, and none without such a commit; with
-# `recheck`, the mutants that a file of the repository names, as a missed.txt has them,
-# again at the head. Each job keeps its mutants.out, with the commit that it ran at, and
-# a missed mutant fails it. A shard takes every n-th mutant, so that the shards of a job
-# last alike.
+# The mutation testing of the crates of the family, which the Mutants workflow of each
+# calls at a revision of this repository, with the inputs of its run. cargo-mutants
+# changes the code of the crate at one place at a time, a mutant, and runs the tests on
+# each: a mutant that every test passes is code that no test checks. The
+# .cargo/mutants.toml of the crate says what it leaves alone, and why. The Mutants
+# workflow of a crate is run by hand before a release: with `full`, every mutant;
+# without it, the mutants of the code that the commits since the last run changed, and
+# none without such a commit; with `recheck`, the mutants that a file of the repository
+# names, as a missed.txt has them, again at the head. Each job keeps its mutants.out,
+# with the commit that it ran at, and a missed mutant fails it. Few jobs run at once, to
+# leave runners to the other CI: one shard at a time, unless `parallel` says how many. A
+# shard takes every n-th mutant, so that the shards of a job last alike, and they are as
+# many as keep each to 2 hours or less. Jobs of the crate's own that come after the
+# shards need this workflow, and read `mode`.
 on:
   workflow_call:
     inputs:
-      protocol:
-        description: The protocol of the crate, `ngap` or `s1ap`
+      shards:
+        description: The shards of every mutant, and of the mutants that `recheck` names
         required: true
-        type: string
+        type: number
+      changes-shards:
+        description: The shards of the mutants of the changes since the last run
+        type: number
+        default: 1
       full:
         description: Every mutant, rather than those of the changes since the last run
         type: boolean
@@ -31,8 +37,21 @@ on:
         description: A file of the repository that names mutants, one a line, to run again at the head
         type: string
         default: ""
+      setup:
+        description: Commands that each job that runs the tests runs before them
+        type: string
+        default: ""
+      coverage-ignore:
+        description: A regular expression of the files that the coverage leaves out, as the generated ones
+        type: string
+        default: ""
+    outputs:
+      mode:
+        description: full, diff, recheck, or none
+        value: ${{ jobs.plan.outputs.mode }}
 
-# The plan reads the runs of the workflow of the crate, to find where the last one ended.
+# The plan reads the runs of the Mutants workflow of the crate, to find where the last
+# one ended.
 permissions:
   actions: read
   contents: read
@@ -44,16 +63,15 @@ env:
 
 jobs:
   # What the run mutates: every mutant, the mutants of what the commits since the last run
-  # changed, or nothing without such a commit;
-  # and the revision of oxirush-aper that build/revisions records, whose checkout has the
-  # script that runs named mutants again.
+  # changed, or nothing without such a commit; and the shards of each job.
   plan:
     name: What to mutate
     runs-on: ubuntu-24.04
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       base: ${{ steps.plan.outputs.base }}
-      aper: ${{ steps.plan.outputs.aper }}
+      shards: ${{ steps.plan.outputs.shards }}
+      changes-shards: ${{ steps.plan.outputs.changes-shards }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -63,6 +81,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FULL: ${{ inputs.full }}
           RECHECK: ${{ inputs.recheck }}
+          SHARDS: ${{ inputs.shards }}
+          CHANGES_SHARDS: ${{ inputs.changes-shards }}
         run: |
           # The head of the last run of the Mutants workflow on this branch that ended
           # after its plan, or the empty tree: the commits after it are the ones to mutate,
@@ -96,21 +116,23 @@ jobs:
           else
             mode=none
           fi
-          echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "aper=$(awk '$1 == "oxirush-aper" { print $2 }' build/revisions)" >> "$GITHUB_OUTPUT"
+          {
+            echo "mode=$mode"
+            echo "base=$base"
+            echo "shards=$(jq -cn "[range($SHARDS)]")"
+            echo "changes-shards=$(jq -cn "[range($CHANGES_SHARDS)]")"
+          } >> "$GITHUB_OUTPUT"
 
-  # The lines of the hand-written code that no test reaches: the summary of each file in
-  # the log, and each line in the report that the job keeps (cargo-llvm-cov 0.9.1): once
-  # in each run that mutates something. The generated bindings are measured with them,
-  # and left out of the summary.
+  # The lines that no test reaches: the summary of each file in the log, and each line
+  # in the report that the job keeps (cargo-llvm-cov 0.9.1): once in each run that
+  # mutates something.
   coverage:
     name: Coverage
     needs: plan
     if: needs.plan.outputs.mode != 'none'
     runs-on: ubuntu-24.04
     env:
-      GENERATED: src/(${{ inputs.protocol }}|registry|inspect_registry)\.rs
+      IGNORE: ${{ inputs.coverage-ignore }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -120,8 +142,10 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.9.1
       - uses: Swatinem/rust-cache@v2
-      - run: cargo llvm-cov --all-features --html --ignore-filename-regex "$GENERATED"
-      - run: cargo llvm-cov report --summary-only --ignore-filename-regex "$GENERATED"
+      - if: inputs.setup
+        run: ${{ inputs.setup }}
+      - run: cargo llvm-cov --all-features --html ${IGNORE:+--ignore-filename-regex "$IGNORE"}
+      - run: cargo llvm-cov report --summary-only ${IGNORE:+--ignore-filename-regex "$IGNORE"}
       - run: cargo llvm-cov report --lcov --output-path target/llvm-cov/lcov.info
       - uses: actions/upload-artifact@v4
         with:
@@ -131,7 +155,7 @@ jobs:
             target/llvm-cov/lcov.info
 
   mutants:
-    name: Mutants (shard ${{ matrix.shard }} of 2)
+    name: Mutants (shard ${{ matrix.shard }} of ${{ inputs.shards }})
     needs: plan
     if: needs.plan.outputs.mode == 'full'
     runs-on: ubuntu-24.04
@@ -144,18 +168,20 @@ jobs:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.parallel || '1') }}
       matrix:
-        shard: [0, 1]
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants@27.1.0
+      - if: inputs.setup
+        run: ${{ inputs.setup }}
       # cargo-mutants exits with 3 when a mutant made a test run until its timeout,
       # before it says whether a mutant was missed: a mutant that makes a test loop
       # forever is one that the tests see, and missed.txt has those that they do not.
       - run: |
-          cargo mutants --shard ${{ matrix.shard }}/2 --sharding round-robin -j 2 || [ $? -eq 3 ]
+          cargo mutants --shard ${{ matrix.shard }}/${{ inputs.shards }} --sharding round-robin -j 2 || [ $? -eq 3 ]
           test ! -s mutants.out/missed.txt
       - if: always()
         run: mkdir -p mutants.out && git rev-parse HEAD > mutants.out/commit
@@ -166,11 +192,13 @@ jobs:
           path: mutants.out
 
   # The mutants that the file `recheck` names, as a missed.txt has them: each again at the
-  # head, in as many shards as every mutant. A name that is no mutant of the head, as one
-  # whose line has moved since, is not tried, and fails its shard as one that ends early
-  # does (.github/mutants-recheck.py of this repository).
+  # head, in as many shards as every mutant. The shard SHARD of SHARDS takes every
+  # SHARDS-th name from the SHARD-th. It fails when a mutant is missed, and when one is
+  # not tried: a name that is no mutant of the head, as one whose line has moved, or a
+  # run that ended early. mutants.out keeps the outcomes, the commit that they are of, in
+  # `commit`, and the names that were not tried, in `not-tried.txt`.
   recheck:
-    name: Mutants named by the file (shard ${{ matrix.shard }} of 2)
+    name: Mutants named by the file (shard ${{ matrix.shard }} of ${{ inputs.shards }})
     needs: plan
     if: needs.plan.outputs.mode == 'recheck'
     runs-on: ubuntu-24.04
@@ -179,39 +207,71 @@ jobs:
       # address space, instead of taking the memory of the runner, which then dies.
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --as=4294967296
     timeout-minutes: 300
-    defaults:
-      run:
-        working-directory: crate
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.parallel || '1') }}
       matrix:
-        shard: [0, 1]
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          path: crate
-      - uses: actions/checkout@v7
-        with:
-          repository: linouxis9/oxirush-aper
-          ref: ${{ needs.plan.outputs.aper }}
-          path: oxirush-aper
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants@27.1.0
+      - if: inputs.setup
+        run: ${{ inputs.setup }}
       - env:
           NAMED: ${{ inputs.recheck }}
-        run: python3 ../oxirush-aper/.github/mutants-recheck.py "$NAMED" ${{ matrix.shard }} 2
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ inputs.shards }}
+        shell: python3 {0}
+        run: |
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          # What cargo-mutants reads as more than itself in a regular expression.
+          META = set("\\.+*?()|[]{}^$#&-~")
+
+          def escaped(name):
+              return "".join("\\" + character if character in META else character for character in name)
+
+          shard, shards = int(os.environ["SHARD"]), int(os.environ["SHARDS"])
+          with open(os.environ["NAMED"]) as lines:
+              names = sorted({line.strip() for line in lines if line.strip()})[shard::shards]
+          out = pathlib.Path("mutants.out")
+          code = 0
+          if names:
+              pattern = "|".join(f"^{escaped(name)}$" for name in names)
+              code = subprocess.run(["cargo", "mutants", "-F", pattern, "-j", "2"]).returncode
+          out.mkdir(exist_ok=True)
+          commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True)
+          (out / "commit").write_text(commit)
+          outcomes = out / "outcomes.json"
+          tried = set()
+          if outcomes.exists():
+              for outcome in json.loads(outcomes.read_text())["outcomes"]:
+                  mutant = outcome["scenario"]
+                  if isinstance(mutant, dict) and "Mutant" in mutant:
+                      tried.add(mutant["Mutant"]["name"])
+          not_tried = [name for name in names if name not in tried]
+          (out / "not-tried.txt").write_text("".join(name + "\n" for name in not_tried))
+          print(f"{len(names)} named, {len(not_tried)} not tried, cargo-mutants exited with {code}")
+          # 2: a mutant was missed; 3: a test ran until its timeout, which sees the mutant
+          missed = (out / "missed.txt").exists() and (out / "missed.txt").read_text().strip()
+          if not_tried or code not in (0, 2, 3) or missed:
+              sys.exit(1)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mutants.out-recheck-${{ matrix.shard }}
-          path: crate/mutants.out
+          path: mutants.out
 
   # The mutants of the lines that the commits since the last run changed.
   changes:
-    name: Mutants of the changes since the last run
+    name: Mutants of the changes since the last run (shard ${{ matrix.shard }} of ${{ inputs.changes-shards }})
     needs: plan
     if: needs.plan.outputs.mode == 'diff'
     runs-on: ubuntu-24.04
@@ -220,6 +280,10 @@ jobs:
       # address space, instead of taking the memory of the runner, which then dies.
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --as=4294967296
     timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.changes-shards) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -228,14 +292,17 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants@27.1.0
+      - if: inputs.setup
+        run: ${{ inputs.setup }}
       - run: |
           git diff ${{ needs.plan.outputs.base }} HEAD > "$RUNNER_TEMP/changes.diff"
-          cargo mutants --in-diff "$RUNNER_TEMP/changes.diff" -j 2 || [ $? -eq 3 ]
+          cargo mutants --in-diff "$RUNNER_TEMP/changes.diff" \
+            --shard ${{ matrix.shard }}/${{ inputs.changes-shards }} -j 2 || [ $? -eq 3 ]
           test ! -s mutants.out/missed.txt
       - if: always()
         run: mkdir -p mutants.out && git rev-parse HEAD > mutants.out/commit
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mutants.out-changes
+          name: mutants.out-changes-${{ matrix.shard }}
           path: mutants.out
