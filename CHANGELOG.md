@@ -11,6 +11,11 @@ All notable changes to `oxirush-aper` are recorded here.
   `holds_key`, `items_of_fields`) are hidden from the documentation: a program
   calls the methods of the PDUs and messages of oxirush-ngap and oxirush-s1ap.
   `protocol::ie_name` is private.
+- The macros of a protocol crate no longer write the module `hooks` and its
+  `--cfg oxirush_<protocol>_hooks`: the fuzz targets of `protocols/fuzz/` find
+  the types of the protocol from the crate's `Deviation`, and call the public
+  API alone. `__hooks!` is removed, and `__procedures!` and `__inspect!` no
+  longer take `hooks`.
 
 - The fuzz targets of `protocols/fuzz/` that start from a fixture PDU (`edit`,
   `tree`, `transfer` and `jer`) skip PDUs whose tree has more than 32,768 values.

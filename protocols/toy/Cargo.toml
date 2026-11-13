@@ -20,9 +20,6 @@ doctest = false
 inspect = ["oxirush-aper/inspect", "oxirush-aper/std", "oxirush-utils/tree"]
 serde = ["inspect", "dep:serde_core"]
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(oxirush_toy_hooks)'] }
-
 [dependencies]
 oxirush-aper = { path = "../.." }
 oxirush-utils = "0.2.1"

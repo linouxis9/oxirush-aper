@@ -19,30 +19,44 @@
 //! call these functions.
 //!
 //! A target does not only look for a panic: what the crate read is written and read
-//! again as the same, the PDU, the protocol IEs of its message, its message as its type
-//! and its tree.
+//! again as the same, the PDU, the protocol IEs of its message and its tree.
 //!
 //! oxirush-ngap and oxirush-s1ap take this file from oxirush-aper. The package of each
-//! names its crate `codec`, whose module `hooks` names what is of the protocol.
+//! names its crate `codec`, and the types of the protocol are found from the type of
+//! its deviations, `codec::Deviation`.
 
-use codec::hooks::{self, BorrowedPdu as Borrowed, Pdu, ROOT};
+use codec::aper::check::Diagnostics;
+use codec::aper::protocol::Protocol as _;
 use codec::tree::Value;
 use codec::{Deviation, ErrorKind, aper, inspect};
 use libfuzzer_sys::arbitrary::{self, Arbitrary};
 use std::sync::LazyLock;
 
-/// The octets of the open type that holds the message of a PDU.
-fn message<'p>(pdu: &'p Borrowed<'_>) -> &'p [u8] {
-    match pdu {
-        Borrowed::initiatingMessage(message) => &message.value,
-        Borrowed::successfulOutcome(message) => &message.value,
-        Borrowed::unsuccessfulOutcome(message) => &message.value,
-        _ => panic!("a PDU of an alternative that the bindings do not have"),
-    }
+/// The marker type of the protocol of a type of deviations.
+trait OfProtocol {
+    type Protocol: aper::protocol::Protocol;
 }
 
-/// A PDU, the protocol IEs of its message and the message as its type, each as the crate
-/// reads and writes it.
+impl<P: aper::protocol::Protocol> OfProtocol for aper::check::Deviation<P> {
+    type Protocol = P;
+}
+
+/// The marker type of the protocol: `Ngap`, `S1ap` or `Toy`.
+type Protocol = <Deviation as OfProtocol>::Protocol;
+/// A PDU that borrows its message from the octets that it is decoded from.
+type Borrowed<'a> = <Protocol as aper::protocol::Protocol>::Pdu<'a>;
+/// A PDU that owns its octets.
+type Pdu = Borrowed<'static>;
+
+/// The root of the paths of a tree, as `/ngap`.
+static ROOT: LazyLock<String> = LazyLock::new(|| format!("/{}", Protocol::NAME.to_lowercase()));
+
+/// The octets of the open type that holds the message of a PDU.
+fn message<'p>(pdu: &'p Borrowed<'_>) -> &'p [u8] {
+    aper::protocol::Pdu::value(pdu)
+}
+
+/// A PDU and the protocol IEs of its message, each as the crate reads and writes it.
 pub fn decode(octets: &[u8]) {
     // The PDU, which is written back as octets that are read as the same PDU.
     let Ok(pdu) = Borrowed::decode(octets) else {
@@ -75,9 +89,6 @@ pub fn decode(octets: &[u8]) {
         Err(error) if error.kind() == ErrorKind::WrongMessage => {}
         Err(_) => {}
     }
-
-    // The message as its type, which `decode_value` reads and the codec writes.
-    let _ = hooks::message_read_and_written(&pdu);
 }
 
 /// The tree of a PDU, which gives the PDU back, and its paths.
@@ -124,7 +135,7 @@ pub fn paths(octets: &[u8]) {
     let known = inspect::paths(&tree);
     let start = match known.get(usize::from(pick) % known.len().max(1)) {
         Some((path, _)) => path.as_str(),
-        None => ROOT,
+        None => ROOT.as_str(),
     };
     let start: String = start.chars().take(usize::from(cut)).collect();
     let path = format!("{start}{}", String::from_utf8_lossy(extra));
@@ -133,10 +144,7 @@ pub fn paths(octets: &[u8]) {
         Err(_) => Value::String(String::from_utf8_lossy(value).into_owned()),
     };
 
-    let set = aper::protocol::object_set::<<Pdu as aper::protocol::InProtocol>::Protocol>(
-        pdu.direction(),
-        pdu.procedure_code(),
-    );
+    let set = aper::protocol::object_set::<Protocol>(pdu.direction(), pdu.procedure_code());
     let name = set.map_or("no message", |set| set.name);
     let changed = match function % 7 {
         0 => inspect::select(&tree, &path).is_err(),
@@ -215,19 +223,8 @@ fn checked(pdu: &Borrowed<'_>) {
                 panic!("Criticality Diagnostics that do not encode: {error}: {diagnostics:?}")
             }
         };
-        let read = aper::decode::<hooks::bindings::CriticalityDiagnostics>(&octets);
+        let read = aper::decode::<<Protocol as Diagnostics>::CriticalityDiagnostics>(&octets);
         assert_eq!(read.as_ref(), Ok(&diagnostics), "{octets:02x?}");
-    }
-
-    // The private message has no protocol IEs, and its octets are not looked at
-    if !deviations.is_empty() || pdu.protocol_ies().is_err() {
-        return;
-    }
-    if let Some((name, written)) = hooks::message_read_and_written(pdu) {
-        match written {
-            Ok(written) => assert_eq!(written, message(pdu), "{name} of {pdu:?}"),
-            Err(error) => panic!("check finds nothing, and {name} does not decode: {error}"),
-        }
     }
 }
 
@@ -801,7 +798,7 @@ pub fn transfer(input: Transfer) {
     let mut places: Vec<String> = Vec::new();
     let mut found = std::collections::HashSet::new();
     for (path, _) in inspect::paths(&tree) {
-        let Some(below) = path.strip_prefix(ROOT) else {
+        let Some(below) = path.strip_prefix(ROOT.as_str()) else {
             continue;
         };
         let mut place = ROOT.to_owned();

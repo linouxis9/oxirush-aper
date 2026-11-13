@@ -298,7 +298,7 @@ impl Registry {
         writeln!(
             out,
             "oxirush_aper::__procedures! {{\n    protocol {marker} {name:?}, bindings {module}, pdu \
-             {name}PDU, kind {marker}PduKind, hooks oxirush_{module}_hooks;"
+             {name}PDU, kind {marker}PduKind;"
         )?;
         for (code, procedure) in &self.procedures {
             // The class of an elementary procedure has `ignore` by default.

@@ -193,9 +193,6 @@ jobs:
     defaults:
       run:
         working-directory: crate
-    env:
-      # What the targets take from the inside of the crate.
-      RUSTFLAGS: --cfg oxirush_${{ inputs.protocol }}_hooks
     steps:
       - uses: actions/checkout@v7
         with:

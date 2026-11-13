@@ -186,8 +186,6 @@ jobs:
           - { target: transfer, max_len: 1024, flags: -len_control=0 }
           - { target: jer, max_len: 1024, flags: -len_control=0 }
     env:
-      # What the targets take from the inside of the crate.
-      RUSTFLAGS: --cfg oxirush_${{ inputs.protocol }}_hooks
       PROTOCOL: ${{ inputs.protocol }}
     defaults:
       run:

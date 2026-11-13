@@ -21,7 +21,7 @@
 // The tables, the paths and the functions of the module, which oxirush-aper writes for
 // both protocols.
 oxirush_aper::__inspect! {
-    bindings toy, pdu TOYPDU, hooks oxirush_toy_hooks, any crate::toy::ErrorIndication<'a>
+    bindings toy, pdu TOYPDU, any crate::toy::ErrorIndication<'a>
 }
 
 use crate::toy::TOYPDU;

@@ -20,7 +20,7 @@
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! __procedures {
     (protocol $protocol:ident $protocol_name:literal, bindings $bindings:ident, pdu $pdu:ident,
-        kind $kind:ident, hooks $hooks:meta;
+        kind $kind:ident;
     $($code:literal $procedure:ident $criticality:ident {
         $(InitiatingMessage $initiating:ident $initiating_name:literal
             $([$($initiating_ie:literal $initiating_criticality:ident
@@ -95,48 +95,6 @@ macro_rules! __procedures {
                 };
                 let direction = self.direction();
                 kind.unwrap_or($kind::Other { direction, procedure_code })
-            }
-        }
-
-        /// For the fuzz targets and the tests of the oracle: the name in the bindings of
-        /// the type of the message of a direction and a procedure code, when the
-        /// protocol has that message.
-        #[cfg($hooks)]
-        pub(crate) fn message_type_name(direction: $crate::Direction, code: u8) -> Option<&'static str> {
-            match (direction, code) {
-                $($(($crate::Direction::Initiating, $code) => {
-                    Some(stringify!($initiating))
-                })?)*
-                $($(($crate::Direction::Successful, $code) => {
-                    Some(stringify!($successful))
-                })?)*
-                $($(($crate::Direction::Unsuccessful, $code) => {
-                    Some(stringify!($unsuccessful))
-                })?)*
-                _ => None,
-            }
-        }
-
-        /// For the fuzz targets and the tests of the oracle: the message of a PDU as its
-        /// type, read and written back, when the protocol has a message for the PDU: the
-        /// octets that it encodes to, or why it does not decode.
-        #[cfg($hooks)]
-        pub(crate) fn message_read_and_written<'a>(
-            pdu: &'a crate::$bindings::$pdu<'_>,
-        ) -> Option<Result<Vec<u8>, $crate::Error>> {
-            fn rewritten<'a, T: $crate::protocol::Message<'a, Protocol = crate::$protocol>>(
-                pdu: &'a crate::$bindings::$pdu<'_>,
-            ) -> Result<Vec<u8>, $crate::Error> {
-                let message: T = pdu.decode_value()?;
-                $crate::encode(&message)
-            }
-            match (pdu.direction(), pdu.procedure_code()) {
-                $($(($crate::Direction::Initiating, $code) => Some(rewritten::<crate::$bindings::$initiating<'_>>(pdu)),)?)*
-                $($(($crate::Direction::Successful, $code) => Some(rewritten::<crate::$bindings::$successful<'_>>(pdu)),)?)*
-                $($(($crate::Direction::Unsuccessful, $code) => {
-                    Some(rewritten::<crate::$bindings::$unsuccessful<'_>>(pdu))
-                })?)*
-                _ => None,
             }
         }
 

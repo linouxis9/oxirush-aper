@@ -24,8 +24,6 @@
 
 extern crate alloc;
 
-oxirush_aper::__hooks! { cfg oxirush_toy_hooks, bindings toy, pdu TOYPDU }
-
 #[cfg(feature = "inspect")]
 pub mod inspect;
 #[cfg(feature = "inspect")]

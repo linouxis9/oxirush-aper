@@ -182,14 +182,14 @@ macro_rules! __carried {
 
 /// The tables of a protocol for its trees and their paths, and the functions of
 /// its module `inspect` that read them, written once: the protocol calls it in that module,
-/// with the module of its bindings, the type of its PDU, the cfg of its hooks, and a
+/// with the module of its bindings, the type of its PDU, and a
 /// message that is a container of protocol IEs and nothing else.
 #[doc(hidden)]
 #[macro_export]
 // A protocol calls it in its crate, whose items `crate::` names.
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! __inspect {
-    (bindings $bindings:ident, pdu $pdu:ident, hooks $hooks:meta, any $any:ty) => {
+    (bindings $bindings:ident, pdu $pdu:ident, any $any:ty) => {
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -693,61 +693,5 @@ pub fn register() {
 pub fn __tree_of_jer(view: &Value) -> Result<Value, Error> {
     shared::tree_of_jer(&TABLES, view)
 }
-    };
-}
-
-/// The module `hooks` of a protocol crate, which its fuzz targets and the tests of its
-/// oracle take from the inside of the crate: the protocol calls it at the root of the
-/// crate, with the configuration name that it has the module with, the module of its
-/// bindings and the types of its PDU.
-#[doc(hidden)]
-#[macro_export]
-// A protocol calls it in its crate, whose items `crate::` names.
-#[allow(clippy::crate_in_macro_def)]
-macro_rules! __hooks {
-    (cfg $cfg:ident, bindings $bindings:ident, pdu $pdu:ident) => {
-        #[cfg($cfg)]
-        #[doc(hidden)]
-        #[doc = concat!(
-                    "What the fuzz targets of `fuzz/` take from the inside of the crate. It is \
-     compiled with `--cfg ", stringify!($cfg), "`, which that package is built with, and \
-     is no part of the crate without: the fuzz build of another program, for which \
-     cargo-fuzz sets `fuzzing`, has the crate as every other build has it.\n\n\
-     It gives them what needs the type of a message, which no function gives from a PDU, \
-     and the two ways in which the crate writes a message."
-                )]
-        pub mod hooks {
-            use crate::Error;
-            use crate::$bindings::$pdu;
-
-            /// The bindings, by a name that is the same for both protocols.
-            pub use crate::$bindings as bindings;
-            /// A PDU that owns its octets, by a name that is the same for both protocols.
-            pub type Pdu = crate::$bindings::$pdu<'static>;
-            /// A PDU that borrows its message from the octets that it is decoded from.
-            pub use crate::$bindings::$pdu as BorrowedPdu;
-
-            /// The name of the type of a PDU in the bindings.
-            pub const PDU_TYPE: &str = stringify!($pdu);
-
-            /// The root of the paths of a tree, which the module of the bindings names.
-            pub const ROOT: &str = concat!("/", stringify!($bindings));
-
-            /// The octets of the message of `pdu`.
-            pub fn message_octets<'p>(pdu: &'p $pdu<'_>) -> &'p [u8] {
-                $crate::protocol::Pdu::value(pdu)
-            }
-
-            /// The message of `pdu` as its type: the name of the type in the bindings, and the
-            /// octets that the message encodes to once `decode_value` has read it, or why it does
-            /// not decode. `None` when the protocol has no message for the PDU.
-            pub fn message_read_and_written(
-                pdu: &$pdu<'_>,
-            ) -> Option<(&'static str, Result<Vec<u8>, Error>)> {
-                let name =
-                    crate::registry::message_type_name(pdu.direction(), pdu.procedure_code())?;
-                Some((name, crate::registry::message_read_and_written(pdu)?))
-            }
-        }
     };
 }

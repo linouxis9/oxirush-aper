@@ -1,8 +1,7 @@
 # The fuzz targets of TOY, for cargo-fuzz: those of `protocols/fuzz/`, which oxirush-ngap
 # and oxirush-s1ap run on their protocols, on the protocol of the tests of oxirush-aper,
 # whose PDUs are small. A package of its own, which is not published. The targets name
-# the crate `codec`, and take what is of the protocol from its module `hooks`
-# (`--cfg oxirush_toy_hooks`).
+# the crate `codec`.
 [package]
 name = "oxirush-toy-fuzz"
 version = "0.0.0"
