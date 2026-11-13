@@ -228,10 +228,10 @@ jobs:
       - run: cargo fuzz run transfer -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0
 
-  # The files that the tools of `protocols/` write, as they write them: the revisions
-  # of build/revisions wherever the repository names one, and the test of the README.
+  # The revisions of build/revisions wherever the repository names one, as
+  # protocols/build/pin.py writes them.
   written:
-    name: Revisions and the test of the README
+    name: Revisions
     needs: revisions
     runs-on: ubuntu-24.04
     defaults:
@@ -247,7 +247,6 @@ jobs:
           ref: ${{ needs.revisions.outputs.aper }}
           path: oxirush-aper
       - run: python3 ../oxirush-aper/protocols/build/pin.py --check
-      - run: python3 ../oxirush-aper/protocols/tests/readme.py --check
 
   fmt:
     name: Format

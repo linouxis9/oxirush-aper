@@ -12,10 +12,10 @@ README is for those who use the crate.
 |-----------|----------|-----------|
 | `src/` | The crate: the reader and the writer of the fields, the types of the values, `check`, the protocol traits and the bodies of the macros, `json` with `inspect` | yes |
 | `generator/` | The library that the generators of oxirush-ngap and oxirush-s1ap share, each of which adds the names of its protocol: it reads the ASN.1 with rasn-compiler and writes the bindings, the registry and what `inspect` needs | no |
-| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the bindings for rasn of their benchmarks (`protocols/rasn/`), the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their README tests (`protocols/tests/readme.py`) and of their pinned revisions (`protocols/build/pin.py`), and TOY (`protocols/toy/`), the protocol that the generator writes from its own ASN.1, whose tests are those of what the generated crates share | no |
+| `protocols/` | The tools, the programs and the tests that oxirush-ngap and oxirush-s1ap share beside their code: the bindings for rasn of their benchmarks (`protocols/rasn/`), the fuzz targets and their seeds, the benchmarks and the comparison with other implementations, the test of the package alone and of a member of a workspace, the comparison of their PDUs with Wireshark (`protocols/tests/wireshark/`), the writer of their pinned revisions (`protocols/build/pin.py`), and TOY (`protocols/toy/`), the protocol that the generator writes from its own ASN.1, whose tests are those of what the generated crates share | no |
 | `benches/` | The comparison of the crate with rasn, and the benchmarks of the fields | no |
 | `fuzz/` | The fuzz targets of the crate | no |
-| `tests/` | The tests of the crate, among them `tests/readme.rs`, which checks each Rust block of the README with what it prints | yes |
+| `tests/` | The tests of the crate | yes |
 
 oxirush-ngap and oxirush-s1ap take `generator/` and `protocols/` from a
 checkout of this repository beside theirs, at the revision that their
@@ -60,14 +60,8 @@ which TOY, which has no benchmarks, does not keep.
 
 ## The README
 
-The Rust blocks of the README are documentation tests, and
-`tests/readme.rs` compares what each prints with the `text` block under it.
-After a change of a block, write `tests/readme/blocks.rs` again and run the
-test once more:
-
-```sh
-README_BLOCKS=write cargo test --all-features --test readme
-cargo test --all-features --test readme
-```
+The Rust blocks of the README and of the documentation of `src/lib.rs` are
+documentation tests: each shows what it gives with `assert_eq!`, not with
+`println!`, so that `cargo test --all-features --doc` checks it.
 
 [SECURITY.md](SECURITY.md) says how to report a vulnerability.

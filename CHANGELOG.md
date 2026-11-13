@@ -22,6 +22,11 @@ All notable changes to `oxirush-aper` are recorded here.
   on TOY, the generated protocol of `protocols/toy/`.
 - The section "With oxirush-ngap" of the README, with `family/`, the package
   that ran its one block. No API changes.
+- `tests/readme.rs` and `tests/readme/blocks.rs`, its copy of the blocks of the
+  README: the examples of the README and of the crate's documentation check what
+  they give with `assert_eq!`, and run as documentation tests. The same goes for
+  oxirush-ngap and oxirush-s1ap: `protocols/tests/readme.py`, the writer of their
+  README tests, and its check in `protocol.yml` are removed.
 
 ## 0.3.0 - 2026-11-09
 

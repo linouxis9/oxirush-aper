@@ -24,29 +24,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     writer.size(2, 1, 256)?;
     writer.unsigned(1, 0, 1, false)?;
     writer.unsigned(0, 0, 1, false)?;
-    println!("{octets:02x?}");
+    assert_eq!(octets, [0xa0, 0xc8, 0x30, 0x01, 0x80]);
 
     let mut reader = Reader::new(&octets);
-    println!("{}", reader.unsigned(0, 7, false)?);
-    println!("{}", reader.unsigned(0, 255, true)?);
-    println!("{}", reader.index(6, 0, true)?);
-    println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
+    assert_eq!(reader.unsigned(0, 7, false)?, 5);
+    assert_eq!(reader.unsigned(0, 255, true)?, 200);
+    assert_eq!(reader.index(6, 0, true)?, 3);
+    assert_eq!(reader.size(1, 256)?, 2);
+    assert_eq!((reader.bit()?, reader.bit()?), (true, false));
 
-    println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err());
+    let error = Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err();
+    assert_eq!(error.to_string(), "the value does not encode: 8 is outside its constraint (0..7)");
     Ok(())
 }
 ```
 
-```text
-[a0, c8, 30, 01, 80]
-5
-200
-3
-2 items: true false
-the value does not encode: 8 is outside its constraint (0..7)
-```
-
-Each example is followed by its output.
+Each example shows what it gives with `assert_eq!`, and runs as a test of the crate.
 
 A `Reader` and a `Writer` have a method for each kind of field of X.691 that
 NGAP and S1AP use, and take the bounds of its constraint as arguments.
@@ -161,27 +154,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         neighbours: vec![0x124, 0x125],
     };
     let octets = oxirush_aper::encode(&cell)?;
-    println!("{octets:02x?}");
+    assert_eq!(
+        octets,
+        [0x40, 0x01, 0x23, 0x41, 0x40, 0x63, 0x65, 0x6c, 0x6c, 0x2d, 0x31, 0x20, 0x01, 0x24, 0x01, 0x25],
+    );
 
     // The name of what is decoded is a slice of the octets
     let read: Cell = oxirush_aper::decode(&octets)?;
-    println!("{read:?}");
-    println!("borrowed: {}", matches!(read.name, Some(Cow::Borrowed(_))));
+    assert_eq!(read, cell);
+    assert!(matches!(read.name, Some(Cow::Borrowed("cell-1"))));
 
     // What its constraints do not hold is an error of the writer and of the reader
     let crowded = Cell { neighbours: vec![0; 9], ..read };
-    println!("{}", oxirush_aper::encode(&crowded).unwrap_err());
-    println!("{}", oxirush_aper::decode::<Cell>(&octets[..5]).unwrap_err());
+    assert_eq!(
+        oxirush_aper::encode(&crowded).unwrap_err().to_string(),
+        "a value of Cell does not encode: a size of 9 is outside its constraint (0..8)",
+    );
+    assert_eq!(
+        oxirush_aper::decode::<Cell>(&octets[..5]).unwrap_err().to_string(),
+        "these octets do not decode as Cell: the octets end before the value does",
+    );
     Ok(())
 }
-```
-
-```text
-[40, 01, 23, 41, 40, 63, 65, 6c, 6c, 2d, 31, 20, 01, 24, 01, 25]
-Cell { id: 291, kind: Small, name: Some("cell-1"), neighbours: [292, 293] }
-borrowed: true
-a value of Cell does not encode: a size of 9 is outside its constraint (0..8)
-these octets do not decode as Cell: the octets end before the value does
 ```
 
 ## The types of the values
@@ -207,18 +201,14 @@ use oxirush_aper::Octets;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let received = vec![0x7e, 0x00, 0x41];
     let borrowed = Octets::from(&received[..]);
-    println!("{borrowed:?} borrowed: {}", borrowed.is_borrowed());
+    assert!(borrowed.is_borrowed());
 
     let kept: Octets<'static> = borrowed.into_owned();
     drop(received);
-    println!("{kept:?} borrowed: {}", kept.is_borrowed());
+    assert!(!kept.is_borrowed());
+    assert_eq!(format!("{kept:?}"), "7e0041");
     Ok(())
 }
-```
-
-```text
-7e0041 borrowed: true
-7e0041 borrowed: false
 ```
 
 ## Bit strings
@@ -232,24 +222,18 @@ use oxirush_aper::{BitString, Bits};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // AMF Set ID ::= BIT STRING (SIZE (10)): its octets start with its first bit
     let set = Bits::new(0x155, 10)?;
-    println!("{:#x} of {} bits: {:02x?}", set.value(), set.len(), set.to_vec());
-    println!("{}", Bits::from_octets(&[0x55, 0x40], 10)? == set);
+    assert_eq!((set.value(), set.len()), (0x155, 10));
+    assert_eq!(set.to_vec(), [0x55, 0x40]);
+    assert_eq!(Bits::from_octets(&[0x55, 0x40], 10)?, set);
 
     // A value that its length does not hold
-    println!("{}", Bits::new(0x400, 10).unwrap_err());
+    assert_eq!(Bits::new(0x400, 10).unwrap_err().to_string(), "1024 does not fit in 10 bits");
 
     // TransportLayerAddress ::= BIT STRING (SIZE (1..160, ...))
     let address = BitString::from([10, 0, 0, 1]);
-    println!("{:?} of {} bits", address.as_octets(), address.len());
+    assert_eq!((address.as_octets(), address.len()), (&[10, 0, 0, 1][..], 32));
     Ok(())
 }
-```
-
-```text
-0x155 of 10 bits: [55, 40]
-true
-1024 does not fit in 10 bits
-[10, 0, 0, 1] of 32 bits
 ```
 
 ## An open type
@@ -267,18 +251,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = writer.begin_open_type();
     writer.unsigned(0x1234, 0, 65535, false)?;
     writer.end_open_type(start);
-    println!("{octets:02x?}");
+    assert_eq!(octets, [0x02, 0x12, 0x34]);
 
     let mut reader = Reader::new(&octets);
     let held = reader.open_type()?;
-    println!("{held:?}: {:#x}", Reader::new(&held).unsigned(0, 65535, false)?);
+    assert_eq!(held.as_ref(), [0x12, 0x34]);
+    assert_eq!(Reader::new(&held).unsigned(0, 65535, false)?, 0x1234);
     Ok(())
 }
-```
-
-```text
-[02, 12, 34]
-1234: 0x1234
 ```
 
 `Octets::as_borrowed` gives the octets of an open type for as long as the
@@ -310,13 +290,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     // What a later version of the type added is skipped
     additions.skip_rest(&mut reader)?;
-    println!("{extended} {a} {b:?}");
+    assert_eq!((extended, a, b), (true, true, Some(7)));
     Ok(())
 }
-```
-
-```text
-true true Some(7)
 ```
 
 ## What the reader accepts
@@ -341,22 +317,21 @@ use oxirush_aper::{Octets, decode, decode_strict, decode_with_faults};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // An OCTET STRING of one octet, whose length is in two octets
     let octets = [0x80, 0x01, 0xaa];
-    println!("{:?}", decode::<Octets>(&octets)?);
+    assert_eq!(decode::<Octets>(&octets)?.as_ref(), [0xaa]);
 
     // What a tool that tests the peer wants to know
     let (_, faults) = decode_with_faults::<Octets>(&octets)?;
-    println!("{}", faults[0]);
+    let fault = "at bit 0, a length of 127 or less is in two octets (X.691 §11.9.3.6)";
+    assert_eq!(faults[0].to_string(), fault);
 
     // And a receiver that takes the one encoding alone
-    println!("{}", decode_strict::<Octets>(&octets).unwrap_err());
+    let error = decode_strict::<Octets>(&octets).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!("these octets do not decode as OCTET STRING: {fault}: the value is read, and a sender by the clause writes it otherwise"),
+    );
     Ok(())
 }
-```
-
-```text
-aa
-at bit 0, a length of 127 or less is in two octets (X.691 §11.9.3.6)
-these octets do not decode as OCTET STRING: at bit 0, a length of 127 or less is in two octets (X.691 §11.9.3.6): the value is read, and a sender by the clause writes it otherwise
 ```
 
 `decode` and a reader of `Reader::new` note nothing, and `Reader::faults`
@@ -418,8 +393,6 @@ cargo test --all-features
 cargo +nightly fuzz run fields -- -max_total_time=60 -max_len=512
 ```
 
-Each Rust block of this page is checked with what it prints
-([`tests/readme.rs`](tests/readme.rs) says how).
 [CONTRIBUTING.md](CONTRIBUTING.md) says what else the repository holds.
 
 A pull request comes with a test for what it changes. Sign off your commits

@@ -34,32 +34,25 @@
 //!     writer.size(2, 1, 256)?;
 //!     writer.unsigned(1, 0, 1, false)?;
 //!     writer.unsigned(0, 0, 1, false)?;
-//!     println!("{octets:02x?}");
+//!     assert_eq!(octets, [0xa0, 0xc8, 0x30, 0x01, 0x80]);
 //!
 //!     let mut reader = Reader::new(&octets);
-//!     println!("{}", reader.unsigned(0, 7, false)?);
-//!     println!("{}", reader.unsigned(0, 255, true)?);
-//!     println!("{}", reader.index(6, 0, true)?);
-//!     println!("{} items: {} {}", reader.size(1, 256)?, reader.bit()?, reader.bit()?);
+//!     assert_eq!(reader.unsigned(0, 7, false)?, 5);
+//!     assert_eq!(reader.unsigned(0, 255, true)?, 200);
+//!     assert_eq!(reader.index(6, 0, true)?, 3);
+//!     assert_eq!(reader.size(1, 256)?, 2);
+//!     assert_eq!((reader.bit()?, reader.bit()?), (true, false));
 //!
-//!     println!("{}", Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err());
+//!     let error = Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err();
+//!     assert_eq!(error.to_string(), "the value does not encode: 8 is outside its constraint (0..7)");
 //!     Ok(())
 //! }
-//! ```
-//!
-//! ```text
-//! [a0, c8, 30, 01, 80]
-//! 5
-//! 200
-//! 3
-//! 2 items: true false
-//! the value does not encode: 8 is outside its constraint (0..7)
 //! ```
 //!
 //! # Tasks
 //!
 //! The [README](https://github.com/linouxis9/oxirush-aper#readme) has an example of
-//! each, with what it prints.
+//! each.
 //!
 //! | Task | Items |
 //! |------|-------|
@@ -127,7 +120,7 @@ mod writer;
 use alloc::vec::Vec;
 
 /// The examples of the README, which are compiled and run with the tests of the
-/// documentation.
+/// documentation: each checks what it gives with `assert_eq!`.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct Readme;
