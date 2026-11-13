@@ -18,12 +18,10 @@ doctest = false
 
 [features]
 inspect = ["oxirush-aper/inspect", "oxirush-aper/std", "oxirush-utils/tree"]
-serde = ["inspect", "dep:serde_core"]
 
 [dependencies]
 oxirush-aper = { path = "../.." }
 oxirush-utils = "0.2.1"
-serde_core = { version = "1.0.220", optional = true, default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 hex = "0.4"

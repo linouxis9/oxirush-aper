@@ -90,8 +90,6 @@ pub mod toy_common_data_types {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(PrivateIEID);
     /// `ProcedureCode ::= INTEGER (0..255)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct ProcedureCode(pub u8);
@@ -134,8 +132,6 @@ pub mod toy_common_data_types {
             ))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ProcedureCode);
     /// `ProtocolExtensionID ::= INTEGER (0..65535)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct ProtocolExtensionID(pub u16);
@@ -180,8 +176,6 @@ pub mod toy_common_data_types {
             ))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ProtocolExtensionID);
     /// `ProtocolIE-ID ::= INTEGER (0..65535)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct ProtocolIEID(pub u16);
@@ -226,8 +220,6 @@ pub mod toy_common_data_types {
             ))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ProtocolIEID);
     /// `TriggeringMessage ::= ENUMERATED`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub enum TriggeringMessage {
@@ -274,8 +266,6 @@ pub mod toy_common_data_types {
             Ok(Self::VALUES[reading.named(value, names::TriggeringMessage)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(TriggeringMessage);
 }
 #[allow(
     non_camel_case_types,
@@ -439,8 +429,6 @@ pub mod toy_containers {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ProtocolIEField<'a>);
     /// `ProtocolIE-Container ::= SEQUENCE (SIZE (0..65535)) OF ProtocolIEField`.
     #[doc = " `ProtocolIE-Container`: the IEs of a message."]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -499,8 +487,6 @@ pub mod toy_containers {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ProtocolIEContainer<'a>);
     impl core::fmt::Debug for ProtocolExtensionField<'_> {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             let holds_key = crate::registry::KEY_IES.contains(&self.id.0);
@@ -589,8 +575,6 @@ pub mod toy_containers {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ProtocolExtensionField<'a>);
     /// `ProtocolExtensionContainer ::= SEQUENCE (SIZE (1..65535)) OF ProtocolExtensionField`.
     #[doc = " `ProtocolExtensionContainer`: the `iE-Extensions` of a type."]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -649,8 +633,6 @@ pub mod toy_containers {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ProtocolExtensionContainer<'a>);
 }
 #[allow(
     non_camel_case_types,
@@ -720,8 +702,6 @@ pub mod toy_ies {
             Ok(Self(json::read_bit_string(reading, value, 16, 16, true)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Algorithms<'a>);
     /// `AreaItem ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct AreaItem {
@@ -802,8 +782,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(AreaItem);
     /// `Areas ::= SEQUENCE (SIZE (1..16)) OF AreaItem`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Areas(pub Vec<AreaItem>);
@@ -854,8 +832,6 @@ pub mod toy_ies {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Areas);
     /// `BroadcastPLMNs ::= SEQUENCE (SIZE (1..6)) OF PLMNIdentity`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct BroadcastPLMNs(pub Vec<PLMNIdentity>);
@@ -906,8 +882,6 @@ pub mod toy_ies {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(BroadcastPLMNs);
     /// `Cause ::= CHOICE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum Cause {
@@ -1018,8 +992,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Cause);
     /// `CauseMisc ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -1062,8 +1034,6 @@ pub mod toy_ies {
             Ok(Self::VALUES[reading.named(value, names::CauseMisc)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(CauseMisc);
     /// `CauseNas ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -1108,8 +1078,6 @@ pub mod toy_ies {
             Ok(Self::VALUES[reading.named(value, names::CauseNas)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(CauseNas);
     /// `CauseProtocol ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -1165,8 +1133,6 @@ pub mod toy_ies {
             Ok(Self::VALUES[reading.named(value, names::CauseProtocol)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(CauseProtocol);
     /// `CauseRadioNetwork ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -1214,8 +1180,6 @@ pub mod toy_ies {
             Ok(Self::VALUES[reading.named(value, names::CauseRadioNetwork)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(CauseRadioNetwork);
     /// `ConnectionItem ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct ConnectionItem {
@@ -1312,8 +1276,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ConnectionItem);
     /// `Connections ::= SEQUENCE (SIZE (1..65536)) OF ConnectionItem`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Connections(pub Vec<ConnectionItem>);
@@ -1382,8 +1344,6 @@ pub mod toy_ies {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Connections);
     /// `Container ::= OCTET STRING`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Container<'a>(pub Octets<'a>);
@@ -1442,8 +1402,6 @@ pub mod toy_ies {
             Ok(Self(json::read_octets(reading, value)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Container<'a>);
     /// `ContainerBlob ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct ContainerBlob<'a> {
@@ -1597,8 +1555,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ContainerBlob<'a>);
     /// `Counts ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Counts {
@@ -1710,8 +1666,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Counts);
     /// `CriticalityDiagnostics ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct CriticalityDiagnostics {
@@ -1864,8 +1818,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(CriticalityDiagnostics);
     /// `CriticalityDiagnostics-IE-Item ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct CriticalityDiagnosticsIEItem {
@@ -1954,8 +1906,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(CriticalityDiagnosticsIEItem);
     /// `CriticalityDiagnostics-IE-List ::= SEQUENCE (SIZE (1..256)) OF CriticalityDiagnosticsIEItem`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct CriticalityDiagnosticsIEList(pub Vec<CriticalityDiagnosticsIEItem>);
@@ -2006,8 +1956,6 @@ pub mod toy_ies {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(CriticalityDiagnosticsIEList);
     /// `ExtendedCause ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -2050,8 +1998,6 @@ pub mod toy_ies {
             Ok(Self::VALUES[reading.named(value, names::ExtendedCause)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ExtendedCause);
     /// `FailureTransfer ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct FailureTransfer {
@@ -2121,8 +2067,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(FailureTransfer);
     /// The octets, in hexadecimal.
     impl core::fmt::Display for GTPTEID {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -2177,8 +2121,6 @@ pub mod toy_ies {
             Ok(Self(reading.octet_array::<4>(value)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(GTPTEID);
     /// `GTPTunnel ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct GTPTunnel<'a> {
@@ -2276,8 +2218,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(GTPTunnel<'a>);
     /// `IndexOfItem ::= INTEGER (1..8, ...)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct IndexOfItem(pub u64);
@@ -2318,8 +2258,6 @@ pub mod toy_ies {
             Ok(Self(reading.unsigned(value, u64::MIN, u64::MAX)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(IndexOfItem);
     /// `IndexOfTransfer ::= INTEGER (1..4, ...)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct IndexOfTransfer(pub u64);
@@ -2360,8 +2298,6 @@ pub mod toy_ies {
             Ok(Self(reading.unsigned(value, u64::MIN, u64::MAX)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(IndexOfTransfer);
     /// `Item ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Item {
@@ -2451,8 +2387,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Item);
     /// `Items ::= SEQUENCE (SIZE (1..16)) OF ProtocolIEField`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Items<'a>(pub Vec<ProtocolIEField<'a>>);
@@ -2510,8 +2444,6 @@ pub mod toy_ies {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Items<'a>);
     /// `KindOfTransfer ::= TransferKind`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct KindOfTransfer(pub TransferKind);
@@ -2552,8 +2484,6 @@ pub mod toy_ies {
             Ok(Self(TransferKind::from_tree(value, reading)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(KindOfTransfer);
     /// `Kinds ::= SEQUENCE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Kinds {
@@ -2595,8 +2525,6 @@ pub mod toy_ies {
             Ok(Self { first, second })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Kinds);
     /// `Mixed ::= SEQUENCE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Mixed {
@@ -2638,8 +2566,6 @@ pub mod toy_ies {
             Ok(Self { kind, cause })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Mixed);
     /// `NAS-PDU ::= OCTET STRING`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct NASPDU<'a>(pub Octets<'a>);
@@ -2698,8 +2624,6 @@ pub mod toy_ies {
             Ok(Self(json::read_octets(reading, value)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(NASPDU<'a>);
     /// `NodeID ::= CHOICE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum NodeID {
@@ -2796,8 +2720,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(NodeID);
     /// `NodeName ::= PrintableString (SIZE (1..150, ...))`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct NodeName<'a>(pub Cow<'a, str>);
@@ -2860,8 +2782,6 @@ pub mod toy_ies {
             )?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(NodeName<'a>);
     /// The MCC and the MNC, as `208-93`. Octets that are no PLMN identity print in hexadecimal.
     impl core::fmt::Display for PLMNIdentity {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -2933,8 +2853,6 @@ pub mod toy_ies {
             Ok(Self(reading.octet_array::<3>(value)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(PLMNIdentity);
     /// `SecurityContext ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SecurityContext<'a> {
@@ -3035,8 +2953,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(SecurityContext<'a>);
     impl core::fmt::Debug for SecurityKey<'_> {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             write!(formatter, "SecurityKey({} bits)", self.0.len())
@@ -3097,8 +3013,6 @@ pub mod toy_ies {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(SecurityKey<'a>);
     /// `SetupTransfer ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SetupTransfer<'a> {
@@ -3151,8 +3065,6 @@ pub mod toy_ies {
             Ok(Self { protocol_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(SetupTransfer<'a>);
     /// The octets, in hexadecimal.
     impl core::fmt::Display for TAC {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -3207,8 +3119,6 @@ pub mod toy_ies {
             Ok(Self(reading.octet_array::<3>(value)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(TAC);
     /// `TransferItem ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct TransferItem<'a> {
@@ -3337,8 +3247,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(TransferItem<'a>);
     /// `TransferKind ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -3386,8 +3294,6 @@ pub mod toy_ies {
             Ok(Self::VALUES[reading.named(value, names::TransferKind)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(TransferKind);
     /// `TransferList ::= SEQUENCE (SIZE (1..8)) OF TransferItem`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct TransferList<'a>(pub Vec<TransferItem<'a>>);
@@ -3445,8 +3351,6 @@ pub mod toy_ies {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(TransferList<'a>);
     /// `TransportLayerAddress ::= BIT STRING (SIZE (1..160, ...))`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct TransportLayerAddress<'a>(pub BitString<'a>);
@@ -3496,8 +3400,6 @@ pub mod toy_ies {
             Ok(Self(json::read_bit_string(reading, value, 1, 160, true)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(TransportLayerAddress<'a>);
     /// `Tunnel ::= CHOICE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum Tunnel<'a> {
@@ -3588,8 +3490,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Tunnel<'a>);
     /// `TypeOfError ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -3632,8 +3532,6 @@ pub mod toy_ies {
             Ok(Self::VALUES[reading.named(value, names::TypeOfError)?])
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(TypeOfError);
     /// `UE-Core-ID ::= INTEGER (0..1099511627775)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct UECoreID(pub u64);
@@ -3674,8 +3572,6 @@ pub mod toy_ies {
             Ok(Self(reading.unsigned(value, 0, 1099511627775)?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(UECoreID);
     /// `UE-ID-pair ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct UEIDPair {
@@ -3756,8 +3652,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(UEIDPair);
     /// `UE-IDs ::= CHOICE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum UEIDs {
@@ -3836,8 +3730,6 @@ pub mod toy_ies {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(UEIDs);
     /// `UE-RAN-ID ::= INTEGER (0..4294967295)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct UERANID(pub u32);
@@ -3882,8 +3774,6 @@ pub mod toy_ies {
             ))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(UERANID);
 }
 #[allow(
     non_camel_case_types,
@@ -3957,8 +3847,6 @@ pub mod toy_pdu_contents {
             Ok(Self { protocol_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ErrorIndication<'a>);
     /// `Notification ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Notification<'a> {
@@ -4011,8 +3899,6 @@ pub mod toy_pdu_contents {
             Ok(Self { protocol_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(Notification<'a>);
     /// `SEQUENCE ::= SEQUENCE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct AnonymousPrivateMessagePrivateIEs<'a> {
@@ -4080,8 +3966,6 @@ pub mod toy_pdu_contents {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(AnonymousPrivateMessagePrivateIEs<'a>);
     /// `PrivateMessagePrivateIEs ::= SEQUENCE (SIZE (1..65535)) OF AnonymousPrivateMessagePrivateIEs`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct PrivateMessagePrivateIEs<'a>(pub Vec<AnonymousPrivateMessagePrivateIEs<'a>>);
@@ -4139,8 +4023,6 @@ pub mod toy_pdu_contents {
             })?))
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(PrivateMessagePrivateIEs<'a>);
     /// `PrivateMessage ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct PrivateMessage<'a> {
@@ -4193,8 +4075,6 @@ pub mod toy_pdu_contents {
             Ok(Self { private_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(PrivateMessage<'a>);
     /// `ReleaseRequest ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct ReleaseRequest<'a> {
@@ -4247,8 +4127,6 @@ pub mod toy_pdu_contents {
             Ok(Self { protocol_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(ReleaseRequest<'a>);
     /// `SetupFailure ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SetupFailure<'a> {
@@ -4301,8 +4179,6 @@ pub mod toy_pdu_contents {
             Ok(Self { protocol_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(SetupFailure<'a>);
     /// `SetupRequest ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SetupRequest<'a> {
@@ -4355,8 +4231,6 @@ pub mod toy_pdu_contents {
             Ok(Self { protocol_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(SetupRequest<'a>);
     /// `SetupResponse ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SetupResponse<'a> {
@@ -4409,8 +4283,6 @@ pub mod toy_pdu_contents {
             Ok(Self { protocol_ies })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(SetupResponse<'a>);
 }
 #[allow(
     non_camel_case_types,
@@ -4522,8 +4394,6 @@ pub mod toy_pdu_descriptions {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(InitiatingMessage<'a>);
     impl core::fmt::Debug for SuccessfulOutcome<'_> {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             let holds_key = oxirush_aper::protocol::holds_key::<crate::Toy>(
@@ -4614,8 +4484,6 @@ pub mod toy_pdu_descriptions {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(SuccessfulOutcome<'a>);
     /// `TOY-PDU ::= CHOICE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     #[non_exhaustive]
@@ -4811,8 +4679,6 @@ pub mod toy_pdu_descriptions {
             })
         }
     }
-    #[cfg(feature = "serde")]
-    oxirush_utils::impl_serde!(UnsuccessfulOutcome<'a>);
 }
 
 // The names of the modules at the root.

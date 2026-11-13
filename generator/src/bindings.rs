@@ -1185,7 +1185,6 @@ impl Bindings {
                      Ok(Self::VALUES[reading.named(value, names::{name})?]) }}"
                 )?;
                 writeln!(out, "}}")?;
-                self.serde(out, name)?;
             }
             Shape::Alias(kind) => {
                 let ty = self.ty(kind, "'a");
@@ -1314,7 +1313,6 @@ impl Bindings {
                     }
                 }
                 writeln!(out, "}}")?;
-                self.serde(out, &named)?;
             }
         }
         Ok(())
@@ -1746,7 +1744,7 @@ impl Bindings {
         let names: Vec<&str> = members.iter().map(|member| member.name.as_str()).collect();
         writeln!(out, "Ok(Self {{ {} }})", names.join(", "))?;
         writeln!(out, "}} }}")?;
-        self.serde(out, named)
+        Ok(())
     }
 
     /// The tree of a CHOICE `name`, whose alternatives the module `names` of the
@@ -1800,16 +1798,6 @@ impl Bindings {
         }
         writeln!(out, "}})")?;
         writeln!(out, "}} }}")?;
-        self.serde(out, named)
-    }
-
-    /// `Serialize` and `Deserialize` for the type that the bindings name `named`, with
-    /// the feature `serde`: through its tree, as `oxirush_utils::tree::serde` has them.
-    fn serde(&self, out: &mut String, named: &str) -> Result<()> {
-        // A type that borrows is named with the lifetime that the macro declares.
-        let named = named.replace("<'_>", "<'a>");
-        writeln!(out, "#[cfg(feature = \"serde\")]")?;
-        writeln!(out, "oxirush_utils::impl_serde!({named});")?;
         Ok(())
     }
 

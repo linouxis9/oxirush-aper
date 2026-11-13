@@ -175,17 +175,10 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
         protocol.foreign,
     )?;
     let module = protocol.module();
-    let pdu = format!("{name}PDU");
     fs::write("src/registry.rs", &list)?;
     fs::write("src/inspect_registry.rs", inspection)?;
     fs::write(path, for_rasn).context("write the bindings for rasn")?;
-    // A PDU is serialized as the tree of its message, which `inspect.rs` writes.
-    let serde = format!("#[cfg(feature = \"serde\")]\noxirush_utils::impl_serde!({pdu}<'a>);\n");
-    ensure!(
-        bindings.text.matches(&serde).count() == 1,
-        "the serde of a PDU"
-    );
-    let mut text = bindings.text.replacen(&serde, "", 1);
+    let mut text = bindings.text;
     text.push_str(&support(protocol, &bindings.borrowing)?);
     transfers(&text, &registry)?;
     let file = format!("src/{module}.rs");

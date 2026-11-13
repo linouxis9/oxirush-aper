@@ -140,9 +140,6 @@ impl crate::json::Tree for Criticality {
     }
 }
 
-#[cfg(feature = "inspect")]
-oxirush_utils::impl_serde!(Criticality);
-
 /// Whether an IE of an object set is always there, as the ASN.1 of the application
 /// protocols of 3GPP has it (`Presence ::= ENUMERATED { optional, conditional, mandatory
 /// }`): a receiver checks the mandatory IEs alone, since a condition is prose. The
@@ -211,9 +208,6 @@ impl crate::json::Tree for Presence {
         Ok(Self::ALL[reading.named(value, &Self::NAMES)?])
     }
 }
-
-#[cfg(feature = "inspect")]
-oxirush_utils::impl_serde!(Presence);
 
 /// The direction of a PDU, the alternative of the PDU that holds a message: the
 /// initiating message of a procedure, or its successful or unsuccessful outcome. Its

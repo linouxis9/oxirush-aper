@@ -51,23 +51,3 @@ impl TOYPDU<'_> {
         ))
     }
 }
-
-/// With the feature `serde`, a PDU is serialized as its tree, which
-/// `to_tree` gives: every PDU that decodes has one.
-#[cfg(feature = "serde")]
-impl serde_core::Serialize for TOYPDU<'_> {
-    fn serialize<S: serde_core::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serde_core::Serialize::serialize(&self.to_tree(), serializer)
-    }
-}
-
-/// With the feature `serde`, a PDU is deserialized from its tree, as
-/// `from_tree` reads it.
-#[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for TOYPDU<'_> {
-    fn deserialize<D: serde_core::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde_core::de::Error as _;
-        let tree = <Value as serde_core::Deserialize>::deserialize(deserializer)?;
-        TOYPDU::from_tree(&tree).map_err(D::Error::custom)
-    }
-}

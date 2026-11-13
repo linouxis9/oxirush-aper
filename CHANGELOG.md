@@ -27,6 +27,11 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Removed
 
+- `Serialize` and `Deserialize` of `Criticality` and `Presence` with `inspect`,
+  and the `impl_serde!` that the generator wrote after each type with the
+  feature `serde` of a protocol crate: oxirush-ngap and oxirush-s1ap no longer
+  have that feature. A value goes to JSON through its tree, `to_tree()`, which
+  any serde format serializes.
 - The section "The macros of a protocol crate" of the README, with the protocol
   of two procedures written by hand for it in `tests/toy/`: the macros are shown
   on NGAP and S1AP in the READMEs of oxirush-ngap and oxirush-s1ap, and tested
