@@ -6,6 +6,12 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Changed
 
+- `json` and the functions of `protocol` behind the methods that the bindings
+  generate (`of_message`, `protocol_ies`, `set_protocol_ies`, `message_octets`,
+  `holds_key`, `items_of_fields`) are hidden from the documentation: a program
+  calls the methods of the PDUs and messages of oxirush-ngap and oxirush-s1ap.
+  `protocol::ie_name` is private.
+
 - The fuzz targets of `protocols/fuzz/` that start from a fixture PDU (`edit`,
   `tree`, `transfer` and `jer`) skip PDUs whose tree has more than 32,768 values.
   Each of these targets makes five or more passes over the tree, and an input

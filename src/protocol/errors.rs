@@ -9,7 +9,7 @@ use crate::{Criticality, Error, ErrorIe};
 
 /// The IE of an identifier, as an error names it: the name that ASN.1 gives it after
 /// `id-`, or its number for one that the protocol does not have.
-pub fn ie_name<P: Protocol>(id: u16) -> String {
+pub(crate) fn ie_name<P: Protocol>(id: u16) -> String {
     match name::<P>(id) {
         Some(name) => name.to_string(),
         None => format!("IE {id}"),

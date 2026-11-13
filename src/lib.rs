@@ -106,6 +106,7 @@ mod faults;
 #[doc(hidden)]
 pub mod inspect;
 #[cfg(feature = "inspect")]
+#[doc(hidden)]
 pub mod json;
 mod octets;
 mod oid;

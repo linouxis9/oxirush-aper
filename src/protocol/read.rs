@@ -580,6 +580,7 @@ impl<'s, L: List> Iterator for Items<'s, L> {
 
 /// The items of the first occurrence of the list `L` among `fields`, the IEs of a value
 /// that ASN.1 names `message`.
+#[doc(hidden)]
 pub fn items_of_fields<'s, L: List>(
     message: &'static str,
     fields: &'s [<L::Protocol as Protocol>::Field<'s>],

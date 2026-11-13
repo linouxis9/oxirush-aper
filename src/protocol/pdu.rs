@@ -58,6 +58,7 @@ fn message_ies<P: Protocol>(octets: &[u8], noting: bool) -> Result<Read<'_, P>, 
 
 /// The octets of the message that has these protocol IEs, as the codec of the type writes
 /// them.
+#[doc(hidden)]
 pub fn message_octets<'f, F: Field<'f>>(ies: &[F]) -> Result<Vec<u8>, Error> {
     written(ies, None)
 }
@@ -99,6 +100,7 @@ fn message_of_protocol_ies<'p, X: Pdu<'p>>(pdu: &X) -> Result<Option<&'static st
 /// An error of the kind `WrongMessage` for a private message, which has private IEs and no
 /// container of protocol IEs, and one of the kind `Decode` when the octets of the message
 /// are not a container of protocol IEs.
+#[doc(hidden)]
 pub fn protocol_ies<'s, 'p: 's, X: Pdu<'p>>(
     pdu: &'s X,
 ) -> Result<Vec<<X::Protocol as Protocol>::Field<'s>>, Error> {
@@ -123,6 +125,7 @@ pub fn protocol_ies<'s, 'p: 's, X: Pdu<'p>>(
 /// An error of the kind `WrongMessage` for a private message, which has no container of
 /// protocol IEs, and one of the kind `Encode` for more IEs than a container has, which is
 /// 65535. The PDU is as it was after an error.
+#[doc(hidden)]
 pub fn set_protocol_ies<'p, 'f, X: Pdu<'p>>(
     pdu: &mut X,
     ies: &[<X::Protocol as Protocol>::Field<'f>],
@@ -144,6 +147,7 @@ pub fn set_protocol_ies<'p, 'f, X: Pdu<'p>>(
 /// # Errors
 ///
 /// A message that does not encode: a value outside a constraint of its type.
+#[doc(hidden)]
 pub fn of_message<'m, M: Message<'m>>(
     message: &M,
     criticality: Criticality,
@@ -162,6 +166,7 @@ pub fn of_message<'m, M: Message<'m>>(
 /// Whether the message of a direction and a procedure code may hold a key: its object set
 /// has an IE of a type that holds one. `Debug` of its PDU shows the length of the octets
 /// of the message, and not the octets.
+#[doc(hidden)]
 pub fn holds_key<P: Protocol>(direction: Direction, code: u8) -> bool {
     let ies = object_set::<P>(direction, code).and_then(|set| set.ies);
     ies.is_some_and(|ies| ies.iter().any(|(id, ..)| P::__KEY_IES.contains(id)))

@@ -58,7 +58,8 @@ mod pdu;
 mod read;
 
 pub use build::{__Message, __message_of_protocol_ies, __set_ie};
-pub use errors::{__missing_ie, __undecodable_ie, __wrong_message, ie_name};
+pub(crate) use errors::ie_name;
+pub use errors::{__missing_ie, __undecodable_ie, __wrong_message};
 pub use pdu::{
     check, check_structure, check_transfer, check_transfer_structure, holds_key, message_octets,
     of_message, protocol_ies, set_protocol_ies,
