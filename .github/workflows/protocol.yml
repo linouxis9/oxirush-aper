@@ -261,7 +261,8 @@ jobs:
           repository: linouxis9/oxirush-aper
           ref: ${{ needs.revisions.outputs.aper }}
           path: oxirush-aper
-      - uses: dtolnay/rust-toolchain@stable
+      # The rustfmt of the MSRV: a new stable release must not change what is formatted.
+      - uses: dtolnay/rust-toolchain@1.88
         with:
           components: rustfmt
       - run: cargo fmt --check
