@@ -127,14 +127,18 @@ macro_rules! __names {
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! __typed {
     ($type:ty) => {{
+        // The row of the type in the table of the types, found once.
+        static ROW: ::std::sync::OnceLock<usize> = ::std::sync::OnceLock::new();
         // A type that borrows nothing leaves the lifetime without a use.
         #[allow(clippy::needless_lifetimes)]
         fn decode<'a>(raw: &'a [u8]) -> Result<$crate::inspect::Decoded, $crate::Error> {
-            crate::inspect::__decode_typed::<$type>(raw)
+            let row = *ROW.get_or_init(crate::inspect::row::<$type>);
+            crate::inspect::__decode_typed::<$type>(raw, row)
         }
         #[allow(clippy::needless_lifetimes)]
         fn encode<'a>(value: &'a $crate::json::Value) -> Result<Vec<u8>, $crate::Error> {
-            crate::inspect::__encode_typed::<$type>(value)
+            let row = *ROW.get_or_init(crate::inspect::row::<$type>);
+            crate::inspect::__encode_typed(row, value)
         }
         $crate::inspect::Typed { decode, encode }
     }};
@@ -623,7 +627,7 @@ pub(crate) fn any_message() -> Typed {
 
 /// The row of the type `T` in the table of the types, which has every type of the
 /// bindings by the name that ASN.1 gives it.
-fn row<T: AsnType>() -> usize {
+pub(crate) fn row<T: AsnType>() -> usize {
     let row = $crate::inspect::schema::position(crate::inspect_registry::SCHEMA, T::NAME);
     row.unwrap_or_else(|| panic!("{} is a type of the bindings, which the table has", T::NAME))
 }
@@ -633,13 +637,16 @@ fn row<T: AsnType>() -> usize {
 /// adds, which the value has no place for, or are in another form than the canonical
 /// one. The typed decoder reads the value and says whether it is exact; the walker of
 /// the table reads its tree from the same octets.
-pub(crate) fn __decode_typed<'a, T>(raw: &'a [u8]) -> Result<$crate::inspect::Decoded, Error>
+pub(crate) fn __decode_typed<'a, T>(
+    raw: &'a [u8],
+    row: usize,
+) -> Result<$crate::inspect::Decoded, Error>
 where
     T: Decode<'a> + Encode + AsnType,
 {
     let read: Result<T, Error> = $crate::decode(raw);
     let walked = |read: bool| {
-        let walked = $crate::inspect::schema::tree(crate::inspect_registry::SCHEMA, row::<T>(), raw);
+        let walked = $crate::inspect::schema::tree(crate::inspect_registry::SCHEMA, row, raw);
         // The walker and the typed decoder read the same octets as values.
         debug_assert_eq!(walked.is_ok(), read, "{} {}", T::NAME, $crate::json::hex(raw));
         walked
@@ -662,11 +669,11 @@ where
     Ok((walked(true)?, exact, refused))
 }
 
-/// The octets of the value of the type `T` that `value` writes in its JSON form: those
-/// that the walker of the table writes, which are those of the typed value that the tree
+/// The octets of the value of the type of the row `row` that `value` writes in its JSON
+/// form: those that the walker of the table writes, which are those of the typed value that the tree
 /// reads as, with the same errors.
-pub(crate) fn __encode_typed<T: AsnType>(value: &Value) -> Result<Vec<u8>, Error> {
-    $crate::inspect::schema::write(crate::inspect_registry::SCHEMA, row::<T>(), value)
+pub(crate) fn __encode_typed(row: usize, value: &Value) -> Result<Vec<u8>, Error> {
+    $crate::inspect::schema::write(crate::inspect_registry::SCHEMA, row, value)
 }
 
 /// The tree of a value of a type of the bindings, as the tree of a PDU shows it where
@@ -688,7 +695,7 @@ pub fn value_tree<T: Encode + AsnType>(value: &T) -> Result<Value, Error> {
 /// A tree that is not a value of the type, which says why and where, and a value
 /// outside a constraint of its type.
 pub fn value_from_tree<T: for<'a> Decode<'a> + AsnType>(tree: &Value) -> Result<T, Error> {
-    let octets = __encode_typed::<T>(tree)?;
+    let octets = __encode_typed(row::<T>(), tree)?;
     $crate::decode(&octets)
 }
 
