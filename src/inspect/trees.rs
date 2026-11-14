@@ -170,7 +170,7 @@ fn held_in<'v>(protocol: &Protocol, members: &'v Map) -> Option<(&'v str, &'v Va
         return None;
     };
     let id = name.parse::<u16>().ok().or_else(|| (protocol.ie_id)(name));
-    Some((name.as_str(), value, id))
+    Some((name, value, id))
 }
 
 /// Whether a value is written as the octets that it is sent as, alone.
@@ -567,7 +567,7 @@ impl Trees<'_> {
             let name = entry.keys().find(|name| same_name(name, part));
             return match name {
                 Some(name) => {
-                    next.member(name, &entry[name.as_str()], at.of(Shape::Unknown));
+                    next.member(name, &entry[name], at.of(Shape::Unknown));
                     Ok(())
                 }
                 None if edit == Some(Edit::Set) && last => {
@@ -647,7 +647,7 @@ impl Trees<'_> {
         let held = held_in(protocol, entry).map(|(name, _, id)| (name, id));
         if part == "*" {
             for (name, value) in entry {
-                let child = match name.as_str() {
+                let child = match name {
                     CRITICALITY => at.of(Shape::Plain),
                     _ => at.value(
                         protocol,
@@ -994,7 +994,8 @@ impl Trees<'_> {
                     Some((name, of, _)) => match (next.edit(), self.opens, value) {
                         (Some(Edit::Open), Some(decode), Value::String(_)) => {
                             let mut opened = Map::new();
-                            opened.insert(name.to_string(), decode(value.clone(), name, *of));
+                            opened
+                                .insert(name.to_string().into(), decode(value.clone(), name, *of));
                             next.open(place, Value::Object(opened));
                             Ok(())
                         }

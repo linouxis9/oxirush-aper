@@ -365,7 +365,8 @@ fn a_message_is_written_by_its_name_and_its_ies_by_theirs() {
     // What is not a message, not an IE, or an IE of another message without its
     // criticality, is refused with what is wrong.
     let refused = |tree: Value| TOYPDU::from_tree(&tree).unwrap_err().to_string();
-    let named = |message: &str, ie: &str| tree!({"message": message, "ies": [{ie: 1}]});
+    let named =
+        |message: &'static str, ie: &'static str| tree!({"message": message, "ies": [{ie: 1}]});
     assert!(refused(named("ReleaseRequst", "UE-Core-ID")).contains("is not a message"));
     assert!(refused(named("ReleaseRequest", "UE-ID")).contains("is not an IE"));
     assert!(refused(named("ReleaseRequest", "NodeName")).contains("says its \"criticality\""));
@@ -380,7 +381,7 @@ fn redundant(value: &Value, holder: &str, found: &mut Vec<String>) {
     match value {
         Value::Object(members) => {
             for (name, member) in members {
-                let wraps = match name.as_str() {
+                let wraps = match name {
                     "decoded" | "id" | "extensionValue" => true,
                     // A bit string whose size varies has a `value` and a `length`.
                     "value" => !members.contains_key("length"),
@@ -883,7 +884,7 @@ fn a_tunnel_endpoint_is_an_ip_address_and_a_number() {
 
 #[test]
 fn an_enumerated_value_is_named_whatever_its_case_and_separators() {
-    let causes = |cause: &str, kind: &str| {
+    let causes = |cause: &'static str, kind: &'static str| {
         TOYPDU::from_tree(&tree!({"message": "ReleaseRequest", "ies": [
             {"Cause": {"radioNetwork": cause}},
             {"TransferKind": kind, "criticality": "ignore"},

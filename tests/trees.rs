@@ -364,7 +364,7 @@ fn entries(mut octets: &[u8], field: &str) -> Result<Vec<Value>, Error> {
             (u16::from(*high) << 8 | u16::from(*low)).into(),
         );
         entry.insert("criticality".into(), (*criticality).into());
-        entry.insert(field.into(), hex(value).into());
+        entry.insert(field.to_string().into(), hex(value).into());
         entries.push(Value::Object(entry));
         octets = &rest[length..];
     }
@@ -499,7 +499,7 @@ fn cause_encode(value: &Value) -> Result<Vec<u8>, Error> {
     }
     let alternative = ALTERNATIVES
         .iter()
-        .position(|known| known == name)
+        .position(|known| *known == name)
         .ok_or_else(|| encoding("no such alternative"))?;
     let position = NAMES[alternative]
         .iter()
@@ -563,9 +563,9 @@ fn holder_encode(value: &Value) -> Result<Vec<u8>, Error> {
     for (name, member) in holder {
         let tag = HOLDER_TAGS
             .iter()
-            .position(|known| known == name)
+            .position(|known| *known == name)
             .ok_or_else(|| encoding("no such member"))?;
-        let contents = match name.as_str() {
+        let contents = match name {
             "cause" => cause_encode(member)?,
             "transfer" | "setup" | "inner" => {
                 unhex(member.as_str().ok_or_else(|| encoding("no octets"))?)?

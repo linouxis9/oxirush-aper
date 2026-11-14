@@ -156,9 +156,9 @@ impl Tree for Sample {
         let day = self.day_of_week.map(|bits| json::bits(bits, 7, 7));
         members.put_optional("day-of-week", day);
         members.put("few", json::bits(self.few, 1, 32));
-        members.put("name", json::text(&self.name));
-        members.put("printable", json::text(&self.printable));
-        members.put("visible", json::text(&self.visible));
+        members.put("name", json::text(self.name.clone()));
+        members.put("printable", json::text(self.printable.clone()));
+        members.put("visible", json::text(self.visible.clone()));
         members.put("object", json::object_identifier(&self.object));
         members.put("open", json::octets(&self.open));
         let list = self.list.iter().map(|item| item.to_tree()).collect();
@@ -772,7 +772,7 @@ fn the_readable_forms_read_and_write_their_values() {
                 .to_string()
         )
     );
-    let address = |text: &str| Form::Address.write(&tree!(text));
+    let address = |text: &str| Form::Address.write(&tree!(text.to_string()));
     assert_eq!(
         address("1.2.3.4"),
         Ok(tree!({"value": "01020304", "length": 32}))

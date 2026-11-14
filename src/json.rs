@@ -101,7 +101,7 @@ pub fn bit_string(value: &BitString<'_>, lower: usize, upper: usize, extensible:
 /// The JSON form of an object identifier: its arcs in decimal, with a full stop
 /// between them.
 pub fn object_identifier(identifier: &ObjectIdentifier) -> Value {
-    Value::String(identifier.to_string())
+    Value::String(identifier.to_string().into())
 }
 
 // ── The readable forms ──────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ impl Form {
         // in another way.
         let hexadecimal = |octets: &str| {
             unhex(octets)
-                .map(|octets| Value::String(hex(&octets)))
+                .map(|octets| Value::String(hex(&octets).into()))
                 .ok_or_else(|| {
                     format!("{text}: octets in hexadecimal after 0x, two digits for each")
                 })
@@ -222,7 +222,7 @@ impl Form {
                     .flatten();
                 let plmn =
                     plmn.ok_or_else(|| format!("{text}: a PLMN identity is MCC-MNC, as 208-93"))?;
-                Ok(Value::String(hex(&plmn.to_ap_octets())))
+                Ok(Value::String(hex(&plmn.to_ap_octets()).into()))
             }
             Self::Plmn | Self::Digits | Self::Number(_) if text.starts_with("0x") => match self {
                 Self::Number(bits) => {
@@ -268,7 +268,7 @@ impl Form {
                 let pairs = bcd(text);
                 let pairs = pairs.chunks(2);
                 let octets = pairs.map(|pair| pair.get(1).copied().unwrap_or(15) << 4 | pair[0]);
-                Ok(Value::String(hex(&octets.collect::<Vec<_>>())))
+                Ok(Value::String(hex(&octets.collect::<Vec<_>>()).into()))
             }
             // A number in quotes, which the octets of its type in hexadecimal would be too.
             Self::Number(bits) if all_digits(text) => {
@@ -406,7 +406,7 @@ fn bit_octets(
     let one_size = (lower == upper).then_some(lower);
     let (digits, length) = match (value, one_size) {
         // A string of the one size of its type is its octets.
-        (Value::String(digits), Some(size)) => (digits.as_str(), size),
+        (Value::String(digits), Some(size)) => (&**digits, size),
         (Value::Object(members), size) if size.is_none() || extensible => {
             let digits = members.get("value").and_then(Value::as_str);
             let length = members.get("length").and_then(Value::as_u64);
@@ -429,7 +429,7 @@ fn bit_octets(
         }
         (_, None) => return Err(mismatch(reading, WITH_LENGTH, value)),
     };
-    let shown = |reading: &Reading| reading.shown(&Value::String(digits.into()));
+    let shown = |reading: &Reading| reading.shown(&Value::String(digits.to_string().into()));
     let Some(octets) = unhex(digits) else {
         let why = format!(
             "{} is not hexadecimal, two digits for each octet",

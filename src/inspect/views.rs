@@ -227,7 +227,7 @@ impl Protocol {
             let members = self.member_shapes(shape, object);
             for (key, child) in object {
                 if !key.starts_with('_') {
-                    if self.transfer_fields.contains(&key.as_str()) && child.is_string() {
+                    if self.transfer_fields.contains(&key) && child.is_string() {
                         let typed = match deep {
                             true => too_deep(),
                             false => (self.transfer_typed)(key),
@@ -280,7 +280,7 @@ impl Protocol {
                 self.collapse(child, key, depth + 1, member_shape(&members, key))?;
                 if let Some(members) = child.as_object() {
                     // What was not received is encoded from the value written.
-                    let transfer = match key.as_str() {
+                    let transfer = match key {
                         "value" | "extensionValue" => id.and_then(self.ie_contents),
                         key if self.transfer_fields.contains(&key) => {
                             Some((self.transfer_typed)(key)?)
@@ -292,8 +292,8 @@ impl Protocol {
                         // The decoded value, as the object itself when it has no member
                         // of a transfer, or the `octets` alone.
                         let octets = members.get("octets").filter(|_| members.len() == 1);
-                        let wire = if !members.keys().any(|name| of_a_transfer(name)) {
-                            Value::String(hex(&(transfer.encode)(child)?))
+                        let wire = if !members.keys().any(of_a_transfer) {
+                            Value::String(hex(&(transfer.encode)(child)?).into())
                         } else if let Some(octets) = octets {
                             octets.clone()
                         } else {
@@ -354,7 +354,7 @@ impl Protocol {
         let typed = self.ie_type(id, shape);
         let typed = typed.map_err(|error| error.reworded(|what| format!("{what}: {octets}")))?;
         let value = object.get(field).unwrap_or(&Value::Null);
-        Ok(Value::String(hex(&(typed.encode)(value)?)))
+        Ok(Value::String(hex(&(typed.encode)(value)?).into()))
     }
 
     /// The name that ASN.1 gives the message of a direction and a procedure code.
@@ -928,7 +928,7 @@ impl Named {
         let protocol = self.protocol;
         let name = match protocol.ie_name_of(id) {
             Some(name) => name.into(),
-            None => id.to_string(),
+            None => id.to_string().into(),
         };
         let extended = match within {
             Within::Extensions(extended) => extended,
@@ -1243,7 +1243,7 @@ impl Written {
             },
             None => None,
         };
-        let contained = contained.map(|octets| Value::String(hex(&octets)));
+        let contained = contained.map(|octets| Value::String(hex(&octets).into()));
         let start = walk.writer.begin_open_type();
         let written = walk.write_type(row, contained.as_ref().unwrap_or(value), reading);
         walk.writer.end_open_type(start);
@@ -1329,7 +1329,7 @@ impl Written {
         let Some(members) = value.as_object() else {
             return Err(refused(reading));
         };
-        if members.keys().any(|name| of_a_transfer(name)) {
+        if members.keys().any(of_a_transfer) {
             let octets = members.get("octets").filter(|_| members.len() == 1);
             return match octets {
                 Some(octets) => reading.octets(octets),

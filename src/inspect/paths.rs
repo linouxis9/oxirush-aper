@@ -582,7 +582,7 @@ impl Protocol {
         let shape = match self.resolved(shape) {
             // A transfer that is written as its decoded value itself.
             Shape::Transfer(contained)
-                if !contained.is_empty() && !entry.keys().any(|name| of_a_transfer(name)) =>
+                if !contained.is_empty() && !entry.keys().any(of_a_transfer) =>
             {
                 self.resolved(Shape::Named(contained))
             }
@@ -687,9 +687,10 @@ impl Protocol {
             None => None,
         };
         let id = id.ok_or_else(no_identifier)?;
-        let name = self
-            .ie_name_of(id)
-            .map_or_else(|| id.to_string(), str::to_string);
+        let name = match self.ie_name_of(id) {
+            Some(name) => name.into(),
+            None => id.to_string().into(),
+        };
         let field = value_member(shape).unwrap_or("value");
         let value = entry.shift_remove(field).unwrap_or_default();
         // An IE that did not decode, or whose typed value has no place for what it was
@@ -748,7 +749,7 @@ impl Protocol {
                     let members = self.member_shapes(shape, entry);
                     let listed = entry.iter().map(|(name, value)| {
                         let of = member_shape(&members, name);
-                        Ok((name.clone(), self.written(value, of, depth + 1)?))
+                        Ok((name.to_string().into(), self.written(value, of, depth + 1)?))
                     });
                     Ok(Value::Object(listed.collect::<Result<_, Error>>()?))
                 }
@@ -869,7 +870,7 @@ impl Protocol {
                 // decoded value.
                 if let Shape::Transfer(contained) = self.resolved(shape)
                     && !contained.is_empty()
-                    && !object.keys().any(|name| of_a_transfer(name))
+                    && !object.keys().any(of_a_transfer)
                 {
                     let decoded = core::mem::take(object);
                     object.insert("decoded".into(), Value::Object(decoded));

@@ -238,7 +238,7 @@ fn read_type(types: &'static [Type], ty: usize, reader: &mut Reader<'_>) -> Resu
                 let plmn = oxirush_utils::identity::Plmn::from_ap_octets(octets);
                 Ok(match plmn {
                     Ok(plmn) if plmn.to_ap_octets() == octets => {
-                        Value::String(alloc::format!("{}-{}", plmn.mcc(), plmn.mnc()))
+                        Value::String(alloc::format!("{}-{}", plmn.mcc(), plmn.mnc()).into())
                     }
                     _ => utils::octets(&octets),
                 })
@@ -313,7 +313,7 @@ pub(crate) fn read_field(
                 // A size constraint on a UTF8String is not PER-visible (X.691 §10.3.7).
                 Text::Utf8 => reader.utf8_string()?,
             };
-            utils::text(&text)
+            utils::text(text.into_owned())
         }
         Field::ObjectIdentifier => json::object_identifier(&reader.object_identifier()?),
         Field::Named(ty) => read_type(types, ty.into(), reader)?,

@@ -141,7 +141,7 @@ pub fn paths(octets: &[u8]) {
     let path = format!("{start}{}", String::from_utf8_lossy(extra));
     let value = match serde_json::from_slice(value) {
         Ok(value) => value,
-        Err(_) => Value::String(String::from_utf8_lossy(value).into_owned()),
+        Err(_) => Value::from(String::from_utf8_lossy(value).into_owned()),
     };
 
     let set = aper::protocol::object_set::<Protocol>(pdu.direction(), pdu.procedure_code());
@@ -370,7 +370,7 @@ static POOL: LazyLock<Pool> = LazyLock::new(|| {
         for (path, value) in inspect::paths(&tree) {
             let last = path.rsplit('/').next().unwrap_or_default().to_owned();
             if let Value::String(text) = &value {
-                names.push(text.clone());
+                names.push(text.to_string());
             }
             let seen = values.entry(last).or_default();
             if seen.len() < 64 && !seen.contains(&value) {
@@ -410,7 +410,7 @@ impl Leaf {
             Leaf::Unsigned(number) => Value::from(*number),
             Leaf::Signed(number) => Value::from(*number),
             Leaf::Small(number) => Value::from(*number),
-            Leaf::Text(text) => Value::from(text.as_str()),
+            Leaf::Text(text) => Value::from(text.clone()),
             Leaf::Hex(octets) => Value::from(hex(octets)),
             Leaf::Bool(flag) => Value::from(*flag),
             Leaf::Null => Value::Null,
@@ -517,7 +517,7 @@ fn same_name(one: &str, other: &str) -> bool {
 fn held(entry: &Value) -> Option<&str> {
     let members = entry.as_object()?;
     let mut names = members.keys().filter(|name| *name != "criticality");
-    names.next().map(String::as_str)
+    names.next()
 }
 
 /// The path of the entry of a list that `path` is in, the deepest one.
@@ -912,7 +912,7 @@ pub fn walker(input: Walk) {
     let mut ie = codec::tree::Map::new();
     let mut octets = codec::tree::Map::new();
     octets.insert("octets".into(), Value::from(hex(&input.octets)));
-    ie.insert(input.id.to_string(), Value::Object(octets));
+    ie.insert(input.id.to_string().into(), Value::Object(octets));
     ie.insert("criticality".into(), Value::from("ignore"));
     let mut tree = codec::tree::Map::new();
     tree.insert("message".into(), message.clone());

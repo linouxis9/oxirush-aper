@@ -20,6 +20,10 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Changed
 
+- A tree holds the names that the table of the types gives (members,
+  alternatives, values of an ENUMERATED, IEs, messages) without copying them,
+  with oxirush-utils at 8f0b227: the tree of an NGAP INITIAL CONTEXT SETUP
+  REQUEST of 212 octets takes 119 allocations instead of 206.
 - The generator writes the table of the types of a protocol (`SCHEMA` in
   `inspect_registry.rs`, one row for each type) in the place of an
   `impl Tree` for each type: the trees of the IEs, the transfers and the
