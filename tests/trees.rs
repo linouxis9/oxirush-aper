@@ -812,6 +812,7 @@ fn a_written_tree_is_read_as_deep_as_256() {
 // ── A type of another protocol ──────────────────────────────────────────────
 
 /// The SETUP REQUEST of a Container that carries a Wrapper of Speed 7 and Mode fast.
+#[cfg(feature = "std")]
 fn wrapped() -> Vec<u8> {
     ies(&[(18, 1, &ies(&[(15, 0, &[7]), (16, 1, &[1])]))])
 }
