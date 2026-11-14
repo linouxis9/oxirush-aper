@@ -95,8 +95,8 @@ pub(super) fn position(part: &str) -> Option<usize> {
 impl Protocol {
     /// The name that ASN.1 gives the IE of an identifier, after `id-`.
     pub fn ie_name_of(&self, id: u16) -> Option<&'static str> {
-        let at = self.ie_names.binary_search_by_key(&id, |(known, _)| *known);
-        at.ok().map(|at| self.ie_names[at].1)
+        let at = *self.ie_index.get(usize::from(id))?;
+        self.ie_names.get(usize::from(at)).map(|(_, name)| *name)
     }
 
     /// The message of a direction and a procedure code, or of a name.

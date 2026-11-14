@@ -101,6 +101,10 @@ pub struct Protocol {
     /// The identifier of each IE with the name that ASN.1 gives it after `id-`, in the
     /// order of the identifiers.
     pub ie_names: &'static [(u16, &'static str)],
+    /// The index in `ie_names` of each identifier, which `schema::ie_index` makes.
+    pub ie_index: &'static [u16],
+    /// The rows of the containers of IEs in `schema`, which `schema::containers` makes.
+    pub containers: schema::Containers,
     /// The path of the type of each IE that has one type, and that of the type that its
     /// octets contain, which is empty for octets that contain none.
     pub ie_types: &'static [(u16, &'static str, &'static str)],

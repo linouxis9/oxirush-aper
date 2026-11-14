@@ -221,12 +221,18 @@ fn kind_of(name: &str) -> Option<&'static Kind> {
     at.ok().map(|at| &TYPES[at].1)
 }
 
+/// The index in `IE_NAMES` of each identifier.
+const IE_INDEX: [u16; IE_NAMES[IE_NAMES.len() - 1].0 as usize + 1] =
+    inspect::schema::ie_index(IE_NAMES);
+
 static TOY: Protocol = Protocol {
     name: "TOY",
     root: "toy",
     schema: &[],
     messages: MESSAGES,
     ie_names: IE_NAMES,
+    ie_index: &IE_INDEX,
+    containers: inspect::schema::containers(&[]),
     ie_types: &[
         (15, "crate::toy::Cause", ""),
         (16, "crate::toy::Holder", ""),
@@ -829,12 +835,16 @@ mod another_protocol {
     const WRAPPER_IES: &[(u16, Criticality, Presence)] =
         &[(15, Reject, Mandatory), (16, Ignore, Optional)];
 
+    const OTHER_IES: &[(u16, &str)] = &[(15, "Speed"), (16, "Mode"), (40, "Blob")];
+    const OTHER_INDEX: [u16; 41] = inspect::schema::ie_index(OTHER_IES);
     const OTHER_TABLES: Protocol = Protocol {
         name: "OTHER",
         root: "other",
         schema: &[],
         messages: &[],
-        ie_names: &[(15, "Speed"), (16, "Mode"), (40, "Blob")],
+        ie_names: OTHER_IES,
+        ie_index: &OTHER_INDEX,
+        containers: inspect::schema::containers(&[]),
         ie_types: &[
             (15, "crate::other::Speed", ""),
             (16, "crate::other::Mode", ""),

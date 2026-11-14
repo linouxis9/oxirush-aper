@@ -132,6 +132,63 @@ pub fn position(types: &[Type], name: &str) -> Option<usize> {
     types.binary_search_by(|ty| ty.name.cmp(name)).ok()
 }
 
+/// The rows of the containers of IEs in the table of the types of a protocol, which the
+/// walker of the trees reads the IEs of a message, of a transfer and of an extension
+/// container with.
+#[derive(Clone, Copy, Debug)]
+pub struct Containers {
+    /// `ProtocolIE-Container`.
+    pub ies: Option<usize>,
+    /// `ProtocolIE-Field`.
+    pub field: Option<usize>,
+    /// `ProtocolExtensionContainer`.
+    pub extensions: Option<usize>,
+    /// `ProtocolExtensionField`.
+    pub extension: Option<usize>,
+}
+
+/// The rows of the containers of IEs in `types`, made when the tables are compiled.
+pub const fn containers(types: &[Type]) -> Containers {
+    Containers {
+        ies: const_position(types, "ProtocolIE-Container"),
+        field: const_position(types, "ProtocolIE-Field"),
+        extensions: const_position(types, "ProtocolExtensionContainer"),
+        extension: const_position(types, "ProtocolExtensionField"),
+    }
+}
+
+/// [`position`], when the tables are compiled.
+const fn const_position(types: &[Type], name: &str) -> Option<usize> {
+    let mut row = 0;
+    while row < types.len() {
+        let (known, name) = (types[row].name.as_bytes(), name.as_bytes());
+        if known.len() == name.len() {
+            let mut at = 0;
+            while at < name.len() && known[at] == name[at] {
+                at += 1;
+            }
+            if at == name.len() {
+                return Some(row);
+            }
+        }
+        row += 1;
+    }
+    None
+}
+
+/// The index in `ie_names`, which are in the order of their identifiers, of each
+/// identifier below `N`: `u16::MAX` for one that no IE has. `N` is one more than the
+/// last identifier. Made when the tables are compiled.
+pub const fn ie_index<const N: usize>(ie_names: &[(u16, &str)]) -> [u16; N] {
+    let mut index = [u16::MAX; N];
+    let mut at = 0;
+    while at < ie_names.len() {
+        index[ie_names[at].0 as usize] = at as u16;
+        at += 1;
+    }
+    index
+}
+
 // ── From octets to a tree ───────────────────────────────────────────────────
 
 /// The tree of the value of the type `ty` of `types` that `octets` are, which are its

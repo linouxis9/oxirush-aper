@@ -400,7 +400,7 @@ pub fn tree(
     let ies = (typed.shown)(raw).then(|| {
         let named = Named {
             protocol,
-            rows: Containers::of(protocol.schema),
+            rows: protocol.containers,
         };
         let sent = match protocol.message_shape(direction, code) {
             Shape::Message(sent) => Some(sent),
@@ -677,25 +677,6 @@ pub fn tree_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, E
 
 // ── The tree of a PDU in one pass ───────────────────────────────────────────
 
-/// The rows of the containers of IEs in the table of the types of a protocol.
-struct Containers {
-    ies: Option<usize>,
-    field: Option<usize>,
-    extensions: Option<usize>,
-    extension: Option<usize>,
-}
-
-impl Containers {
-    fn of(types: &[schema::Type]) -> Self {
-        Self {
-            ies: schema::position(types, "ProtocolIE-Container"),
-            field: schema::position(types, "ProtocolIE-Field"),
-            extensions: schema::position(types, "ProtocolExtensionContainer"),
-            extension: schema::position(types, "ProtocolExtensionField"),
-        }
-    }
-}
-
 /// What holds an IE, which gives its criticality and its type: the IEs of a message or
 /// of a transfer, of this one when the tables have it, an IE alone or as an entry of a
 /// list, or the IEs of an extension container of the type that the bindings give this
@@ -722,7 +703,7 @@ impl Within {
 /// types: the tree that the view of the PDU gives by name.
 struct Named {
     protocol: &'static Protocol,
-    rows: Containers,
+    rows: schema::Containers,
 }
 
 impl Named {
@@ -1013,7 +994,7 @@ const ONE_PASS: usize = 64;
 /// written as its name, and the view then writes it or says why it does not.
 pub(super) struct Written {
     protocol: &'static Protocol,
-    rows: Containers,
+    rows: schema::Containers,
     /// The row of the type of the message, and the message whose IEs it holds.
     message: (usize, Option<Sent>),
     /// How deep the member that is being written is.
@@ -1044,7 +1025,7 @@ impl Written {
         };
         let written = Written {
             protocol,
-            rows: Containers::of(types),
+            rows: protocol.containers,
             message: (row, sent),
             depth: core::cell::Cell::new(0),
         };
@@ -1292,7 +1273,7 @@ impl Written {
         let typed = (other.carried_typed)(name).ok_or_else(|| refused(reading))?;
         let written = Written {
             protocol: other,
-            rows: Containers::of(other.schema),
+            rows: other.containers,
             message: (usize::MAX, None),
             depth: core::cell::Cell::new(self.depth.get()),
         };

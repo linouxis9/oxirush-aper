@@ -110,6 +110,10 @@ macro_rules! __inspect {
         /// A tree: the JSON value of `oxirush-utils`.
         pub use $crate::json::Value;
 
+        /// The index in `IE_NAMES` of each identifier, made when the crate is compiled.
+        const IE_INDEX: [u16; IE_NAMES[IE_NAMES.len() - 1].0 as usize + 1] =
+            shared::schema::ie_index(IE_NAMES);
+
         /// The tables of the protocol, as the paths read them.
         pub(crate) static TABLES: Protocol = Protocol {
             name: PROTOCOL,
@@ -117,6 +121,8 @@ macro_rules! __inspect {
             schema: SCHEMA,
             messages: MESSAGES,
             ie_names: IE_NAMES,
+            ie_index: &IE_INDEX,
+            containers: shared::schema::containers(SCHEMA),
             ie_types: IE_TYPES,
             extension_types: EXTENSION_TYPES,
             carried: CARRIED,

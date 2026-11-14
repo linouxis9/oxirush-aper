@@ -88,6 +88,12 @@ All notable changes to `oxirush-aper` are recorded here.
   `edit`, `tree` and `jer`; the Reproduce workflow and the TOY job compare both with
   what the generator writes.
 
+- `inspect::Protocol` has the rows of the containers of IEs (`containers`) and the index
+  of each IE in `ie_names` by its identifier (`ie_index`), which `schema::containers` and
+  `schema::ie_index` make when the tables are compiled: the tree of a PDU no longer
+  searches the table of the types for its containers, nor the IEs for the name of each.
+  The tree of an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets takes 7.8 µs where it
+  took 8.6 µs, and its PDU is written from it in 6.3 µs (6.8 µs).
 - The tests of the tables that `__protocol!` and `__inspect!` wrote into each protocol
   crate, as unit tests of its library, are the checks of `checks`, with the hidden
   feature `__checks`: a protocol crate runs them from `tests/` with
