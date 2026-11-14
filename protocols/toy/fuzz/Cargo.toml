@@ -85,3 +85,10 @@ path = "../../fuzz/fuzz_targets/jer.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "walker"
+path = "../../fuzz/fuzz_targets/walker.rs"
+test = false
+doc = false
+bench = false

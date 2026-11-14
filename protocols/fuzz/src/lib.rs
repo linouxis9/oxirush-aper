@@ -884,3 +884,41 @@ pub fn jer(input: Jer) {
         written_pdu(&written);
     }
 }
+
+/// An IE of any identifier, as octets that the fuzzer gives, in the message of a PDU of
+/// the fixtures.
+#[derive(Arbitrary, Debug)]
+pub struct Walk {
+    base: u16,
+    id: u16,
+    octets: Vec<u8>,
+}
+
+/// The octets of an IE of any identifier, in the message of a PDU of the fixtures: its
+/// type reads them through the walker of the table of the types, which in a build with
+/// debug assertions, as a fuzz build, is checked to read as values the octets that the
+/// typed decoder reads. The tree of the PDU is the PDU again: the value of the IE that
+/// the walker read writes the same octets, and octets that it did not read stay as they
+/// are.
+pub fn walker(input: Walk) {
+    let pool = &*POOL;
+    let Some(pdu) = pool.pdu(input.base) else {
+        return;
+    };
+    let base = pdu.to_tree();
+    let Some(message) = base.get("message") else {
+        return;
+    };
+    let mut ie = codec::tree::Map::new();
+    let mut octets = codec::tree::Map::new();
+    octets.insert("octets".into(), Value::from(hex(&input.octets)));
+    ie.insert(input.id.to_string(), Value::Object(octets));
+    ie.insert("criticality".into(), Value::from("ignore"));
+    let mut tree = codec::tree::Map::new();
+    tree.insert("message".into(), message.clone());
+    tree.insert("ies".into(), Value::Array(vec![Value::Object(ie)]));
+    let Ok(written) = Pdu::from_tree(&Value::Object(tree)) else {
+        return;
+    };
+    written_pdu(&written);
+}

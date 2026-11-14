@@ -62,4 +62,5 @@ jobs:
          {"target": "edit", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
          {"target": "tree", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
          {"target": "transfer", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
-         {"target": "jer", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"}]
+         {"target": "jer", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
+         {"target": "walker", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"}]

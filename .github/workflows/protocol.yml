@@ -224,6 +224,7 @@ jobs:
       - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run transfer -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run walker -- -max_total_time=60 -max_len=1024 -len_control=0
 
   # The revisions of build/revisions wherever the repository names one, as
   # protocols/build/pin.py writes them.

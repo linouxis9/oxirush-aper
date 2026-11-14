@@ -177,7 +177,8 @@ jobs:
                {target: "edit", max_len: 1024, flags: "-len_control=0"},
                {target: "tree", max_len: 1024, flags: "-len_control=0"},
                {target: "transfer", max_len: 1024, flags: "-len_control=0"},
-               {target: "jer", max_len: 1024, flags: "-len_control=0"}]
+               {target: "jer", max_len: 1024, flags: "-len_control=0"},
+               {target: "walker", max_len: 1024, flags: "-len_control=0"}]
               | map(. + {dir: "oxirush-\($p)", name: $p})')
           fi
           if [ "$SCHEDULE" = "$WEEKLY" ] || [ "$REPORT" = true ]; then
