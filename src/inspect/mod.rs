@@ -63,6 +63,11 @@ pub struct Typed {
     pub decode: fn(&[u8]) -> Result<Decoded, Error>,
     /// The octets of the value of the type that the JSON form writes.
     pub encode: fn(&Value) -> Result<Vec<u8>, Error>,
+    /// Whether octets are a value of the type that encodes back to them, which a tree
+    /// shows as its value: the typed decoder reads them, and they come back.
+    pub shown: fn(&[u8]) -> bool,
+    /// The row of the type in the table of the types of the protocol.
+    pub row: fn() -> usize,
 }
 
 /// A message of a protocol, as its tables have it: its object set, the functions of its
@@ -85,6 +90,8 @@ pub struct Protocol {
     pub name: &'static str,
     /// The first segment of the paths into the IEs of the message of a PDU: `ngap`.
     pub root: &'static str,
+    /// The table of the types, which the trees are read and written with.
+    pub schema: &'static [schema::Type],
     /// Each SEQUENCE with its members and each CHOICE with its alternatives, by the
     /// names that ASN.1 gives them, and each type that is a list or a bit string, in
     /// the order of the names of the types.

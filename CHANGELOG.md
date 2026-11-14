@@ -24,6 +24,12 @@ All notable changes to `oxirush-aper` are recorded here.
   30,690 generated lines fewer, oxirush-s1ap 13,168. The typed decoder still
   says whether a value is exact. A type of the bindings no longer implements
   `json::Tree`.
+- The tree of a PDU is read from its octets in one pass with the table of the
+  types, each IE by name, without the view that was decoded and then named: the
+  same trees, in 11.6 µs in the place of 27.5 µs for an NGAP INITIAL CONTEXT
+  SETUP REQUEST of 212 octets. A row of the table has the name of its type in the
+  bindings, and `inspect::Typed` says whether octets are a value that writes them
+  back (`shown`) and the row of its type (`row`).
 - `json` and the functions of `protocol` behind the methods that the bindings
   generate (`of_message`, `protocol_ies`, `set_protocol_ies`, `message_octets`,
   `holds_key`, `items_of_fields`) are hidden from the documentation: a program

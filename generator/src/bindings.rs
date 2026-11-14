@@ -924,8 +924,9 @@ impl Bindings {
         }
         // The OCTET STRING of oxirush-aper, which is the type of an IE whose octets the
         // ASN.1 leaves open, has a row too.
-        const OCTETS: (&str, &str) = (
+        const OCTETS: (&str, &str, &str) = (
             "OCTET STRING",
+            "Octets",
             "K::Alias { field: F::Octets(0, UNBOUNDED, false), form: None, secret: false }",
         );
         let mut names: Vec<&str> = definitions.iter().map(|d| d.asn.as_str()).collect();
@@ -1038,12 +1039,12 @@ impl Bindings {
                     )
                 }
             };
-            written.push((definition.asn.as_str(), kind));
+            written.push((definition.asn.as_str(), definition.name.as_str(), kind));
         }
-        written.push((OCTETS.0, OCTETS.1.to_string()));
+        written.push((OCTETS.0, OCTETS.1, OCTETS.2.to_string()));
         written.sort_by(|a, b| a.0.cmp(b.0));
-        for (at, (name, kind)) in written.iter().enumerate() {
-            writeln!(out, "/* {at} */ T {{ name: {name:?}, kind: {kind} }},")?;
+        for (at, (name, rust, kind)) in written.iter().enumerate() {
+            writeln!(out, "/* {at} */ T {{ name: {name:?}, rust: {rust:?}, kind: {kind} }},")?;
         }
         writeln!(out, "];")?;
         Ok(out)

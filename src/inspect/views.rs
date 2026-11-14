@@ -27,9 +27,10 @@ use alloc::vec::Vec;
 use oxirush_utils::tree::{Map, Value};
 
 use super::paths::{extended, member_shape, of_a_transfer, written_ie};
-use super::{Protocol, Shape, Typed, foreign, same_name};
+use super::schema::{self, Field};
+use super::{Protocol, Sent, Shape, Typed, foreign, same_name};
 use crate::json::{self, hex};
-use crate::{Direction, Error, ErrorKind};
+use crate::{Direction, Error, ErrorKind, Reader};
 
 /// How deep in a view an IE or a transfer is still decoded.
 const NESTING: usize = 64;
@@ -393,16 +394,33 @@ pub fn tree(
 ) -> Value {
     // The message as a view has it, whose IEs are moved into the tree, and not copied. The
     // container of the message is read whatever its form: its IEs say theirs.
-    let decoded = (protocol.message_typed(direction, code).decode)(raw).ok();
-    let ies = decoded
-        .filter(|(_, exact, _)| *exact)
-        .and_then(|(mut message, ..)| {
-            protocol.expand(&mut message, 0, protocol.message_shape(direction, code));
-            message.get_mut("protocolIEs").map(core::mem::take)
-        });
-    tree_of(protocol, direction, code, criticality, ies, || {
-        hex(raw).into()
-    })
+    // The message in one pass, with the table of the types, where it is a value that
+    // writes its octets back: its IEs by name.
+    let typed = protocol.message_typed(direction, code);
+    let ies = (typed.shown)(raw).then(|| {
+        let named = Named {
+            protocol,
+            rows: Containers::of(protocol.schema),
+        };
+        let sent = match protocol.message_shape(direction, code) {
+            Shape::Message(sent) => Some(sent),
+            _ => None,
+        };
+        let read = &mut Reader::new(raw);
+        let message = named.row((typed.row)(), read, 0, sent, Within::Ie).ok()?;
+        let Value::Object(mut message) = message else {
+            return None;
+        };
+        message.shift_remove("protocolIEs")
+    });
+    tree_of(
+        protocol,
+        direction,
+        code,
+        criticality,
+        ies.flatten(),
+        || hex(raw).into(),
+    )
 }
 
 /// The tree of the PDU of `protocol` of a direction, a procedure code and a criticality,
@@ -426,10 +444,7 @@ fn tree_of(
             tree.insert("direction".into(), direction.name().into());
         }
     }
-    let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
-    let ies = ies
-        .filter(Value::is_array)
-        .and_then(|listed| protocol.by_name(listed, Shape::Ies(sent)).ok());
+    let ies = ies.filter(Value::is_array);
     match ies {
         Some(ies) => tree.insert("ies".into(), ies),
         None => tree.insert("octets".into(), octets()),
@@ -625,12 +640,349 @@ pub fn tree_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, E
     let mut message = view["message"].clone();
     protocol.from_jer(&mut message, shape);
     let ies = message.get("protocolIEs").cloned();
+    // The IEs of the view, by name.
+    let name = protocol.message_name_of(direction, code);
+    let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
+    let named = ies
+        .clone()
+        .filter(Value::is_array)
+        .and_then(|listed| protocol.by_name(listed, Shape::Ies(sent)).ok());
     let octets = match ies {
         Some(_) => Value::Null,
         None => hex(&message_octets(protocol, direction, code, message)?).into(),
     };
     let criticality = view["criticality"].clone();
-    Ok(tree_of(protocol, direction, code, criticality, ies, || {
-        octets
-    }))
+    Ok(tree_of(
+        protocol,
+        direction,
+        code,
+        criticality,
+        named,
+        || octets,
+    ))
+}
+
+// ── The tree of a PDU in one pass ───────────────────────────────────────────
+
+/// The rows of the containers of IEs in the table of the types of a protocol.
+struct Containers {
+    ies: Option<usize>,
+    field: Option<usize>,
+    extensions: Option<usize>,
+    extension: Option<usize>,
+}
+
+impl Containers {
+    fn of(types: &[schema::Type]) -> Self {
+        Self {
+            ies: schema::position(types, "ProtocolIE-Container"),
+            field: schema::position(types, "ProtocolIE-Field"),
+            extensions: schema::position(types, "ProtocolExtensionContainer"),
+            extension: schema::position(types, "ProtocolExtensionField"),
+        }
+    }
+}
+
+/// What holds an IE, which gives its criticality and its type: the IEs of a message or
+/// of a transfer, of this one when the tables have it, an IE alone or as an entry of a
+/// list, or the IEs of an extension container of the type that the bindings give this
+/// name.
+#[derive(Clone, Copy)]
+enum Within {
+    Ies(Option<Sent>),
+    Ie,
+    Extensions(&'static str),
+}
+
+impl Within {
+    /// The shape that the paths give a container of this kind.
+    fn shape(self) -> Shape {
+        match self {
+            Within::Ies(sent) => Shape::Ies(sent),
+            Within::Ie => Shape::Ie(None),
+            Within::Extensions(extended) => Shape::Extension(None, extended),
+        }
+    }
+}
+
+/// The reading of the tree of a PDU from its octets in one pass, with the table of the
+/// types: the tree that the view of the PDU gives by name.
+struct Named {
+    protocol: &'static Protocol,
+    rows: Containers,
+}
+
+impl Named {
+    /// The tree of a value of the row `row`, `depth` deep in the view of the PDU, read
+    /// from `reader`. `sent` is the message whose IEs a container of the row holds.
+    fn row(
+        &self,
+        row: usize,
+        reader: &mut Reader<'_>,
+        depth: usize,
+        sent: Option<Sent>,
+        within: Within,
+    ) -> Result<Value, Error> {
+        let types = self.protocol.schema;
+        let ty = &types[row];
+        match &ty.kind {
+            schema::Kind::Sequence {
+                names,
+                members,
+                extensible,
+            } => {
+                let extended = match extensible {
+                    true => reader.bit()?,
+                    false => false,
+                };
+                let optional = members.iter().filter(|member| member.optional).count();
+                let present = match optional {
+                    0 => 0,
+                    count => reader.bits(count)?,
+                };
+                let mut tree = Map::with_capacity(members.len());
+                let mut position = 0;
+                for (name, member) in names.iter().zip(*members) {
+                    if member.optional {
+                        position += 1;
+                        if present & (1 << (optional - position)) == 0 {
+                            continue;
+                        }
+                    }
+                    let value = self
+                        .member(ty, name, &member.ty, reader, depth, sent)
+                        .map_err(|error| error.in_field(member.field))?;
+                    tree.push((*name).into(), value);
+                }
+                if extended {
+                    reader.skip_additions()?;
+                }
+                Ok(Value::Object(tree))
+            }
+            schema::Kind::Choice {
+                names,
+                alternatives,
+                root,
+                extensible,
+            } => {
+                let additions = alternatives.len() as u64 - root;
+                let index = reader.index(*root, additions, *extensible)?;
+                let index = (index as usize).min(alternatives.len() - 1);
+                let field = &alternatives[index];
+                let value = match index < *root as usize {
+                    true => self.field(field, reader, depth + 1, Within::Ie)?,
+                    false => {
+                        let octets = reader.open_type()?;
+                        self.field(field, &mut Reader::new(&octets), depth + 1, Within::Ie)?
+                    }
+                };
+                Ok(oxirush_utils::tree::alternative(names[index], value))
+            }
+            schema::Kind::Alias { field, form, .. } => match form {
+                Some(_) => schema::read_field(types, &Field::Named(row as u16), reader),
+                None => self.field(field, reader, depth, within),
+            },
+            schema::Kind::Enumerated { .. } => {
+                schema::read_field(types, &Field::Named(row as u16), reader)
+            }
+        }
+    }
+
+    /// The tree of the member `name`, of a field, of a value of the type `of`.
+    fn member(
+        &self,
+        of: &schema::Type,
+        name: &str,
+        field: &Field,
+        reader: &mut Reader<'_>,
+        depth: usize,
+        sent: Option<Sent>,
+    ) -> Result<Value, Error> {
+        let rows = &self.rows;
+        let within = match field {
+            Field::Named(row) if Some(usize::from(*row)) == rows.ies => {
+                // The IEs of a message, or of a transfer by the name of its type.
+                Within::Ies(sent.or_else(|| self.protocol.transfer(of.rust)))
+            }
+            Field::Named(row) if Some(usize::from(*row)) == rows.extensions => {
+                Within::Extensions(of.rust)
+            }
+            // The octets of a transfer, as the value that they contain.
+            Field::Octets(lower, upper, extensible)
+                if self.protocol.transfer_fields.contains(&name) =>
+            {
+                let octets = reader.octet_string(*lower, *upper, *extensible)?;
+                let typed = match depth > NESTING {
+                    true => too_deep(),
+                    false => (self.protocol.transfer_typed)(name),
+                };
+                return Ok(self.contained(&octets, typed.ok(), depth + 1));
+            }
+            _ => Within::Ie,
+        };
+        self.field(field, reader, depth + 1, within)
+    }
+
+    /// The tree of a field, `depth` deep in the view.
+    fn field(
+        &self,
+        field: &Field,
+        reader: &mut Reader<'_>,
+        depth: usize,
+        within: Within,
+    ) -> Result<Value, Error> {
+        let rows = &self.rows;
+        match *field {
+            Field::Named(row)
+                if Some(usize::from(row)) == rows.field
+                    || Some(usize::from(row)) == rows.extension =>
+            {
+                self.ie(usize::from(row), reader, depth, within)
+            }
+            Field::Named(row) => self.row(row.into(), reader, depth, None, within),
+            Field::List(of, lower, upper) if upper < 65536 => {
+                let count = reader.size(lower, upper)?;
+                let mut list = reader.list(count);
+                for _ in 0..count {
+                    list.push(self.field(of, reader, depth + 1, within)?);
+                }
+                Ok(Value::Array(list))
+            }
+            Field::List(of, lower, upper) => {
+                let mut list = Vec::new();
+                let (mut count, mut more) = reader.length()?;
+                loop {
+                    let size = list.len().saturating_add(count);
+                    if !more || (upper != crate::UNBOUNDED && size > upper) {
+                        Reader::check_size(size, lower, upper)?;
+                    }
+                    for _ in 0..count {
+                        list.push(self.field(of, reader, depth + 1, within)?);
+                    }
+                    if !more {
+                        break;
+                    }
+                    (count, more) = reader.length_after(count)?;
+                }
+                Ok(Value::Array(list))
+            }
+            ref field => schema::read_field(self.protocol.schema, field, reader),
+        }
+    }
+
+    /// The IE of an entry of a container of `within`, of the row `row`, `depth` deep in
+    /// the view: its name with its value, or with its octets when they are no value that
+    /// writes them back, and its criticality when it is not the one that is assigned.
+    fn ie(
+        &self,
+        row: usize,
+        reader: &mut Reader<'_>,
+        depth: usize,
+        within: Within,
+    ) -> Result<Value, Error> {
+        let types = self.protocol.schema;
+        let schema::Kind::Sequence {
+            members,
+            extensible,
+            ..
+        } = &types[row].kind
+        else {
+            return Err(Error::new(ErrorKind::Value, "a field of IEs is a SEQUENCE"));
+        };
+        if *extensible && reader.bit()? {
+            return Err(Error::new(
+                ErrorKind::Value,
+                "a field of IEs has no additions",
+            ));
+        }
+        let [id, criticality, value] = members else {
+            return Err(Error::new(
+                ErrorKind::Value,
+                "a field of IEs has three members",
+            ));
+        };
+        let id = schema::read_field(types, &id.ty, reader)?;
+        let criticality = schema::read_field(types, &criticality.ty, reader)?;
+        let Field::Open = value.ty else {
+            return Err(Error::new(
+                ErrorKind::Value,
+                "the value of an IE is an open type",
+            ));
+        };
+        let octets = reader.open_type()?;
+        let id = id.as_u64().and_then(|id| u16::try_from(id).ok());
+        let id = id.ok_or_else(|| Error::new(ErrorKind::Value, "an IE has its identifier"))?;
+        let protocol = self.protocol;
+        let name = match protocol.ie_name_of(id) {
+            Some(name) => name.into(),
+            None => id.to_string(),
+        };
+        let extended = match within {
+            Within::Extensions(extended) => extended,
+            _ => "",
+        };
+        let typed = match depth > NESTING {
+            true => None,
+            false => match (protocol.extension_typed)(id, extended) {
+                Some(typed) => Some(typed),
+                None => (protocol.ie_typed)(id).ok(),
+            },
+        };
+        let value = match typed {
+            Some(typed) if (typed.shown)(&octets) => {
+                let read = &mut Reader::new(&octets);
+                match (protocol.ie_contents)(id) {
+                    // An OCTET STRING (CONTAINING ...): the value that it contains, or the
+                    // octets of the IE when they are no value that writes them back.
+                    Some(contents) => {
+                        let row = Field::Named((typed.row)() as u16);
+                        let contained = schema::read_field(types, &row, read).ok();
+                        let contained = contained.and_then(|value| json::unhex(value.as_str()?));
+                        match contained {
+                            Some(contained) if (contents.shown)(&contained) => {
+                                let read = &mut Reader::new(&contained);
+                                let value =
+                                    self.row((contents.row)(), read, depth + 2, None, Within::Ie);
+                                value.unwrap_or_else(|_| octets_alone(&octets))
+                            }
+                            _ => octets_alone(&octets),
+                        }
+                    }
+                    None => {
+                        let value = self.row((typed.row)(), read, depth + 1, None, Within::Ie);
+                        value.unwrap_or_else(|_| octets_alone(&octets))
+                    }
+                }
+            }
+            _ => octets_alone(&octets),
+        };
+        let mut shown = Map::with_capacity(2);
+        shown.push(name, value);
+        if criticality.as_str() != protocol.assigned(within.shape(), id) {
+            shown.push("criticality".into(), criticality);
+        }
+        Ok(Value::Object(shown))
+    }
+
+    /// The value that the octets of a transfer contain, `depth` deep in the view, or the
+    /// octets when they are none that writes them back.
+    fn contained(&self, octets: &[u8], typed: Option<Typed>, depth: usize) -> Value {
+        match typed {
+            Some(typed) if (typed.shown)(octets) => {
+                let read = &mut Reader::new(octets);
+                match self.row((typed.row)(), read, depth + 1, None, Within::Ie) {
+                    Ok(value) => value,
+                    Err(_) => octets_alone(octets),
+                }
+            }
+            _ => octets_alone(octets),
+        }
+    }
+}
+
+/// What a tree has for an IE or a transfer that has no value: its octets.
+fn octets_alone(octets: &[u8]) -> Value {
+    let mut alone = Map::with_capacity(1);
+    alone.push("octets".into(), hex(octets).into());
+    Value::Object(alone)
 }

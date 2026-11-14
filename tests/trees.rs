@@ -224,6 +224,7 @@ fn kind_of(name: &str) -> Option<&'static Kind> {
 static TOY: Protocol = Protocol {
     name: "TOY",
     root: "toy",
+    schema: &[],
     types: TYPES,
     messages: MESSAGES,
     ie_names: IE_NAMES,
@@ -277,18 +278,26 @@ fn ie_typed(id: u16) -> Result<Typed, Error> {
         18 => Ok(Typed {
             decode: octets_decode,
             encode: octets_encode,
+            shown: |raw| shown(octets_decode(raw)),
+            row: no_row,
         }),
         21 | 22 => Ok(Typed {
             decode: payload_decode,
             encode: payload_encode,
+            shown: |raw| shown(payload_decode(raw)),
+            row: no_row,
         }),
         20 => Ok(Typed {
             decode: items_decode,
             encode: items_encode,
+            shown: |raw| shown(items_decode(raw)),
+            row: no_row,
         }),
         30 => Ok(Typed {
             decode: item_decode,
             encode: item_encode,
+            shown: |raw| shown(item_decode(raw)),
+            row: no_row,
         }),
         _ => Err(Error::new(
             ErrorKind::UnknownIe,
@@ -298,6 +307,17 @@ fn ie_typed(id: u16) -> Result<Typed, Error> {
 }
 
 // ── The codecs ──────────────────────────────────────────────────────────────
+
+/// Whether a codec of the toy protocol reads octets as a value that writes them back.
+fn shown(decoded: Result<inspect::Decoded, Error>) -> bool {
+    decoded.is_ok_and(|(_, exact, refused)| exact && refused.is_none())
+}
+
+/// The codecs of the toy protocol are written by hand, and have no row in a table of
+/// types: the trees that the tests read are written as they are.
+fn no_row() -> usize {
+    usize::MAX
+}
 
 fn hex(octets: &[u8]) -> String {
     octets.iter().map(|octet| format!("{octet:02x}")).collect()
@@ -397,6 +417,8 @@ fn ies_typed() -> Typed {
     Typed {
         decode: ies_decode,
         encode: ies_encode,
+        shown: |raw| shown(ies_decode(raw)),
+        row: no_row,
     }
 }
 
@@ -418,6 +440,8 @@ fn release_typed() -> Typed {
     Typed {
         decode: release_decode,
         encode: release_encode,
+        shown: |raw| shown(release_decode(raw)),
+        row: no_row,
     }
 }
 
@@ -488,6 +512,8 @@ fn cause_typed() -> Typed {
     Typed {
         decode: cause_decode,
         encode: cause_encode,
+        shown: |raw| shown(cause_decode(raw)),
+        row: no_row,
     }
 }
 
@@ -566,6 +592,8 @@ fn holder_typed() -> Typed {
     Typed {
         decode: holder_decode,
         encode: holder_encode,
+        shown: |raw| shown(holder_decode(raw)),
+        row: no_row,
     }
 }
 
@@ -601,6 +629,8 @@ fn private_typed() -> Typed {
     Typed {
         decode: private_decode,
         encode: private_encode,
+        shown: |raw| shown(private_decode(raw)),
+        row: no_row,
     }
 }
 
@@ -684,7 +714,7 @@ fn a_tree_deeper_than_256_is_not_written() {
     assert_eq!(written(&deeper).unwrap_err().kind(), ErrorKind::Value);
     // The tree of 40 levels, 80 deep, is written back
     let octets = ies(&[(15, 1, &nested(40))]);
-    let tree = inspect::tree(&TOY, Direction::Initiating, 1, tree!("reject"), &octets);
+    let tree = hand(40, tree!({"radioNetwork": "unspecified"}));
     assert_eq!(written(&tree).unwrap(), octets);
 }
 
@@ -801,6 +831,7 @@ mod another_protocol {
     const OTHER_TABLES: Protocol = Protocol {
         name: "OTHER",
         root: "other",
+        schema: &[],
         types: &[("Wrapper", Kind::Sequence(CONTAINER_OF_IES))],
         messages: &[],
         ie_names: &[(15, "Speed"), (16, "Mode"), (40, "Blob")],
@@ -826,14 +857,20 @@ mod another_protocol {
             15 => Ok(Typed {
                 decode: item_decode,
                 encode: item_encode,
+                shown: |raw| shown(item_decode(raw)),
+                row: no_row,
             }),
             16 => Ok(Typed {
                 decode: mode_decode,
                 encode: mode_encode,
+                shown: |raw| shown(mode_decode(raw)),
+                row: no_row,
             }),
             40 => Ok(Typed {
                 decode: octets_decode,
                 encode: octets_encode,
+                shown: |raw| shown(octets_decode(raw)),
+                row: no_row,
             }),
             _ => Err(Error::new(
                 ErrorKind::UnknownIe,
@@ -854,6 +891,7 @@ mod another_protocol {
     static SECOND: Protocol = Protocol {
         name: "SECOND",
         root: "second",
+        schema: &[],
         types: &[("Gauge", Kind::Sequence(CONTAINER_OF_IES))],
         carried: &[(40, "Gauge", "crate::second::Gauge")],
         transfers: &[("Gauge", "Gauge", WRAPPER_IES)],
@@ -919,7 +957,9 @@ mod another_protocol {
         assert_eq!(inspect::check_path(&TOY, "SetupRequest", mode), Ok(()));
         let names = inspect::enumerated_at(&TOY, "SetupRequest", mode).unwrap();
         assert_eq!(names, Some(&MODES[..]));
-        let mut tree = inspect::tree(&TOY, Direction::Initiating, 1, tree!("reject"), &wrapped());
+        let mut tree = tree!({"message": "SetupRequest", "ies": [
+            {"Container": hex(&ies(&[(15, 0, &[7]), (16, 1, &[1])]))},
+        ]});
         let speed = "/toy/Container/Wrapper/Speed";
         assert_eq!(
             inspect::select(&TOY, &tree, speed).unwrap_err().kind(),
@@ -967,7 +1007,9 @@ fn a_type_of_a_protocol_that_is_not_registered_is_refused_with_the_call_that_reg
     let path = "/toy/Container/GhostBlob/a";
     let error = inspect::check_path(&TOY, "SetupRequest", path).unwrap_err();
     assert!(error.to_string().contains(CALL), "{error}");
-    let mut tree = inspect::tree(&TOY, Direction::Initiating, 1, tree!("reject"), &wrapped());
+    let mut tree = tree!({"message": "SetupRequest", "ies": [
+        {"Container": hex(&ies(&[(15, 0, &[7]), (16, 1, &[1])]))},
+    ]});
     inspect::open(&TOY, &mut tree, "/toy/Container/GhostBlob").unwrap();
     let error = inspect::select(&TOY, &tree, path).unwrap_err();
     assert!(error.to_string().contains(CALL), "{error}");

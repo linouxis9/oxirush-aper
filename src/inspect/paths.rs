@@ -289,7 +289,7 @@ impl Protocol {
 
     /// The transfer of protocol IEs whose type the bindings name `name`, as a message
     /// of its object set: `None` for a type that is no such transfer.
-    fn transfer(&self, name: &str) -> Option<Sent> {
+    pub(super) fn transfer(&self, name: &str) -> Option<Sent> {
         let mut transfers = self.transfers.iter();
         let (asn, ty, ies) = transfers.find(|(_, ty, _)| *ty == name)?;
         Some(Sent { name: asn, ty, ies })
@@ -299,7 +299,7 @@ impl Protocol {
     /// where the tables have it: that of the object set of a message, or of a transfer,
     /// for its IEs, and that of the single containers for an IE that a value holds alone
     /// or as an entry of a list. They have none for the IEs of an extension container.
-    fn assigned(&self, container: Shape, id: u16) -> Option<&'static str> {
+    pub(super) fn assigned(&self, container: Shape, id: u16) -> Option<&'static str> {
         match container {
             Shape::Ies(Some(message)) => {
                 let ie = message.ies.iter().find(|(known, ..)| *known == id);

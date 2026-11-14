@@ -140,7 +140,20 @@ macro_rules! __typed {
             let row = *ROW.get_or_init(crate::inspect::row::<$type>);
             crate::inspect::__encode_typed(row, value)
         }
-        $crate::inspect::Typed { decode, encode }
+        #[allow(clippy::needless_lifetimes)]
+        fn shown<'a>(raw: &'a [u8]) -> bool {
+            crate::inspect::__shown_typed::<$type>(raw)
+        }
+        #[allow(clippy::needless_lifetimes, clippy::extra_unused_lifetimes)]
+        fn row<'a>() -> usize {
+            *ROW.get_or_init(crate::inspect::row::<$type>)
+        }
+        $crate::inspect::Typed {
+            decode,
+            encode,
+            shown,
+            row,
+        }
     }};
 }
 
@@ -220,6 +233,7 @@ pub use $crate::json::Value;
 pub(crate) static TABLES: Protocol = Protocol {
     name: PROTOCOL,
     root: ROOT,
+    schema: crate::inspect_registry::SCHEMA,
     types: TYPES,
     messages: MESSAGES,
     ie_names: IE_NAMES,
@@ -667,6 +681,13 @@ where
         false => $crate::decode_strict::<T>(raw).err(),
     };
     Ok((walked(true)?, exact, refused))
+}
+
+/// Whether the octets `raw` are a value of the type `T` that encodes back to them, which
+/// a tree shows as its value.
+pub(crate) fn __shown_typed<'a, T: Decode<'a> + Encode>(raw: &'a [u8]) -> bool {
+    let read: Result<T, Error> = $crate::decode(raw);
+    read.is_ok_and(|value| $crate::encode(&value).is_ok_and(|octets| octets == raw))
 }
 
 /// The octets of the value of the type of the row `row` that `value` writes in its JSON

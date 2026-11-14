@@ -38,6 +38,8 @@ use crate::{Error, ObjectIdentifier, Reader, UNBOUNDED, Writer};
 pub struct Type {
     /// The name that ASN.1 gives the type, which is its `AsnType::NAME`.
     pub name: &'static str,
+    /// The name of the type in the bindings, which the tables of the paths use.
+    pub rust: &'static str,
     /// What the type is.
     pub kind: Kind,
 }
@@ -225,7 +227,7 @@ fn read_type(types: &'static [Type], ty: usize, reader: &mut Reader<'_>) -> Resu
 }
 
 /// The tree of a field, read from `reader`.
-fn read_field(
+pub(crate) fn read_field(
     types: &'static [Type],
     field: &Field,
     reader: &mut Reader<'_>,
