@@ -1,18 +1,17 @@
 name: Fuzz
 
 # The fuzz targets of fuzz/, and those of protocols/fuzz/ on TOY, the protocol of the
-# tests, and with the crates oxirush-ngap and oxirush-s1ap, which are checked out beside
-# this repository at the head of their default branch, as their CI checks them out,
-# longer than the minute that each has at a push: the jobs of crate-fuzz.yml, which the
-# Fuzz workflow of every crate of the family calls too. An hour for each every day but
-# Sunday, from 04:23 UTC, one target of fuzz/ and TOY and one of each protocol at a
-# time, and on Monday four hours for each of fuzz/ and TOY, three at a time, less when
-# the fuzzing of a run would not end within the eight hours that crate-fuzz.yml gives
-# it; the protocols run their four hours in their own Fuzz workflows. The crates of the family
-# fuzz each at an hour of its own, with few jobs at once, and each has a day of its own
-# for its long run, so that what they run at once leaves runners to the other CI (GitHub
-# starts a scheduled run hours after its time, in their order). On Monday, and when
-# `weekly` is set by hand, each corpus is minimized and its coverage kept for 30 days.
+# tests, longer than the minute that each has at a push: the jobs of crate-fuzz.yml,
+# which the Fuzz workflow of every crate of the family calls too. An hour for each
+# every day but Sunday, from 04:23 UTC, one target at a time, and on Monday four hours
+# for each, three at a time, less when the fuzzing of a run would not end within the
+# eight hours that crate-fuzz.yml gives it. The targets of protocols/fuzz/ on NGAP and
+# S1AP run in the Fuzz workflows of oxirush-ngap and oxirush-s1ap, with the revision of
+# this repository that each records. The crates of the family fuzz each at an hour of
+# its own, with few jobs at once, and each has a day of its own for its long run, so
+# that what they run at once leaves runners to the other CI (GitHub starts a scheduled
+# run hours after its time, in their order). On Monday, and when `weekly` is set by
+# hand, each corpus is minimized and its coverage kept for 30 days.
 on:
   schedule:
     - cron: "23 4 * * 2-6"
@@ -64,25 +63,3 @@ jobs:
          {"target": "tree", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
          {"target": "transfer", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
          {"target": "jer", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"}]
-
-  # The targets of each protocol with the crate at the head of its default branch, one
-  # at a time, an hour on Monday too, when their corpora are minimized.
-  ngap:
-    name: ngap
-    uses: ./.github/workflows/crate-fuzz.yml
-    with:
-      protocol: ngap
-      weekly: "23 4 * * 1"
-      weekly-minutes: 60
-      minutes: ${{ fromJSON(inputs.minutes || '0') }}
-      report: ${{ fromJSON(inputs.weekly || 'false') }}
-
-  s1ap:
-    name: s1ap
-    uses: ./.github/workflows/crate-fuzz.yml
-    with:
-      protocol: s1ap
-      weekly: "23 4 * * 1"
-      weekly-minutes: 60
-      minutes: ${{ fromJSON(inputs.minutes || '0') }}
-      report: ${{ fromJSON(inputs.weekly || 'false') }}
