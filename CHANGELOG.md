@@ -6,6 +6,10 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Added
 
+- `encode_into` of a PDU of a protocol crate appends its octets to a buffer that the
+  caller keeps, beside `encode`, which now allocates the octets of the PDU once, at
+  their size.
+
 - `inspect::schema` (hidden, with `inspect`): the types of a protocol as one
   table, and a walker that reads the octets of a value of a row as its tree and
   writes a tree as its octets, with the reader and the writer of the typed

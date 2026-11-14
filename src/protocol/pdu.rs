@@ -428,7 +428,18 @@ macro_rules! __pdu {
 
             /// The octets of this PDU, in aligned PER.
             pub fn encode(&self) -> Result<alloc::vec::Vec<u8>, $crate::Error> {
-                $crate::encode(self)
+                // The octets of the message, after the few of the header and of its length.
+                let message = $crate::protocol::Pdu::value(self).len();
+                let mut octets = alloc::vec::Vec::with_capacity(message + 8);
+                self.encode_into(&mut octets)?;
+                Ok(octets)
+            }
+
+            /// Append the octets of this PDU, in aligned PER, to `octets`: a caller that
+            /// sends many PDUs keeps one buffer for them. After an error, `octets` are as
+            /// they were.
+            pub fn encode_into(&self, octets: &mut alloc::vec::Vec<u8>) -> Result<(), $crate::Error> {
+                $crate::encode_into(self, octets)
             }
 
             /// The message that this PDU holds, as its type `T`, which borrows what it holds

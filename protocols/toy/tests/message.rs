@@ -153,3 +153,17 @@ fn areas() -> Areas {
         ie_extensions: None,
     }])
 }
+
+#[test]
+fn a_pdu_is_encoded_into_a_buffer_that_the_caller_keeps() -> Result<(), Error> {
+    let received = hex::decode(RELEASE_REQUEST).unwrap();
+    let pdu = TOYPDU::decode(&received)?;
+    assert_eq!(pdu.encode()?, received);
+    // The octets of the PDU after those that the buffer has, twice.
+    let mut sent = vec![0xff];
+    pdu.encode_into(&mut sent)?;
+    pdu.encode_into(&mut sent)?;
+    assert_eq!(sent[0], 0xff);
+    assert_eq!(sent[1..], [&received[..], &received[..]].concat());
+    Ok(())
+}
