@@ -216,13 +216,55 @@ fn read_type(types: &'static [Type], ty: usize, reader: &mut Reader<'_>) -> Resu
             let index = reader.index(*root, additions, *extensible)?;
             Ok(utils::text(names[index as usize]))
         }
-        Kind::Alias { field, form, .. } => {
-            let jer = read_field(types, field, reader)?;
-            Ok(match form {
-                Some(form) => json::readable(*form, jer),
-                None => jer,
-            })
-        }
+        Kind::Alias { field, form, .. } => match (form, field) {
+            // A number of one size, or a PLMN identity, from its octets: what
+            // `json::readable` makes of their hexadecimal digits, without them.
+            (Some(Form::Number(bits)), Field::OctetArray(_) | Field::Bits(..)) => {
+                let octets = match *field {
+                    Field::OctetArray(size) if size > 2 => reader.octets(size)?.to_vec(),
+                    Field::OctetArray(size) => (0..size)
+                        .map(|_| reader.bits(8).map(|octet| octet as u8))
+                        .collect::<Result<Vec<u8>, Error>>()?,
+                    Field::Bits(lower, upper) => reader.bits_sized(lower, upper)?.to_vec(),
+                    _ => Vec::new(),
+                };
+                Ok(number(&octets, *bits))
+            }
+            (Some(Form::Plmn), Field::OctetArray(3)) => {
+                // Three octets are aligned (X.691 §17.6).
+                let mut octets = [0; 3];
+                octets.copy_from_slice(reader.octets(3)?);
+                let plmn = oxirush_utils::identity::Plmn::from_ap_octets(octets);
+                Ok(match plmn {
+                    Ok(plmn) if plmn.to_ap_octets() == octets => {
+                        Value::String(alloc::format!("{}-{}", plmn.mcc(), plmn.mnc()))
+                    }
+                    _ => utils::octets(&octets),
+                })
+            }
+            (form, field) => {
+                let jer = read_field(types, field, reader)?;
+                Ok(match form {
+                    Some(form) => json::readable(*form, jer),
+                    None => jer,
+                })
+            }
+        },
+    }
+}
+
+/// The number of `bits` bits that `octets` hold, the most significant first, as the
+/// readable form of a well-known number shows it: the octets in hexadecimal where the
+/// bits after the number are not zero.
+fn number(octets: &[u8], bits: u32) -> Value {
+    let read = octets
+        .iter()
+        .fold(0u64, |number, octet| number << 8 | u64::from(*octet));
+    let padding = (octets.len() as u32 * 8).saturating_sub(bits);
+    match octets.len() <= 8 && octets.len() as u32 == bits.div_ceil(8) && read % (1 << padding) == 0
+    {
+        true => utils::unsigned(read >> padding),
+        false => utils::octets(octets),
     }
 }
 
