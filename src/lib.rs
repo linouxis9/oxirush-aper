@@ -97,6 +97,10 @@ extern crate std;
 
 mod bits;
 pub mod check;
+// What the tests of the protocol crates check of their tables, for those tests alone.
+#[cfg(feature = "__checks")]
+#[doc(hidden)]
+pub mod checks;
 mod error;
 mod faults;
 // The plumbing of the generated crates, hidden from the documentation: it changes with

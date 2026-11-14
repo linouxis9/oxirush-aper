@@ -858,48 +858,6 @@ macro_rules! __protocol {
                 Ok($crate::protocol::Source::__of_octets(message, octets.as_slice()))
             }
         }
-
-        /// The tables of the registry, which `check()` of a PDU and the readers read: the
-        /// object set of each message, and the names of the IEs.
-        #[cfg(test)]
-        mod tables {
-            use crate::registry::{IE_NAMES, OBJECT_SETS};
-            use $crate::protocol::{name, object_set};
-
-            #[test]
-            fn the_ies_are_listed_in_the_order_of_their_identifiers() {
-                // The name of an IE is found by a binary search of its identifier.
-                assert!(IE_NAMES.windows(2).all(|pair| pair[0].0 < pair[1].0));
-                for (id, known) in IE_NAMES {
-                    assert_eq!(name::<super::$protocol>(*id), Some(*known));
-                }
-                assert_eq!(name::<super::$protocol>(u16::MAX), None);
-            }
-
-            #[test]
-            fn each_message_but_the_private_one_has_an_object_set() {
-                let without = OBJECT_SETS.iter().filter(|set| set.ies.is_none());
-                assert!(without.map(|set| set.name).eq(["PrivateMessage"]));
-                // A message is found by its direction and its procedure code.
-                for message in OBJECT_SETS {
-                    let found = object_set::<super::$protocol>(message.direction, message.procedure_code);
-                    assert_eq!(found.map(|found| found.name), Some(message.name));
-                }
-                assert!(object_set::<super::$protocol>($crate::Direction::Initiating, 255).is_none());
-            }
-
-            #[test]
-            fn every_ie_of_an_object_set_has_a_name_and_is_there_once() {
-                for message in OBJECT_SETS {
-                    for (index, (id, ..)) in message.ies.into_iter().flatten().enumerate() {
-                        assert!(name::<super::$protocol>(*id).is_some(), "IE {id} of {}", message.name);
-                        let before = &message.ies.unwrap_or_default()[..index];
-                        let again = before.iter().any(|(known, ..)| known == id);
-                        assert!(!again, "IE {id} is twice in the set of {}", message.name);
-                    }
-                }
-            }
-        }
     };
 }
 

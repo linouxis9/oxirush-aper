@@ -33,6 +33,10 @@ inspect = ["dep:oxirush-utils"]
 # of another protocol carry: the handover containers of S1AP in NGAP, and the reverse.
 # The register is a lock of the standard library: without it, none is registered.
 std = []
+# The checks of the tables that the generator writes, which the tests of oxirush-ngap,
+# oxirush-s1ap and TOY run with `__registry_tests!` and `__inspect_tests!`: for those
+# tests alone, and no part of the API.
+__checks = []
 
 [package.metadata.docs.rs]
 all-features = true

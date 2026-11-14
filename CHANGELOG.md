@@ -88,6 +88,12 @@ All notable changes to `oxirush-aper` are recorded here.
   `edit`, `tree` and `jer`; the Reproduce workflow and the TOY job compare both with
   what the generator writes.
 
+- The tests of the tables that `__protocol!` and `__inspect!` wrote into each protocol
+  crate, as unit tests of its library, are the checks of `checks`, with the hidden
+  feature `__checks`: a protocol crate runs them from `tests/` with
+  `__registry_tests!` and `__inspect_tests!`, given its marker type and the tables that
+  its `inspect::__tables()` gives, and needs no test build of its library for them.
+
 ### Removed
 
 - `inspect::enumerations` and `inspect::forms`: the readable form and the values of
