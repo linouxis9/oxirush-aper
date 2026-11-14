@@ -49,7 +49,7 @@ pub use oxirush_utils::tree::{
     text, unhex, unsigned,
 };
 
-use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use core::net::{IpAddr, Ipv6Addr};
 use oxirush_utils::identity::Plmn;
 
 use crate::reader::Alphabet;
@@ -160,16 +160,8 @@ impl Form {
             }
             Self::Address => {
                 let octets = unhex(jer.get("value")?.as_str()?)?;
-                let v4 = |octets: &[u8]| Some(Ipv4Addr::from(<[u8; 4]>::try_from(octets).ok()?));
-                let v6 = |octets: &[u8]| Some(Ipv6Addr::from(<[u8; 16]>::try_from(octets).ok()?));
-                Some(oxirush_utils::tree!(
-                    match (jer.get("length")?.as_u64()?, octets.len()) {
-                        (32, 4) => v4(&octets)?.to_string(),
-                        (128, 16) => v6(&octets)?.to_string(),
-                        (160, 20) => format!("{},{}", v4(&octets[..4])?, v6(&octets[4..])?),
-                        _ => return None,
-                    }
-                ))
+                let length = usize::try_from(jer.get("length")?.as_u64()?).ok()?;
+                address(&octets, length).map(|text| Value::String(text.into()))
             }
         }
     }
@@ -307,6 +299,37 @@ impl Form {
             }
             _ => Ok(shown.clone()),
         }
+    }
+}
+
+/// The text of a transport layer address of `length` bits, which `octets` hold: an IPv4
+/// address, an IPv6 address, or both after a comma (TS 38.414 clause 5.1); `None` for
+/// another length.
+pub(crate) fn address(octets: &[u8], length: usize) -> Option<String> {
+    let v4 = |octets: &[u8]| {
+        // Four numbers and their dots, written without the machinery of `fmt`.
+        let mut text = String::with_capacity(15);
+        for (at, octet) in octets.iter().enumerate() {
+            if at > 0 {
+                text.push('.');
+            }
+            let (hundreds, tens, units) = (octet / 100, octet / 10 % 10, octet % 10);
+            if hundreds > 0 {
+                text.push(char::from(b'0' + hundreds));
+            }
+            if hundreds > 0 || tens > 0 {
+                text.push(char::from(b'0' + tens));
+            }
+            text.push(char::from(b'0' + units));
+        }
+        text
+    };
+    let v6 = |octets: &[u8]| Some(Ipv6Addr::from(<[u8; 16]>::try_from(octets).ok()?));
+    match (length, octets.len()) {
+        (32, 4) => Some(v4(octets)),
+        (128, 16) => Some(v6(octets)?.to_string()),
+        (160, 20) => Some(format!("{},{}", v4(&octets[..4]), v6(&octets[4..])?)),
+        _ => None,
     }
 }
 
@@ -511,4 +534,32 @@ pub fn read_object_identifier(
                         between them";
     let identifier = value.as_str().and_then(|arcs| arcs.parse().ok());
     identifier.ok_or_else(|| mismatch(reading, ARCS, value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::address;
+    use alloc::string::ToString;
+    use core::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn an_address_is_written_as_the_standard_library_writes_it() {
+        // Each value of each octet, the others varied.
+        for at in 0..4 {
+            for octet in 0..=255u8 {
+                let mut octets = [10, 0, 200, 99];
+                octets[at] = octet;
+                let text = address(&octets, 32).unwrap();
+                assert_eq!(text, Ipv4Addr::from(octets).to_string());
+            }
+        }
+        let v6: [u8; 16] = core::array::from_fn(|at| at as u8 * 17);
+        assert_eq!(address(&v6, 128).unwrap(), Ipv6Addr::from(v6).to_string());
+        let both: alloc::vec::Vec<u8> = [192, 168, 0, 1].into_iter().chain(v6).collect();
+        let text = alloc::format!("192.168.0.1,{}", Ipv6Addr::from(v6));
+        assert_eq!(address(&both, 160).unwrap(), text);
+        // Any other length is no address.
+        assert_eq!(address(&[1, 2, 3, 4], 31), None);
+        assert_eq!(address(&[1, 2, 3], 24), None);
+    }
 }

@@ -300,6 +300,19 @@ fn read_type(types: &'static [Type], ty: usize, reader: &mut Reader<'_>) -> Resu
                     _ => utils::octets(&octets),
                 })
             }
+            // A transport layer address from its bits, without their hexadecimal digits:
+            // what `json::readable` makes of them.
+            (Some(Form::Address), Field::BitString(lower, upper, extensible)) => {
+                let value = reader.bit_string(*lower, *upper, *extensible)?;
+                let jer = |value| json::bit_string(value, *lower, *upper, *extensible);
+                // The form of the JSON Encoding Rules is the octets alone for a string of one
+                // size, which no address is read from.
+                let alone = lower == upper && (value.len() == *lower || !*extensible);
+                let text = json::address(value.as_octets(), value.len()).filter(|_| !alone);
+                let shown = text.map_or_else(|| jer(&value), |text| Value::String(text.into()));
+                debug_assert_eq!(shown, json::readable(Form::Address, jer(&value)));
+                Ok(shown)
+            }
             (form, field) => {
                 let jer = read_field(types, field, reader)?;
                 Ok(match form {
