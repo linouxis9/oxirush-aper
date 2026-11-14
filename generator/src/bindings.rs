@@ -19,8 +19,6 @@ use std::fmt::Write;
 use anyhow::{Context, Result, bail, ensure};
 use syn::{Attribute, Fields, Item, Type};
 
-use crate::inspection::CONTAINERS;
-
 /// A constraint of a size or of a value: its bounds, where it has them, and whether it
 /// has an extension marker.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -137,6 +135,9 @@ struct Module {
 /// they are decoded from: those have a lifetime.
 pub struct Written {
     pub text: String,
+    /// The table of the types, which the walker of `oxirush_aper::inspect::schema` reads
+    /// and writes trees with: `TYPES`, in the order of the names that ASN.1 gives them.
+    pub schema: String,
     pub borrowing: BTreeSet<String>,
     /// The types that hold a key: the types of [`Keys::types`], and those that hold one.
     pub keys: BTreeSet<String>,
@@ -178,8 +179,10 @@ pub fn bindings(description: &str, keys: Keys<'_>, plmns: &[&str]) -> Result<Wri
     }
     let bindings = Bindings::new(&modules, keys, plmns)?;
     let text = bindings.write(&modules)?;
+    let schema = bindings.schema(&modules)?;
     Ok(Written {
         text,
+        schema,
         borrowing: bindings.borrowing,
         keys: bindings.keys,
     })
@@ -881,13 +884,6 @@ impl Bindings {
                 "use oxirush_aper::{{AsnType, BitString, Bits, Decode, Encode, Error, \
                  ObjectIdentifier, Octets, Reader, UNBOUNDED, Writer, in_field}};"
             )?;
-            writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-            writeln!(
-                out,
-                "use oxirush_aper::json::{{self, Reading, Refused, Tree, Value}};"
-            )?;
-            writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-            writeln!(out, "use crate::inspect_registry::names;")?;
             for entry in &module.entries {
                 match entry {
                     Entry::Constant { docs, text } => {
@@ -909,6 +905,195 @@ impl Bindings {
             writeln!(out, "}}")?;
         }
         Ok(out)
+    }
+
+    /// The table of the types, one row for each, in the order of the names that ASN.1
+    /// gives them: what the walker of `oxirush_aper::inspect::schema` reads and writes the
+    /// tree of a value with. A type is named by its row.
+    fn schema(&self, modules: &[Module]) -> Result<String> {
+        let mut definitions = Vec::new();
+        let mut aliases = BTreeMap::new();
+        for entry in modules.iter().flat_map(|module| &module.entries) {
+            match entry {
+                Entry::Definition(definition) => definitions.push(definition.as_ref()),
+                Entry::TypeAlias { name, target, .. } => {
+                    aliases.insert(name.as_str(), target.as_str());
+                }
+                Entry::Constant { .. } => {}
+            }
+        }
+        // The OCTET STRING of oxirush-aper, which is the type of an IE whose octets the
+        // ASN.1 leaves open, has a row too.
+        const OCTETS: (&str, &str) = (
+            "OCTET STRING",
+            "K::Alias { field: F::Octets(0, UNBOUNDED, false), form: None, secret: false }",
+        );
+        let mut names: Vec<&str> = definitions.iter().map(|d| d.asn.as_str()).collect();
+        names.push(OCTETS.0);
+        names.sort_unstable();
+        ensure!(
+            names.windows(2).all(|pair| pair[0] != pair[1]),
+            "two types of one name"
+        );
+        ensure!(
+            names.len() <= usize::from(u16::MAX),
+            "more types than a row holds"
+        );
+        let rows: BTreeMap<&str, usize> = definitions
+            .iter()
+            .map(|definition| {
+                let row = names
+                    .binary_search(&definition.asn.as_str())
+                    .unwrap_or_default();
+                (definition.name.as_str(), row)
+            })
+            .collect();
+        definitions.sort_by(|a, b| a.asn.cmp(&b.asn));
+        let row = |name: &str| -> Result<usize> {
+            let mut name = name;
+            for _ in 0..16 {
+                match aliases.get(name) {
+                    Some(target) => name = target,
+                    None => break,
+                }
+            }
+            rows.get(name)
+                .copied()
+                .with_context(|| format!("no type {name}"))
+        };
+        let mut out = String::new();
+        writeln!(
+            out,
+            "/// The types of the protocol, in the order of the names that ASN.1 gives them, \
+             which the walker of the trees reads: a type is named by its row."
+        )?;
+        writeln!(out, "#[rustfmt::skip]")?;
+        writeln!(out, "pub(crate) static SCHEMA: &[T] = &[")?;
+        let mut written = Vec::new();
+        for definition in &definitions {
+            let names = |members: &[Member]| -> String {
+                let names: Vec<String> = members
+                    .iter()
+                    .map(|member| format!("{:?}", member.asn))
+                    .collect();
+                format!("&[{}]", names.join(", "))
+            };
+            let extensible = definition.extensible;
+            let kind = match &definition.shape {
+                Shape::Sequence(members) => {
+                    let mut listed = Vec::new();
+                    for member in members {
+                        listed.push(format!(
+                            "M {{ field: {:?}, ty: {}, optional: {} }}",
+                            member.name,
+                            self.field(&member.kind, &row)?,
+                            member.optional
+                        ));
+                    }
+                    format!(
+                        "K::Sequence {{ names: {}, members: &[{}], extensible: {extensible} }}",
+                        names(members),
+                        listed.join(", ")
+                    )
+                }
+                Shape::Choice(members) => {
+                    let root = members.iter().filter(|member| !member.addition).count();
+                    let mut fields = Vec::new();
+                    for member in members {
+                        fields.push(self.field(&member.kind, &row)?);
+                    }
+                    format!(
+                        "K::Choice {{ names: {}, alternatives: &[{}], root: {root}, \
+                         extensible: {extensible} }}",
+                        names(members),
+                        fields.join(", ")
+                    )
+                }
+                Shape::Enumerated(members) => {
+                    // In the order of the indexes in PER (X.691 §14.1).
+                    let mut root: Vec<&Member> =
+                        members.iter().filter(|member| !member.addition).collect();
+                    root.sort_by_key(|member| member.number);
+                    let count = root.len();
+                    let additions = members.iter().filter(|member| member.addition);
+                    let ordered: Vec<&Member> = root.into_iter().chain(additions).collect();
+                    let names: Vec<String> = ordered
+                        .iter()
+                        .map(|member| format!("{:?}", member.asn))
+                        .collect();
+                    format!(
+                        "K::Enumerated {{ names: &[{}], root: {count}, extensible: {extensible} }}",
+                        names.join(", ")
+                    )
+                }
+                Shape::Alias(kind) => {
+                    let form = readable_form(&definition.asn, kind)?
+                        .map_or("None".to_string(), |form| {
+                            format!("Some({})", form.trim_start_matches("json::"))
+                        });
+                    format!(
+                        "K::Alias {{ field: {}, form: {form}, secret: {} }}",
+                        self.field(kind, &row)?,
+                        self.key_types.contains(&definition.name)
+                    )
+                }
+            };
+            written.push((definition.asn.as_str(), kind));
+        }
+        written.push((OCTETS.0, OCTETS.1.to_string()));
+        written.sort_by(|a, b| a.0.cmp(b.0));
+        for (at, (name, kind)) in written.iter().enumerate() {
+            writeln!(out, "/* {at} */ T {{ name: {name:?}, kind: {kind} }},")?;
+        }
+        writeln!(out, "];")?;
+        Ok(out)
+    }
+
+    /// The field of the table of a kind: a type of the bindings by its row.
+    fn field(&self, kind: &Kind, row: &dyn Fn(&str) -> Result<usize>) -> Result<String> {
+        let bounds = |range: &Range| {
+            let lower = range.lower.unwrap_or(0);
+            let upper = range
+                .upper
+                .map_or("UNBOUNDED".to_string(), |upper| upper.to_string());
+            format!("{lower}, {upper}")
+        };
+        Ok(match kind {
+            Kind::Boolean => "F::Boolean".into(),
+            Kind::Null => "F::Null".into(),
+            Kind::Integer { range, .. } => {
+                let (Some(lower), Some(upper)) = (range.lower, range.upper) else {
+                    bail!("an INTEGER without an upper bound, which oxirush-aper does not read");
+                };
+                let form = if lower < 0 { "Signed" } else { "Unsigned" };
+                format!("F::{form}({lower}, {upper}, {})", range.extensible)
+            }
+            Kind::OctetArray(size) => format!("F::OctetArray({size})"),
+            Kind::Octets(range) => format!("F::Octets({}, {})", bounds(range), range.extensible),
+            Kind::Bits(range) => format!("F::Bits({})", bounds(range)),
+            Kind::BitString(range) => {
+                format!("F::BitString({}, {})", bounds(range), range.extensible)
+            }
+            Kind::Text { of, range } => {
+                let alphabet = match *of {
+                    "printable_string" => "Printable",
+                    "visible_string" => "Visible",
+                    "utf8_string" => "Utf8",
+                    other => bail!("a character string of {other}, which the table has not"),
+                };
+                format!(
+                    "F::Text(Text::{alphabet}, {}, {})",
+                    bounds(range),
+                    range.extensible
+                )
+            }
+            Kind::ObjectIdentifier => "F::ObjectIdentifier".into(),
+            Kind::Open => "F::Open".into(),
+            Kind::Named(name) => format!("F::Named({})", row(name)?),
+            Kind::List { of, range } => {
+                format!("F::List(&{}, {})", self.field(of, row)?, bounds(range))
+            }
+        })
     }
 
     /// `Debug` of a key, which shows its length, and of a type whose open type may hold
@@ -1103,7 +1288,6 @@ impl Bindings {
                 }
                 self.asn_type(out, &named, &definition.asn)?;
                 self.sequence_codec(out, definition, members, &declared, &named)?;
-                self.sequence_json(out, members, name, &named)?;
             }
             Shape::Choice(members) => {
                 writeln!(out, "pub enum {declared} {{")?;
@@ -1161,7 +1345,6 @@ impl Bindings {
                 }
                 self.asn_type(out, &named, &definition.asn)?;
                 self.choice_codec(out, definition, members, &declared, &named)?;
-                self.choice_json(out, members, name, &named)?;
             }
             Shape::Enumerated(members) => {
                 writeln!(out, "pub enum {name} {{")?;
@@ -1172,19 +1355,6 @@ impl Bindings {
                 writeln!(out, "}}")?;
                 self.asn_type(out, &named, &definition.asn)?;
                 self.enumerated_codec(out, definition, members)?;
-                writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-                writeln!(out, "impl Tree for {name} {{")?;
-                writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
-                writeln!(
-                    out,
-                    "fn to_tree(&self) -> Value {{ json::text(names::{name}[self.index() as usize]) }}"
-                )?;
-                writeln!(
-                    out,
-                    "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{ \
-                     Ok(Self::VALUES[reading.named(value, names::{name})?]) }}"
-                )?;
-                writeln!(out, "}}")?;
             }
             Shape::Alias(kind) => {
                 let ty = self.ty(kind, "'a");
@@ -1278,41 +1448,6 @@ impl Bindings {
                 self.encode(out, kind, "self.0", false, "?")?;
                 writeln!(out, "Ok(())")?;
                 writeln!(out, "}} }}")?;
-                writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-                writeln!(out, "impl Tree for {named} {{")?;
-                writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
-                // A well-known type is shown in its readable form, and read in it or in
-                // the form of the JSON Encoding Rules.
-                let jer = self.to_json(kind, "self.0", false);
-                match readable_form(&definition.asn, kind)? {
-                    Some(form) => {
-                        writeln!(
-                            out,
-                            "fn to_tree(&self) -> Value {{ json::readable({form}, {jer}) }}"
-                        )?;
-                        writeln!(
-                            out,
-                            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, \
-                             Refused> {{ let value = &json::read_readable(reading, {form}, \
-                             value)?; Ok(Self({}?)) }}",
-                            self.read_json(kind)
-                        )?;
-                    }
-                    None => {
-                        writeln!(out, "fn to_tree(&self) -> Value {{ {jer} }}")?;
-                        // A refusal of a key shows nothing of what is written.
-                        let read = match self.key_types.contains(name) {
-                            true => format!("reading.secret(|reading| {})", self.read_json(kind)),
-                            false => self.read_json(kind),
-                        };
-                        writeln!(
-                            out,
-                            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, \
-                             Refused> {{ Ok(Self({read}?)) }}"
-                        )?;
-                    }
-                }
-                writeln!(out, "}}")?;
             }
         }
         Ok(())
@@ -1674,230 +1809,6 @@ impl Bindings {
         writeln!(out, "Ok(())")?;
         writeln!(out, "}} }}")?;
         Ok(())
-    }
-
-    // ── The JSON forms ──────────────────────────────────────────────────────
-
-    /// The tree of a SEQUENCE `name`, whose members the module `names` of the
-    /// inspection names, but for a field of a container, which it does not list.
-    fn sequence_json(
-        &self,
-        out: &mut String,
-        members: &[Member],
-        name: &str,
-        named: &str,
-    ) -> Result<()> {
-        writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-        writeln!(out, "impl Tree for {named} {{")?;
-        writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
-        writeln!(out, "fn to_tree(&self) -> Value {{")?;
-        writeln!(out, "let mut members = json::Members::new();")?;
-        for member in members {
-            let (name, asn) = (&member.name, &member.asn);
-            match member.optional {
-                true => {
-                    let value = self.to_json(&member.kind, "value", true);
-                    writeln!(
-                        out,
-                        "members.put_optional({asn:?}, self.{name}.as_ref().map(|value| {value}));"
-                    )?;
-                }
-                false => {
-                    let value = self.to_json(&member.kind, &format!("self.{name}"), false);
-                    writeln!(out, "members.put({asn:?}, {value});")?;
-                }
-            }
-        }
-        writeln!(out, "members.finish()")?;
-        writeln!(out, "}}")?;
-        writeln!(
-            out,
-            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
-        )?;
-        let names = match CONTAINERS.iter().any(|(container, _)| *container == name) {
-            true => {
-                let names: Vec<String> = members
-                    .iter()
-                    .map(|member| format!("{:?}", member.asn))
-                    .collect();
-                format!("&[{}]", names.join(", "))
-            }
-            false => format!("names::{name}"),
-        };
-        writeln!(out, "let members = reading.members(value, {names})?;")?;
-        for member in members {
-            let read = match &member.kind {
-                Kind::Named(name) => format!("{name}::from_tree"),
-                kind => format!("|value, reading| {}", self.read_json(kind)),
-            };
-            let how = if member.optional {
-                "optional"
-            } else {
-                "member"
-            };
-            writeln!(
-                out,
-                "let {} = reading.{how}(&members, {:?}, {read})?;",
-                member.name, member.asn
-            )?;
-        }
-        let names: Vec<&str> = members.iter().map(|member| member.name.as_str()).collect();
-        writeln!(out, "Ok(Self {{ {} }})", names.join(", "))?;
-        writeln!(out, "}} }}")?;
-        Ok(())
-    }
-
-    /// The tree of a CHOICE `name`, whose alternatives the module `names` of the
-    /// inspection names.
-    fn choice_json(
-        &self,
-        out: &mut String,
-        members: &[Member],
-        name: &str,
-        named: &str,
-    ) -> Result<()> {
-        writeln!(out, "#[cfg(feature = \"inspect\")]")?;
-        writeln!(out, "impl Tree for {named} {{")?;
-        writeln!(out, "const NAME: &'static str = <Self as AsnType>::NAME;")?;
-        writeln!(out, "fn to_tree(&self) -> Value {{ match self {{")?;
-        for member in members {
-            let value = self.to_json(&member.kind, "value", true);
-            writeln!(
-                out,
-                "Self::{}(value) => json::alternative({:?}, {value}),",
-                member.name, member.asn
-            )?;
-        }
-        writeln!(out, "}} }}")?;
-        if members.len() == 1 {
-            writeln!(out, "#[allow(clippy::match_single_binding)]")?;
-        }
-        writeln!(
-            out,
-            "fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {{"
-        )?;
-        writeln!(
-            out,
-            "let (position, value) = reading.alternative(value, names::{name})?;"
-        )?;
-        writeln!(out, "Ok(match position {{")?;
-        for (position, member) in members.iter().enumerate() {
-            let pattern = match position + 1 == members.len() {
-                true => "_".to_string(),
-                false => position.to_string(),
-            };
-            let read = match &member.kind {
-                Kind::Named(name) => format!("{name}::from_tree"),
-                kind => format!("|value, reading| {}", self.read_json(kind)),
-            };
-            writeln!(
-                out,
-                "{pattern} => Self::{}(reading.within({:?}, value, {read})?),",
-                member.name, member.asn
-            )?;
-        }
-        writeln!(out, "}})")?;
-        writeln!(out, "}} }}")?;
-        Ok(())
-    }
-
-    /// The expression that is the JSON form of `value`, of a kind. `value` is a
-    /// reference when `by_reference` says so.
-    fn to_json(&self, kind: &Kind, value: &str, by_reference: bool) -> String {
-        let copied = match by_reference {
-            true => format!("*{value}"),
-            false => value.to_string(),
-        };
-        let referred = match by_reference {
-            true => value.to_string(),
-            false => format!("&{value}"),
-        };
-        match kind {
-            Kind::Boolean => format!("Value::Bool({copied})"),
-            Kind::Null => "Value::Null".into(),
-            Kind::Integer { native, .. } => match *native {
-                "u64" => format!("json::unsigned({copied})"),
-                "i64" => format!("json::signed({copied})"),
-                native if native.starts_with('u') => format!("json::unsigned(u64::from({copied}))"),
-                _ => format!("json::signed(i64::from({copied}))"),
-            },
-            Kind::OctetArray(_) | Kind::Octets(_) | Kind::Open => {
-                format!("json::octets({referred})")
-            }
-            Kind::Bits(range) => format!("json::bits({copied}, {})", bounds(range)),
-            Kind::BitString(range) => {
-                format!(
-                    "json::bit_string({referred}, {}, {})",
-                    bounds(range),
-                    range.extensible
-                )
-            }
-            Kind::Text { .. } => format!("json::text({referred})"),
-            Kind::ObjectIdentifier => format!("json::object_identifier({referred})"),
-            Kind::Named(_) => format!("{value}.to_tree()"),
-            Kind::List { of, .. } => {
-                let item = self.to_json(of, "item", true);
-                format!("Value::Array({value}.iter().map(|item| {item}).collect())")
-            }
-        }
-    }
-
-    /// The expression that reads a value of a kind from the JSON `value`, in `reading`:
-    /// a `Result`.
-    fn read_json(&self, kind: &Kind) -> String {
-        match kind {
-            Kind::Boolean => "reading.boolean(value)".into(),
-            Kind::Null => "reading.null(value)".into(),
-            Kind::Integer { native, range } => {
-                // A type whose constraint has an extension marker, or no upper bound,
-                // holds what its native type holds.
-                let closed = !range.extensible;
-                let lower = range.lower.filter(|_| closed || range.upper.is_none());
-                let upper = range.upper.filter(|_| closed);
-                let signed = native.starts_with('i');
-                // The functions take 64 bits: a narrower bound is widened.
-                let into = match *native {
-                    "u64" | "i64" => "",
-                    _ => ".into()",
-                };
-                let lower = lower.map_or(format!("{native}::MIN{into}"), |lower| lower.to_string());
-                let upper = upper.map_or(format!("{native}::MAX{into}"), |upper| upper.to_string());
-                let read = match signed {
-                    true => format!("reading.signed(value, {lower}, {upper})"),
-                    false => format!("reading.unsigned(value, {lower}, {upper})"),
-                };
-                match *native {
-                    "u64" | "i64" => read,
-                    native => format!("{read}.map(|number| number as {native})"),
-                }
-            }
-            Kind::OctetArray(size) => format!("reading.octet_array::<{size}>(value)"),
-            Kind::Octets(_) | Kind::Open => "json::read_octets(reading, value)".into(),
-            Kind::Bits(range) => format!("json::read_bits(reading, value, {})", bounds(range)),
-            Kind::BitString(range) => {
-                format!(
-                    "json::read_bit_string(reading, value, {}, {})",
-                    bounds(range),
-                    range.extensible
-                )
-            }
-            Kind::Text { of, .. } => {
-                let characters = match *of {
-                    "printable_string" => "Printable",
-                    "visible_string" => "Visible",
-                    _ => "Utf8",
-                };
-                format!("json::read_text(reading, value, json::Characters::{characters})")
-            }
-            Kind::ObjectIdentifier => "json::read_object_identifier(reading, value)".into(),
-            Kind::Named(name) => format!("{name}::from_tree(value, reading)"),
-            Kind::List { of, .. } => {
-                format!(
-                    "reading.list(value, |value, reading| {})",
-                    self.read_json(of)
-                )
-            }
-        }
     }
 
     // ── The fields ──────────────────────────────────────────────────────────
@@ -2416,8 +2327,10 @@ mod tests {
     /// bits; one whose size varies is refused.
     #[test]
     fn a_well_known_number_has_one_size() {
-        let text = text("CellIdentity ::= BIT STRING (SIZE (28))");
-        assert!(text.contains("json::Form::Number(28)"), "{text}");
+        let schema = written("CellIdentity ::= BIT STRING (SIZE (28))", Keys::default())
+            .unwrap()
+            .schema;
+        assert!(schema.contains("form: Some(Form::Number(28))"), "{schema}");
         let error = written(
             "CellIdentity ::= BIT STRING (SIZE (20..28))",
             Keys::default(),

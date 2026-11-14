@@ -195,7 +195,6 @@ use std::sync::LazyLock;
 
 use $crate::inspect::{self as shared, Protocol};
 pub(crate) use $crate::inspect::{Kind, Shape, same_name};
-use $crate::json::{self, Tree};
 use $crate::{AsnType, Decode, Encode};
 
 use crate::Error;
@@ -622,35 +621,52 @@ pub(crate) fn any_message() -> Typed {
     $crate::__typed!($any)
 }
 
+/// The row of the type `T` in the table of the types, which has every type of the
+/// bindings by the name that ASN.1 gives it.
+fn row<T: AsnType>() -> usize {
+    let row = $crate::inspect::schema::position(crate::inspect_registry::SCHEMA, T::NAME);
+    row.unwrap_or_else(|| panic!("{} is a type of the bindings, which the table has", T::NAME))
+}
+
 /// The value of the type `T` that the octets `raw` are, in its JSON form, and whether it
 /// encodes back to them: it does not when they hold what a later version of the type
 /// adds, which the value has no place for, or are in another form than the canonical
-/// one. `name` is the name of the type in the bindings.
+/// one. The typed decoder reads the value and says whether it is exact; the walker of
+/// the table reads its tree from the same octets.
 pub(crate) fn __decode_typed<'a, T>(raw: &'a [u8]) -> Result<$crate::inspect::Decoded, Error>
 where
-    T: Decode<'a> + Encode + Tree,
+    T: Decode<'a> + Encode + AsnType,
 {
     let read: Result<T, Error> = $crate::decode(raw);
-    read.map(|value| {
-        let exact = $crate::encode(&value).is_ok_and(|octets| octets == raw);
-        // Octets that do not come back are read again by the reader of the one encoding,
-        // which says what of them is in another form.
-        let refused = match exact {
-            true => None,
-            false => $crate::decode_strict::<T>(raw).err(),
-        };
-        (value.to_tree(), exact, refused)
-    })
+    let walked = |read: bool| {
+        let walked = $crate::inspect::schema::tree(crate::inspect_registry::SCHEMA, row::<T>(), raw);
+        // The walker and the typed decoder read the same octets as values.
+        debug_assert_eq!(walked.is_ok(), read, "{} {}", T::NAME, $crate::json::hex(raw));
+        walked
+    };
+    let value = match read {
+        Ok(value) => value,
+        Err(error) => {
+            #[cfg(debug_assertions)]
+            let _ = walked(false);
+            return Err(error);
+        }
+    };
+    let exact = $crate::encode(&value).is_ok_and(|octets| octets == raw);
+    // Octets that do not come back are read again by the reader of the one encoding,
+    // which says what of them is in another form.
+    let refused = match exact {
+        true => None,
+        false => $crate::decode_strict::<T>(raw).err(),
+    };
+    Ok((walked(true)?, exact, refused))
 }
 
-/// The octets of the value of the type `T` that `value` writes in its JSON form.
-pub(crate) fn __encode_typed<T>(value: &Value) -> Result<Vec<u8>, Error>
-where
-    T: Encode + Tree + AsnType,
-{
-    let typed: T = json::from_value(value)?;
-    // A value that is read and does not encode is outside a constraint of its type.
-    $crate::encode(&typed).map_err(|error| error.outside_its_type(<T as AsnType>::NAME))
+/// The octets of the value of the type `T` that `value` writes in its JSON form: those
+/// that the walker of the table writes, which are those of the typed value that the tree
+/// reads as, with the same errors.
+pub(crate) fn __encode_typed<T: AsnType>(value: &Value) -> Result<Vec<u8>, Error> {
+    $crate::inspect::schema::write(crate::inspect_registry::SCHEMA, row::<T>(), value)
 }
 
 /// How a tree shows the values of a well-known type.

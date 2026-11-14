@@ -176,6 +176,11 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     )?;
     let module = protocol.module();
     fs::write("src/registry.rs", &list)?;
+    let inspection = format!(
+        "{inspection}#[allow(unused_imports)]\nuse oxirush_aper::inspect::schema::{{Field as F, \
+         Kind as K, Member as M, Text, Type as T}};\nuse oxirush_aper::UNBOUNDED;\n{}",
+        bindings.schema
+    );
     fs::write("src/inspect_registry.rs", inspection)?;
     fs::write(path, for_rasn).context("write the bindings for rasn")?;
     let mut text = bindings.text;

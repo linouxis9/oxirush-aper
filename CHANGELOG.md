@@ -13,6 +13,14 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ### Changed
 
+- The generator writes the table of the types of a protocol (`SCHEMA` in
+  `inspect_registry.rs`, one row for each type) in the place of an
+  `impl Tree` for each type: the trees of the IEs, the transfers and the
+  messages are read from their octets and written to octets by the walker of
+  `inspect::schema`, the same trees with the same errors. oxirush-ngap has
+  30,690 generated lines fewer, oxirush-s1ap 13,168. The typed decoder still
+  says whether a value is exact. A type of the bindings no longer implements
+  `json::Tree`.
 - `json` and the functions of `protocol` behind the methods that the bindings
   generate (`of_message`, `protocol_ies`, `set_protocol_ies`, `message_octets`,
   `holds_key`, `items_of_fields`) are hidden from the documentation: a program

@@ -11,14 +11,10 @@
 )]
 pub mod toy_common_data_types {
     use super::*;
-    #[cfg(feature = "inspect")]
-    use crate::inspect_registry::names;
     use alloc::borrow::Cow;
     use alloc::vec::Vec;
     pub use oxirush_aper::Criticality;
     pub use oxirush_aper::Presence;
-    #[cfg(feature = "inspect")]
-    use oxirush_aper::json::{self, Reading, Refused, Tree, Value};
     use oxirush_aper::{
         AsnType, BitString, Bits, Decode, Encode, Error, ObjectIdentifier, Octets, Reader,
         UNBOUNDED, Writer, in_field,
@@ -67,29 +63,6 @@ pub mod toy_common_data_types {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for PrivateIEID {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            match self {
-                Self::local(value) => json::alternative("local", json::unsigned(u64::from(*value))),
-                Self::global(value) => json::alternative("global", json::object_identifier(value)),
-            }
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let (position, value) = reading.alternative(value, names::PrivateIEID)?;
-            Ok(match position {
-                0 => Self::local(reading.within("local", value, |value, reading| {
-                    reading
-                        .unsigned(value, 0, 65535)
-                        .map(|number| number as u16)
-                })?),
-                _ => Self::global(reading.within("global", value, |value, reading| {
-                    json::read_object_identifier(reading, value)
-                })?),
-            })
-        }
-    }
     /// `ProcedureCode ::= INTEGER (0..255)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct ProcedureCode(pub u8);
@@ -118,18 +91,6 @@ pub mod toy_common_data_types {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.unsigned(u64::from(self.0), 0, 255, false)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for ProcedureCode {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::unsigned(u64::from(self.0))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(
-                reading.unsigned(value, 0, 255).map(|number| number as u8)?,
-            ))
         }
     }
     /// `ProtocolExtensionID ::= INTEGER (0..65535)`.
@@ -162,20 +123,6 @@ pub mod toy_common_data_types {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ProtocolExtensionID {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::unsigned(u64::from(self.0))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(
-                reading
-                    .unsigned(value, 0, 65535)
-                    .map(|number| number as u16)?,
-            ))
-        }
-    }
     /// `ProtocolIE-ID ::= INTEGER (0..65535)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct ProtocolIEID(pub u16);
@@ -204,20 +151,6 @@ pub mod toy_common_data_types {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.unsigned(u64::from(self.0), 0, 65535, false)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for ProtocolIEID {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::unsigned(u64::from(self.0))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(
-                reading
-                    .unsigned(value, 0, 65535)
-                    .map(|number| number as u16)?,
-            ))
         }
     }
     /// `TriggeringMessage ::= ENUMERATED`.
@@ -256,16 +189,6 @@ pub mod toy_common_data_types {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for TriggeringMessage {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::TriggeringMessage[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::TriggeringMessage)?])
-        }
-    }
 }
 #[allow(
     non_camel_case_types,
@@ -277,12 +200,8 @@ pub mod toy_common_data_types {
 )]
 pub mod toy_constants {
     use super::*;
-    #[cfg(feature = "inspect")]
-    use crate::inspect_registry::names;
     use alloc::borrow::Cow;
     use alloc::vec::Vec;
-    #[cfg(feature = "inspect")]
-    use oxirush_aper::json::{self, Reading, Refused, Tree, Value};
     use oxirush_aper::{
         AsnType, BitString, Bits, Decode, Encode, Error, ObjectIdentifier, Octets, Reader,
         UNBOUNDED, Writer, in_field,
@@ -334,12 +253,8 @@ pub mod toy_constants {
 )]
 pub mod toy_containers {
     use super::*;
-    #[cfg(feature = "inspect")]
-    use crate::inspect_registry::names;
     use alloc::borrow::Cow;
     use alloc::vec::Vec;
-    #[cfg(feature = "inspect")]
-    use oxirush_aper::json::{self, Reading, Refused, Tree, Value};
     use oxirush_aper::{
         AsnType, BitString, Bits, Decode, Encode, Error, ObjectIdentifier, Octets, Reader,
         UNBOUNDED, Writer, in_field,
@@ -405,30 +320,6 @@ pub mod toy_containers {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ProtocolIEField<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("id", self.id.to_tree());
-            members.put("criticality", self.criticality.to_tree());
-            members.put("value", json::octets(&self.value));
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, &["id", "criticality", "value"])?;
-            let id = reading.member(&members, "id", ProtocolIEID::from_tree)?;
-            let criticality = reading.member(&members, "criticality", Criticality::from_tree)?;
-            let value = reading.member(&members, "value", |value, reading| {
-                json::read_octets(reading, value)
-            })?;
-            Ok(Self {
-                id,
-                criticality,
-                value,
-            })
-        }
-    }
     /// `ProtocolIE-Container ::= SEQUENCE (SIZE (0..65535)) OF ProtocolIEField`.
     #[doc = " `ProtocolIE-Container`: the IEs of a message."]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -473,18 +364,6 @@ pub mod toy_containers {
                 item.encode(writer)?;
             }
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for ProtocolIEContainer<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                ProtocolIEField::from_tree(value, reading)
-            })?))
         }
     }
     impl core::fmt::Debug for ProtocolExtensionField<'_> {
@@ -550,31 +429,6 @@ pub mod toy_containers {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ProtocolExtensionField<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("id", self.id.to_tree());
-            members.put("criticality", self.criticality.to_tree());
-            members.put("extensionValue", json::octets(&self.extension_value));
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, &["id", "criticality", "extensionValue"])?;
-            let id = reading.member(&members, "id", ProtocolExtensionID::from_tree)?;
-            let criticality = reading.member(&members, "criticality", Criticality::from_tree)?;
-            let extension_value =
-                reading.member(&members, "extensionValue", |value, reading| {
-                    json::read_octets(reading, value)
-                })?;
-            Ok(Self {
-                id,
-                criticality,
-                extension_value,
-            })
-        }
-    }
     /// `ProtocolExtensionContainer ::= SEQUENCE (SIZE (1..65535)) OF ProtocolExtensionField`.
     #[doc = " `ProtocolExtensionContainer`: the `iE-Extensions` of a type."]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -621,18 +475,6 @@ pub mod toy_containers {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ProtocolExtensionContainer<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                ProtocolExtensionField::from_tree(value, reading)
-            })?))
-        }
-    }
 }
 #[allow(
     non_camel_case_types,
@@ -644,12 +486,8 @@ pub mod toy_containers {
 )]
 pub mod toy_ies {
     use super::*;
-    #[cfg(feature = "inspect")]
-    use crate::inspect_registry::names;
     use alloc::borrow::Cow;
     use alloc::vec::Vec;
-    #[cfg(feature = "inspect")]
-    use oxirush_aper::json::{self, Reading, Refused, Tree, Value};
     use oxirush_aper::{
         AsnType, BitString, Bits, Decode, Encode, Error, ObjectIdentifier, Octets, Reader,
         UNBOUNDED, Writer, in_field,
@@ -690,16 +528,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.bit_string(&self.0, 16, 16, true)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for Algorithms<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::bit_string(&self.0, 16, 16, true)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(json::read_bit_string(reading, value, 16, 16, true)?))
         }
     }
     /// `AreaItem ::= SEQUENCE`, with an extension marker.
@@ -752,36 +580,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for AreaItem {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("tAC", self.tac.to_tree());
-            members.put("broadcastPLMNs", self.broadcast_plmns.to_tree());
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::AreaItem)?;
-            let tac = reading.member(&members, "tAC", TAC::from_tree)?;
-            let broadcast_plmns =
-                reading.member(&members, "broadcastPLMNs", BroadcastPLMNs::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                tac,
-                broadcast_plmns,
-                ie_extensions,
-            })
-        }
-    }
     /// `Areas ::= SEQUENCE (SIZE (1..16)) OF AreaItem`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Areas(pub Vec<AreaItem>);
@@ -820,18 +618,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for Areas {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                AreaItem::from_tree(value, reading)
-            })?))
-        }
-    }
     /// `BroadcastPLMNs ::= SEQUENCE (SIZE (1..6)) OF PLMNIdentity`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct BroadcastPLMNs(pub Vec<PLMNIdentity>);
@@ -868,18 +654,6 @@ pub mod toy_ies {
                 item.encode(writer)?;
             }
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for BroadcastPLMNs {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                PLMNIdentity::from_tree(value, reading)
-            })?))
         }
     }
     /// `Cause ::= CHOICE`.
@@ -959,39 +733,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for Cause {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            match self {
-                Self::radioNetwork(value) => json::alternative("radioNetwork", value.to_tree()),
-                Self::nas(value) => json::alternative("nas", value.to_tree()),
-                Self::protocol(value) => json::alternative("protocol", value.to_tree()),
-                Self::misc(value) => json::alternative("misc", value.to_tree()),
-                Self::choice_Extensions(value) => {
-                    json::alternative("choice-Extensions", value.to_tree())
-                }
-            }
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let (position, value) = reading.alternative(value, names::Cause)?;
-            Ok(match position {
-                0 => Self::radioNetwork(reading.within(
-                    "radioNetwork",
-                    value,
-                    CauseRadioNetwork::from_tree,
-                )?),
-                1 => Self::nas(reading.within("nas", value, CauseNas::from_tree)?),
-                2 => Self::protocol(reading.within("protocol", value, CauseProtocol::from_tree)?),
-                3 => Self::misc(reading.within("misc", value, CauseMisc::from_tree)?),
-                _ => Self::choice_Extensions(reading.within(
-                    "choice-Extensions",
-                    value,
-                    ProtocolIEField::from_tree,
-                )?),
-            })
-        }
-    }
     /// `CauseMisc ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -1022,16 +763,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.index(self.index(), 2, true);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for CauseMisc {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::CauseMisc[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::CauseMisc)?])
         }
     }
     /// `CauseNas ::= ENUMERATED`, with an extension marker.
@@ -1066,16 +797,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.index(self.index(), 3, true);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for CauseNas {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::CauseNas[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::CauseNas)?])
         }
     }
     /// `CauseProtocol ::= ENUMERATED`, with an extension marker.
@@ -1123,16 +844,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for CauseProtocol {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::CauseProtocol[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::CauseProtocol)?])
-        }
-    }
     /// `CauseRadioNetwork ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -1168,16 +879,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.index(self.index(), 3, true);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for CauseRadioNetwork {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::CauseRadioNetwork[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::CauseRadioNetwork)?])
         }
     }
     /// `ConnectionItem ::= SEQUENCE`, with an extension marker.
@@ -1241,41 +942,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ConnectionItem {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put_optional(
-                "uE-Core-ID",
-                self.ue_core_id.as_ref().map(|value| value.to_tree()),
-            );
-            members.put_optional(
-                "uE-RAN-ID",
-                self.ue_ran_id.as_ref().map(|value| value.to_tree()),
-            );
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::ConnectionItem)?;
-            let ue_core_id = reading.optional(&members, "uE-Core-ID", UECoreID::from_tree)?;
-            let ue_ran_id = reading.optional(&members, "uE-RAN-ID", UERANID::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                ue_core_id,
-                ue_ran_id,
-                ie_extensions,
-            })
-        }
-    }
     /// `Connections ::= SEQUENCE (SIZE (1..65536)) OF ConnectionItem`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Connections(pub Vec<ConnectionItem>);
@@ -1332,18 +998,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for Connections {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                ConnectionItem::from_tree(value, reading)
-            })?))
-        }
-    }
     /// `Container ::= OCTET STRING`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Container<'a>(pub Octets<'a>);
@@ -1390,16 +1044,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.octet_string(&self.0, 0, UNBOUNDED, false)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for Container<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::octets(&self.0)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(json::read_octets(reading, value)?))
         }
     }
     /// `ContainerBlob ::= SEQUENCE`, with an extension marker.
@@ -1509,52 +1153,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ContainerBlob<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("tAC", self.tac.to_tree());
-            members.put_optional(
-                "nodeName",
-                self.node_name.as_ref().map(|value| value.to_tree()),
-            );
-            members.put_optional(
-                "message",
-                self.message.as_ref().map(|value| json::octets(value)),
-            );
-            members.put_optional("kinds", self.kinds.as_ref().map(|value| value.to_tree()));
-            members.put_optional("mixed", self.mixed.as_ref().map(|value| value.to_tree()));
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::ContainerBlob)?;
-            let tac = reading.member(&members, "tAC", TAC::from_tree)?;
-            let node_name = reading.optional(&members, "nodeName", NodeName::from_tree)?;
-            let message = reading.optional(&members, "message", |value, reading| {
-                json::read_octets(reading, value)
-            })?;
-            let kinds = reading.optional(&members, "kinds", Kinds::from_tree)?;
-            let mixed = reading.optional(&members, "mixed", Mixed::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                tac,
-                node_name,
-                message,
-                kinds,
-                mixed,
-                ie_extensions,
-            })
-        }
-    }
     /// `Counts ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Counts {
@@ -1621,49 +1219,6 @@ pub mod toy_ies {
                 value.encode(writer).map_err(in_field("ie_extensions"))?;
             }
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for Counts {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("countUL", json::unsigned(self.count_ul));
-            members.put_optional(
-                "counts",
-                self.counts
-                    .as_ref()
-                    .map(|value| json::unsigned(u64::from(*value))),
-            );
-            members.put("countDL", json::unsigned(self.count_dl));
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::Counts)?;
-            let count_ul = reading.member(&members, "countUL", |value, reading| {
-                reading.unsigned(value, 0, 18446744073709551615)
-            })?;
-            let counts = reading.optional(&members, "counts", |value, reading| {
-                reading.unsigned(value, 0, 255).map(|number| number as u8)
-            })?;
-            let count_dl = reading.member(&members, "countDL", |value, reading| {
-                reading.unsigned(value, u64::MIN, u64::MAX)
-            })?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                count_ul,
-                counts,
-                count_dl,
-                ie_extensions,
-            })
         }
     }
     /// `CriticalityDiagnostics ::= SEQUENCE`, with an extension marker.
@@ -1758,66 +1313,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for CriticalityDiagnostics {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put_optional(
-                "procedureCode",
-                self.procedure_code.as_ref().map(|value| value.to_tree()),
-            );
-            members.put_optional(
-                "triggeringMessage",
-                self.triggering_message
-                    .as_ref()
-                    .map(|value| value.to_tree()),
-            );
-            members.put_optional(
-                "procedureCriticality",
-                self.procedure_criticality
-                    .as_ref()
-                    .map(|value| value.to_tree()),
-            );
-            members.put_optional(
-                "iEsCriticalityDiagnostics",
-                self.ies_criticality_diagnostics
-                    .as_ref()
-                    .map(|value| value.to_tree()),
-            );
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::CriticalityDiagnostics)?;
-            let procedure_code =
-                reading.optional(&members, "procedureCode", ProcedureCode::from_tree)?;
-            let triggering_message =
-                reading.optional(&members, "triggeringMessage", TriggeringMessage::from_tree)?;
-            let procedure_criticality =
-                reading.optional(&members, "procedureCriticality", Criticality::from_tree)?;
-            let ies_criticality_diagnostics = reading.optional(
-                &members,
-                "iEsCriticalityDiagnostics",
-                CriticalityDiagnosticsIEList::from_tree,
-            )?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                procedure_code,
-                triggering_message,
-                procedure_criticality,
-                ies_criticality_diagnostics,
-                ie_extensions,
-            })
-        }
-    }
     /// `CriticalityDiagnostics-IE-Item ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct CriticalityDiagnosticsIEItem {
@@ -1873,39 +1368,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for CriticalityDiagnosticsIEItem {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("iECriticality", self.ie_criticality.to_tree());
-            members.put("iE-ID", self.ie_id.to_tree());
-            members.put("typeOfError", self.type_of_error.to_tree());
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::CriticalityDiagnosticsIEItem)?;
-            let ie_criticality =
-                reading.member(&members, "iECriticality", Criticality::from_tree)?;
-            let ie_id = reading.member(&members, "iE-ID", ProtocolIEID::from_tree)?;
-            let type_of_error = reading.member(&members, "typeOfError", TypeOfError::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                ie_criticality,
-                ie_id,
-                type_of_error,
-                ie_extensions,
-            })
-        }
-    }
     /// `CriticalityDiagnostics-IE-List ::= SEQUENCE (SIZE (1..256)) OF CriticalityDiagnosticsIEItem`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct CriticalityDiagnosticsIEList(pub Vec<CriticalityDiagnosticsIEItem>);
@@ -1944,18 +1406,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for CriticalityDiagnosticsIEList {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                CriticalityDiagnosticsIEItem::from_tree(value, reading)
-            })?))
-        }
-    }
     /// `ExtendedCause ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -1986,16 +1436,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.index(self.index(), 2, true);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for ExtendedCause {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::ExtendedCause[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::ExtendedCause)?])
         }
     }
     /// `FailureTransfer ::= SEQUENCE`, with an extension marker.
@@ -2041,32 +1481,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for FailureTransfer {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("cause", self.cause.to_tree());
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::FailureTransfer)?;
-            let cause = reading.member(&members, "cause", Cause::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                cause,
-                ie_extensions,
-            })
-        }
-    }
     /// The octets, in hexadecimal.
     impl core::fmt::Display for GTPTEID {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -2108,17 +1522,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.octet_array(&self.0);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for GTPTEID {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::readable(json::Form::Number(32), json::octets(&self.0))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let value = &json::read_readable(reading, json::Form::Number(32), value)?;
-            Ok(Self(reading.octet_array::<4>(value)?))
         }
     }
     /// `GTPTunnel ::= SEQUENCE`, with an extension marker.
@@ -2182,42 +1585,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for GTPTunnel<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put(
-                "transportLayerAddress",
-                self.transport_layer_address.to_tree(),
-            );
-            members.put("gTP-TEID", self.gtp_teid.to_tree());
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::GTPTunnel)?;
-            let transport_layer_address = reading.member(
-                &members,
-                "transportLayerAddress",
-                TransportLayerAddress::from_tree,
-            )?;
-            let gtp_teid = reading.member(&members, "gTP-TEID", GTPTEID::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                transport_layer_address,
-                gtp_teid,
-                ie_extensions,
-            })
-        }
-    }
     /// `IndexOfItem ::= INTEGER (1..8, ...)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct IndexOfItem(pub u64);
@@ -2248,16 +1615,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for IndexOfItem {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::unsigned(self.0)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.unsigned(value, u64::MIN, u64::MAX)?))
-        }
-    }
     /// `IndexOfTransfer ::= INTEGER (1..4, ...)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct IndexOfTransfer(pub u64);
@@ -2286,16 +1643,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.unsigned(self.0, 1, 4, true)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for IndexOfTransfer {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::unsigned(self.0)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.unsigned(value, u64::MIN, u64::MAX)?))
         }
     }
     /// `Item ::= SEQUENCE`, with an extension marker.
@@ -2356,37 +1703,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for Item {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("item-ID", json::unsigned(u64::from(self.item_id)));
-            members.put_optional("cause", self.cause.as_ref().map(|value| value.to_tree()));
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::Item)?;
-            let item_id = reading.member(&members, "item-ID", |value, reading| {
-                reading.unsigned(value, 0, 255).map(|number| number as u8)
-            })?;
-            let cause = reading.optional(&members, "cause", Cause::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                item_id,
-                cause,
-                ie_extensions,
-            })
-        }
-    }
     /// `Items ::= SEQUENCE (SIZE (1..16)) OF ProtocolIEField`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Items<'a>(pub Vec<ProtocolIEField<'a>>);
@@ -2432,18 +1748,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for Items<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                ProtocolIEField::from_tree(value, reading)
-            })?))
-        }
-    }
     /// `KindOfTransfer ::= TransferKind`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct KindOfTransfer(pub TransferKind);
@@ -2474,16 +1778,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for KindOfTransfer {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            self.0.to_tree()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(TransferKind::from_tree(value, reading)?))
-        }
-    }
     /// `Kinds ::= SEQUENCE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Kinds {
@@ -2509,22 +1803,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for Kinds {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("first", self.first.to_tree());
-            members.put("second", self.second.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::Kinds)?;
-            let first = reading.member(&members, "first", TransferKind::from_tree)?;
-            let second = reading.member(&members, "second", KindOfTransfer::from_tree)?;
-            Ok(Self { first, second })
-        }
-    }
     /// `Mixed ::= SEQUENCE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Mixed {
@@ -2548,22 +1826,6 @@ pub mod toy_ies {
             self.kind.encode(writer).map_err(in_field("kind"))?;
             self.cause.encode(writer).map_err(in_field("cause"))?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for Mixed {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("kind", self.kind.to_tree());
-            members.put("cause", self.cause.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::Mixed)?;
-            let kind = reading.member(&members, "kind", TransferKind::from_tree)?;
-            let cause = reading.member(&members, "cause", CauseNas::from_tree)?;
-            Ok(Self { kind, cause })
         }
     }
     /// `NAS-PDU ::= OCTET STRING`.
@@ -2612,16 +1874,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.octet_string(&self.0, 0, UNBOUNDED, false)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for NASPDU<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::octets(&self.0)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(json::read_octets(reading, value)?))
         }
     }
     /// `NodeID ::= CHOICE`.
@@ -2679,47 +1931,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for NodeID {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            match self {
-                Self::macro_NodeID(value) => {
-                    json::alternative("macro-NodeID", json::bits(*value, 20, 20))
-                }
-                Self::home_NodeID(value) => {
-                    json::alternative("home-NodeID", json::bits(*value, 28, 28))
-                }
-                Self::unassigned(value) => json::alternative("unassigned", Value::Null),
-                Self::choice_Extensions(value) => {
-                    json::alternative("choice-Extensions", value.to_tree())
-                }
-            }
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let (position, value) = reading.alternative(value, names::NodeID)?;
-            Ok(match position {
-                0 => Self::macro_NodeID(reading.within(
-                    "macro-NodeID",
-                    value,
-                    |value, reading| json::read_bits(reading, value, 20, 20),
-                )?),
-                1 => {
-                    Self::home_NodeID(reading.within("home-NodeID", value, |value, reading| {
-                        json::read_bits(reading, value, 28, 28)
-                    })?)
-                }
-                2 => Self::unassigned(
-                    reading.within("unassigned", value, |value, reading| reading.null(value))?,
-                ),
-                _ => Self::choice_Extensions(reading.within(
-                    "choice-Extensions",
-                    value,
-                    ProtocolIEField::from_tree,
-                )?),
-            })
-        }
-    }
     /// `NodeName ::= PrintableString (SIZE (1..150, ...))`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct NodeName<'a>(pub Cow<'a, str>);
@@ -2766,20 +1977,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.printable_string(&self.0, 1, 150, true)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for NodeName<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(&self.0)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(json::read_text(
-                reading,
-                value,
-                json::Characters::Printable,
-            )?))
         }
     }
     /// The MCC and the MNC, as `208-93`. Octets that are no PLMN identity print in hexadecimal.
@@ -2840,17 +2037,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.octet_array(&self.0);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for PLMNIdentity {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::readable(json::Form::Plmn, json::octets(&self.0))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let value = &json::read_readable(reading, json::Form::Plmn, value)?;
-            Ok(Self(reading.octet_array::<3>(value)?))
         }
     }
     /// `SecurityContext ::= SEQUENCE`, with an extension marker.
@@ -2918,41 +2104,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for SecurityContext<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put(
-                "nextHopChainingCount",
-                json::unsigned(u64::from(self.next_hop_chaining_count)),
-            );
-            members.put("nextHopNH", self.next_hop_nh.to_tree());
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::SecurityContext)?;
-            let next_hop_chaining_count =
-                reading.member(&members, "nextHopChainingCount", |value, reading| {
-                    reading.unsigned(value, 0, 7).map(|number| number as u8)
-                })?;
-            let next_hop_nh = reading.member(&members, "nextHopNH", SecurityKey::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                next_hop_chaining_count,
-                next_hop_nh,
-                ie_extensions,
-            })
-        }
-    }
     impl core::fmt::Debug for SecurityKey<'_> {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             write!(formatter, "SecurityKey({} bits)", self.0.len())
@@ -3001,18 +2152,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for SecurityKey<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::bit_string(&self.0, 256, 256, false)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.secret(|reading| {
-                json::read_bit_string(reading, value, 256, 256, false)
-            })?))
-        }
-    }
     /// `SetupTransfer ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SetupTransfer<'a> {
@@ -3048,21 +2187,6 @@ pub mod toy_ies {
                 .encode(writer)
                 .map_err(in_field("protocol_ies"))?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for SetupTransfer<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("protocolIEs", self.protocol_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::SetupTransfer)?;
-            let protocol_ies =
-                reading.member(&members, "protocolIEs", ProtocolIEContainer::from_tree)?;
-            Ok(Self { protocol_ies })
         }
     }
     /// The octets, in hexadecimal.
@@ -3106,17 +2230,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.octet_array(&self.0);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for TAC {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::readable(json::Form::Number(24), json::octets(&self.0))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let value = &json::read_readable(reading, json::Form::Number(24), value)?;
-            Ok(Self(reading.octet_array::<3>(value)?))
         }
     }
     /// `TransferItem ::= SEQUENCE`, with an extension marker.
@@ -3203,50 +2316,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for TransferItem<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("transfer-ID", json::unsigned(u64::from(self.transfer_id)));
-            members.put("setupTransfer", json::octets(&self.setup_transfer));
-            members.put_optional(
-                "failureTransfer",
-                self.failure_transfer
-                    .as_ref()
-                    .map(|value| json::octets(value)),
-            );
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::TransferItem)?;
-            let transfer_id = reading.member(&members, "transfer-ID", |value, reading| {
-                reading.unsigned(value, 0, 255).map(|number| number as u8)
-            })?;
-            let setup_transfer = reading.member(&members, "setupTransfer", |value, reading| {
-                json::read_octets(reading, value)
-            })?;
-            let failure_transfer =
-                reading.optional(&members, "failureTransfer", |value, reading| {
-                    json::read_octets(reading, value)
-                })?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                transfer_id,
-                setup_transfer,
-                failure_transfer,
-                ie_extensions,
-            })
-        }
-    }
     /// `TransferKind ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -3282,16 +2351,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.index(self.index(), 2, true);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for TransferKind {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::TransferKind[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::TransferKind)?])
         }
     }
     /// `TransferList ::= SEQUENCE (SIZE (1..8)) OF TransferItem`.
@@ -3339,18 +2398,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for TransferList<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                TransferItem::from_tree(value, reading)
-            })?))
-        }
-    }
     /// `TransportLayerAddress ::= BIT STRING (SIZE (1..160, ...))`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct TransportLayerAddress<'a>(pub BitString<'a>);
@@ -3387,17 +2434,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.bit_string(&self.0, 1, 160, true)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for TransportLayerAddress<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::readable(json::Form::Address, json::bit_string(&self.0, 1, 160, true))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let value = &json::read_readable(reading, json::Form::Address, value)?;
-            Ok(Self(json::read_bit_string(reading, value, 1, 160, true)?))
         }
     }
     /// `Tunnel ::= CHOICE`.
@@ -3463,33 +2499,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for Tunnel<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            match self {
-                Self::gTPTunnel(value) => json::alternative("gTPTunnel", value.to_tree()),
-                Self::unassigned(value) => json::alternative("unassigned", Value::Null),
-                Self::choice_Extensions(value) => {
-                    json::alternative("choice-Extensions", value.to_tree())
-                }
-            }
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let (position, value) = reading.alternative(value, names::Tunnel)?;
-            Ok(match position {
-                0 => Self::gTPTunnel(reading.within("gTPTunnel", value, GTPTunnel::from_tree)?),
-                1 => Self::unassigned(
-                    reading.within("unassigned", value, |value, reading| reading.null(value))?,
-                ),
-                _ => Self::choice_Extensions(reading.within(
-                    "choice-Extensions",
-                    value,
-                    ProtocolIEField::from_tree,
-                )?),
-            })
-        }
-    }
     /// `TypeOfError ::= ENUMERATED`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     #[non_exhaustive]
@@ -3522,16 +2531,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for TypeOfError {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::text(names::TypeOfError[self.index() as usize])
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self::VALUES[reading.named(value, names::TypeOfError)?])
-        }
-    }
     /// `UE-Core-ID ::= INTEGER (0..1099511627775)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct UECoreID(pub u64);
@@ -3560,16 +2559,6 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.unsigned(self.0, 0, 1099511627775, false)?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for UECoreID {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::unsigned(self.0)
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.unsigned(value, 0, 1099511627775)?))
         }
     }
     /// `UE-ID-pair ::= SEQUENCE`, with an extension marker.
@@ -3621,35 +2610,6 @@ pub mod toy_ies {
                 value.encode(writer).map_err(in_field("ie_extensions"))?;
             }
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for UEIDPair {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("uE-Core-ID", self.ue_core_id.to_tree());
-            members.put("uE-RAN-ID", self.ue_ran_id.to_tree());
-            members.put_optional(
-                "iE-Extensions",
-                self.ie_extensions.as_ref().map(|value| value.to_tree()),
-            );
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::UEIDPair)?;
-            let ue_core_id = reading.member(&members, "uE-Core-ID", UECoreID::from_tree)?;
-            let ue_ran_id = reading.member(&members, "uE-RAN-ID", UERANID::from_tree)?;
-            let ie_extensions = reading.optional(
-                &members,
-                "iE-Extensions",
-                ProtocolExtensionContainer::from_tree,
-            )?;
-            Ok(Self {
-                ue_core_id,
-                ue_ran_id,
-                ie_extensions,
-            })
         }
     }
     /// `UE-IDs ::= CHOICE`.
@@ -3705,31 +2665,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for UEIDs {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            match self {
-                Self::uE_ID_pair(value) => json::alternative("uE-ID-pair", value.to_tree()),
-                Self::uE_Core_ID(value) => json::alternative("uE-Core-ID", value.to_tree()),
-                Self::choice_Extensions(value) => {
-                    json::alternative("choice-Extensions", value.to_tree())
-                }
-            }
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let (position, value) = reading.alternative(value, names::UEIDs)?;
-            Ok(match position {
-                0 => Self::uE_ID_pair(reading.within("uE-ID-pair", value, UEIDPair::from_tree)?),
-                1 => Self::uE_Core_ID(reading.within("uE-Core-ID", value, UECoreID::from_tree)?),
-                _ => Self::choice_Extensions(reading.within(
-                    "choice-Extensions",
-                    value,
-                    ProtocolIEField::from_tree,
-                )?),
-            })
-        }
-    }
     /// `UE-RAN-ID ::= INTEGER (0..4294967295)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct UERANID(pub u32);
@@ -3760,20 +2695,6 @@ pub mod toy_ies {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for UERANID {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            json::unsigned(u64::from(self.0))
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(
-                reading
-                    .unsigned(value, 0, 4294967295)
-                    .map(|number| number as u32)?,
-            ))
-        }
-    }
 }
 #[allow(
     non_camel_case_types,
@@ -3785,12 +2706,8 @@ pub mod toy_ies {
 )]
 pub mod toy_pdu_contents {
     use super::*;
-    #[cfg(feature = "inspect")]
-    use crate::inspect_registry::names;
     use alloc::borrow::Cow;
     use alloc::vec::Vec;
-    #[cfg(feature = "inspect")]
-    use oxirush_aper::json::{self, Reading, Refused, Tree, Value};
     use oxirush_aper::{
         AsnType, BitString, Bits, Decode, Encode, Error, ObjectIdentifier, Octets, Reader,
         UNBOUNDED, Writer, in_field,
@@ -3832,21 +2749,6 @@ pub mod toy_pdu_contents {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ErrorIndication<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("protocolIEs", self.protocol_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::ErrorIndication)?;
-            let protocol_ies =
-                reading.member(&members, "protocolIEs", ProtocolIEContainer::from_tree)?;
-            Ok(Self { protocol_ies })
-        }
-    }
     /// `Notification ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Notification<'a> {
@@ -3882,21 +2784,6 @@ pub mod toy_pdu_contents {
                 .encode(writer)
                 .map_err(in_field("protocol_ies"))?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for Notification<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("protocolIEs", self.protocol_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::Notification)?;
-            let protocol_ies =
-                reading.member(&members, "protocolIEs", ProtocolIEContainer::from_tree)?;
-            Ok(Self { protocol_ies })
         }
     }
     /// `SEQUENCE ::= SEQUENCE`.
@@ -3940,30 +2827,6 @@ pub mod toy_pdu_contents {
                 .map_err(in_field("criticality"))?;
             writer.open_type(&self.value);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for AnonymousPrivateMessagePrivateIEs<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("id", self.id.to_tree());
-            members.put("criticality", self.criticality.to_tree());
-            members.put("value", json::octets(&self.value));
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::AnonymousPrivateMessagePrivateIEs)?;
-            let id = reading.member(&members, "id", PrivateIEID::from_tree)?;
-            let criticality = reading.member(&members, "criticality", Criticality::from_tree)?;
-            let value = reading.member(&members, "value", |value, reading| {
-                json::read_octets(reading, value)
-            })?;
-            Ok(Self {
-                id,
-                criticality,
-                value,
-            })
         }
     }
     /// `PrivateMessagePrivateIEs ::= SEQUENCE (SIZE (1..65535)) OF AnonymousPrivateMessagePrivateIEs`.
@@ -4011,18 +2874,6 @@ pub mod toy_pdu_contents {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for PrivateMessagePrivateIEs<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            Value::Array(self.0.iter().map(|item| item.to_tree()).collect())
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            Ok(Self(reading.list(value, |value, reading| {
-                AnonymousPrivateMessagePrivateIEs::from_tree(value, reading)
-            })?))
-        }
-    }
     /// `PrivateMessage ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct PrivateMessage<'a> {
@@ -4058,21 +2909,6 @@ pub mod toy_pdu_contents {
                 .encode(writer)
                 .map_err(in_field("private_ies"))?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for PrivateMessage<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("privateIEs", self.private_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::PrivateMessage)?;
-            let private_ies =
-                reading.member(&members, "privateIEs", PrivateMessagePrivateIEs::from_tree)?;
-            Ok(Self { private_ies })
         }
     }
     /// `ReleaseRequest ::= SEQUENCE`, with an extension marker.
@@ -4112,21 +2948,6 @@ pub mod toy_pdu_contents {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for ReleaseRequest<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("protocolIEs", self.protocol_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::ReleaseRequest)?;
-            let protocol_ies =
-                reading.member(&members, "protocolIEs", ProtocolIEContainer::from_tree)?;
-            Ok(Self { protocol_ies })
-        }
-    }
     /// `SetupFailure ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SetupFailure<'a> {
@@ -4162,21 +2983,6 @@ pub mod toy_pdu_contents {
                 .encode(writer)
                 .map_err(in_field("protocol_ies"))?;
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for SetupFailure<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("protocolIEs", self.protocol_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::SetupFailure)?;
-            let protocol_ies =
-                reading.member(&members, "protocolIEs", ProtocolIEContainer::from_tree)?;
-            Ok(Self { protocol_ies })
         }
     }
     /// `SetupRequest ::= SEQUENCE`, with an extension marker.
@@ -4216,21 +3022,6 @@ pub mod toy_pdu_contents {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for SetupRequest<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("protocolIEs", self.protocol_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::SetupRequest)?;
-            let protocol_ies =
-                reading.member(&members, "protocolIEs", ProtocolIEContainer::from_tree)?;
-            Ok(Self { protocol_ies })
-        }
-    }
     /// `SetupResponse ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SetupResponse<'a> {
@@ -4268,21 +3059,6 @@ pub mod toy_pdu_contents {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for SetupResponse<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("protocolIEs", self.protocol_ies.to_tree());
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::SetupResponse)?;
-            let protocol_ies =
-                reading.member(&members, "protocolIEs", ProtocolIEContainer::from_tree)?;
-            Ok(Self { protocol_ies })
-        }
-    }
 }
 #[allow(
     non_camel_case_types,
@@ -4294,12 +3070,8 @@ pub mod toy_pdu_contents {
 )]
 pub mod toy_pdu_descriptions {
     use super::*;
-    #[cfg(feature = "inspect")]
-    use crate::inspect_registry::names;
     use alloc::borrow::Cow;
     use alloc::vec::Vec;
-    #[cfg(feature = "inspect")]
-    use oxirush_aper::json::{self, Reading, Refused, Tree, Value};
     use oxirush_aper::{
         AsnType, BitString, Bits, Decode, Encode, Error, ObjectIdentifier, Octets, Reader,
         UNBOUNDED, Writer, in_field,
@@ -4369,31 +3141,6 @@ pub mod toy_pdu_descriptions {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for InitiatingMessage<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("procedureCode", self.procedure_code.to_tree());
-            members.put("criticality", self.criticality.to_tree());
-            members.put("value", json::octets(&self.value));
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::InitiatingMessage)?;
-            let procedure_code =
-                reading.member(&members, "procedureCode", ProcedureCode::from_tree)?;
-            let criticality = reading.member(&members, "criticality", Criticality::from_tree)?;
-            let value = reading.member(&members, "value", |value, reading| {
-                json::read_octets(reading, value)
-            })?;
-            Ok(Self {
-                procedure_code,
-                criticality,
-                value,
-            })
-        }
-    }
     impl core::fmt::Debug for SuccessfulOutcome<'_> {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             let holds_key = oxirush_aper::protocol::holds_key::<crate::Toy>(
@@ -4457,31 +3204,6 @@ pub mod toy_pdu_descriptions {
                 .map_err(in_field("criticality"))?;
             writer.open_type(&self.value);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for SuccessfulOutcome<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("procedureCode", self.procedure_code.to_tree());
-            members.put("criticality", self.criticality.to_tree());
-            members.put("value", json::octets(&self.value));
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::SuccessfulOutcome)?;
-            let procedure_code =
-                reading.member(&members, "procedureCode", ProcedureCode::from_tree)?;
-            let criticality = reading.member(&members, "criticality", Criticality::from_tree)?;
-            let value = reading.member(&members, "value", |value, reading| {
-                json::read_octets(reading, value)
-            })?;
-            Ok(Self {
-                procedure_code,
-                criticality,
-                value,
-            })
         }
     }
     /// `TOY-PDU ::= CHOICE`, with an extension marker.
@@ -4552,43 +3274,6 @@ pub mod toy_pdu_descriptions {
             Ok(())
         }
     }
-    #[cfg(feature = "inspect")]
-    impl Tree for TOYPDU<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            match self {
-                Self::initiatingMessage(value) => {
-                    json::alternative("initiatingMessage", value.to_tree())
-                }
-                Self::successfulOutcome(value) => {
-                    json::alternative("successfulOutcome", value.to_tree())
-                }
-                Self::unsuccessfulOutcome(value) => {
-                    json::alternative("unsuccessfulOutcome", value.to_tree())
-                }
-            }
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let (position, value) = reading.alternative(value, names::TOYPDU)?;
-            Ok(match position {
-                0 => Self::initiatingMessage(reading.within(
-                    "initiatingMessage",
-                    value,
-                    InitiatingMessage::from_tree,
-                )?),
-                1 => Self::successfulOutcome(reading.within(
-                    "successfulOutcome",
-                    value,
-                    SuccessfulOutcome::from_tree,
-                )?),
-                _ => Self::unsuccessfulOutcome(reading.within(
-                    "unsuccessfulOutcome",
-                    value,
-                    UnsuccessfulOutcome::from_tree,
-                )?),
-            })
-        }
-    }
     impl core::fmt::Debug for UnsuccessfulOutcome<'_> {
         fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             let holds_key = oxirush_aper::protocol::holds_key::<crate::Toy>(
@@ -4652,31 +3337,6 @@ pub mod toy_pdu_descriptions {
                 .map_err(in_field("criticality"))?;
             writer.open_type(&self.value);
             Ok(())
-        }
-    }
-    #[cfg(feature = "inspect")]
-    impl Tree for UnsuccessfulOutcome<'_> {
-        const NAME: &'static str = <Self as AsnType>::NAME;
-        fn to_tree(&self) -> Value {
-            let mut members = json::Members::new();
-            members.put("procedureCode", self.procedure_code.to_tree());
-            members.put("criticality", self.criticality.to_tree());
-            members.put("value", json::octets(&self.value));
-            members.finish()
-        }
-        fn from_tree(value: &Value, reading: &mut Reading) -> Result<Self, Refused> {
-            let members = reading.members(value, names::UnsuccessfulOutcome)?;
-            let procedure_code =
-                reading.member(&members, "procedureCode", ProcedureCode::from_tree)?;
-            let criticality = reading.member(&members, "criticality", Criticality::from_tree)?;
-            let value = reading.member(&members, "value", |value, reading| {
-                json::read_octets(reading, value)
-            })?;
-            Ok(Self {
-                procedure_code,
-                criticality,
-                value,
-            })
         }
     }
 }
