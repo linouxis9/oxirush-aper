@@ -130,7 +130,7 @@ pub(crate) static TABLES: Protocol = Protocol {
     ie_typed: crate::inspect_registry::ie,
     extension_typed: crate::registry::extension,
     ie_contents: crate::inspect_registry::ie_contents,
-    type_form: crate::inspect_registry::type_form,
+    type_form,
     transfer_fields: TRANSFER_FIELDS,
     transfer_typed: crate::inspect_registry::transfer,
     carried_typed: crate::inspect_registry::carried,
@@ -180,6 +180,13 @@ fn kind_of(name: &str) -> Option<&'static Kind> {
 /// its name in the bindings, made once from the table of the types.
 static KINDS: LazyLock<HashMap<&'static str, Kind>> =
     LazyLock::new(|| shared::kinds(&TABLES).into_iter().collect());
+
+/// The readable form of the well-known type that the bindings name `name`.
+fn type_form(name: &str) -> Option<Form> {
+    static FORMS: LazyLock<HashMap<&'static str, Form>> =
+        LazyLock::new(|| shared::forms(SCHEMA).collect());
+    FORMS.get(name).copied()
+}
 
 /// The names of the values of the ENUMERATED that the bindings name `name`.
 fn enumerated(name: &str) -> Option<&'static [&'static str]> {

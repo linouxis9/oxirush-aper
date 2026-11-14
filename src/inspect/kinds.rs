@@ -17,13 +17,14 @@
 
 //! What the paths of a protocol know of its types, made from its table of the types:
 //! each SEQUENCE and each CHOICE with the shape of each member, each type that is a list
-//! or a bit string whose size varies, and the names of the values of each ENUMERATED.
+//! or a bit string whose size varies, the names of the values of each ENUMERATED, and
+//! the readable form of each well-known type.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use super::schema::{self, Field};
-use super::{Kind, Member, Protocol, Shape};
+use super::{Form, Kind, Member, Protocol, Shape};
 
 /// The containers of IEs, by the names of their types in the bindings, and the shape of
 /// a value of each.
@@ -93,6 +94,16 @@ pub fn enumerations(
     let mut enumerations: Vec<_> = enumerated.collect();
     enumerations.sort_by_key(|(name, _)| *name);
     enumerations
+}
+
+/// The readable form of each well-known type of `types`, by its name in the bindings.
+pub fn forms(types: &'static [schema::Type]) -> impl Iterator<Item = (&'static str, Form)> {
+    types.iter().filter_map(|ty| match ty.kind {
+        schema::Kind::Alias {
+            form: Some(form), ..
+        } => Some((ty.rust, form)),
+        _ => None,
+    })
 }
 
 /// The members of a type, which are kept for the life of the program.

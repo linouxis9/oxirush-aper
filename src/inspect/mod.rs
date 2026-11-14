@@ -44,7 +44,7 @@ use oxirush_utils::tree::Value;
 use crate::{Error, ErrorKind};
 
 pub use crate::json::Form;
-pub use kinds::{enumerations, kinds};
+pub use kinds::{enumerations, forms, kinds};
 pub use paths::{listed_ies, named_ies};
 pub use trees::{check_path, enumerated_at, insert, open, paths, remove, select, set};
 pub use views::{Parts, tree, tree_of_jer, tree_parts};

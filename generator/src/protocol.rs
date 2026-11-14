@@ -168,7 +168,6 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     let list = registry.list()?;
     let inspection = crate::inspection::generate(
         name,
-        &for_rasn,
         &asn,
         &registry,
         protocol.carried,
@@ -178,7 +177,8 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
     fs::write("src/registry.rs", &list)?;
     let inspection = format!(
         "{inspection}#[allow(unused_imports)]\nuse oxirush_aper::inspect::schema::{{Field as F, \
-         Kind as K, Member as M, Text, Type as T}};\nuse oxirush_aper::UNBOUNDED;\n{}",
+         Kind as K, Member as M, Text, Type as T}};\nuse oxirush_aper::UNBOUNDED;\n\
+         #[allow(unused_imports)]\nuse oxirush_aper::inspect::Form;\n{}",
         bindings.schema
     );
     fs::write("src/inspect_registry.rs", inspection)?;

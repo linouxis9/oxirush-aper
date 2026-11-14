@@ -2,7 +2,6 @@
 pub(crate) use crate::registry::{
     IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGES, ie, ie_contents,
 };
-use oxirush_aper::inspect::Form;
 pub(crate) const PROTOCOL: &str = "TOY";
 pub(crate) const ROOT: &str = "toy";
 oxirush_aper::__transfers! {
@@ -12,20 +11,9 @@ oxirush_aper::__transfers! {
 oxirush_aper::__carried! {
     25 "ContainerBlob" crate::toy::ContainerBlob;
 }
-pub(crate) fn type_form(name: &str) -> Option<Form> {
-    Some(match name {
-        // GTP-TEID
-        "GTPTEID" => Form::Number(32),
-        // PLMNIdentity
-        "PLMNIdentity" => Form::Plmn,
-        // TAC
-        "TAC" => Form::Number(24),
-        // TransportLayerAddress
-        "TransportLayerAddress" => Form::Address,
-        _ => return None,
-    })
-}
 use oxirush_aper::UNBOUNDED;
+#[allow(unused_imports)]
+use oxirush_aper::inspect::Form;
 #[allow(unused_imports)]
 use oxirush_aper::inspect::schema::{Field as F, Kind as K, Member as M, Text, Type as T};
 /// The types of the protocol, in the order of the names that ASN.1 gives them, which the walker of the trees reads: a type is named by its row.

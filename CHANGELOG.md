@@ -40,7 +40,8 @@ All notable changes to `oxirush-aper` are recorded here.
   `__optional!`), which is removed. `inspect::Protocol` has no `types` and no
   `enumerations`, and has `enumerated`, the names of the values of an ENUMERATED. The
   paths read the same types: oxirush-ngap has 1,182 generated lines fewer,
-  oxirush-s1ap 557.
+  oxirush-s1ap 557. So does the readable form of each well-known type
+  (`inspect::forms`): the generator no longer writes `type_form`.
 - The message of a tree is written in one pass with the table of the types, each
   IE by name and each transfer as its decoded value, without the view that was
   written and then encoded IE by IE: the same octets, in 7.0 µs in the place of
