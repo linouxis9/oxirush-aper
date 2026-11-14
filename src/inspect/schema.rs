@@ -30,6 +30,7 @@ use alloc::vec::Vec;
 
 use oxirush_utils::tree::{self as utils, Map, Reading, Refused, Value};
 
+use super::views::{Within, Written};
 use crate::json::{self, Characters, Form};
 use crate::{Error, ObjectIdentifier, Reader, UNBOUNDED, Writer};
 
@@ -371,6 +372,7 @@ pub fn write(types: &'static [Type], ty: usize, value: &Value) -> Result<Vec<u8>
             types,
             writer: &mut writer,
             failed: &mut failed,
+            pdu: None,
         };
         walk.write_type(ty, value, reading)
     });
@@ -384,24 +386,27 @@ pub fn write(types: &'static [Type], ty: usize, value: &Value) -> Result<Vec<u8>
     Ok(octets)
 }
 
-/// A tree that is being written: the writer, and the first error of the writer, which
-/// is told once the whole tree is read.
-struct Walk<'w, 'o> {
-    types: &'static [Type],
-    writer: &'w mut Writer<'o>,
-    failed: &'w mut Option<Error>,
+/// A tree that is being written: the writer, the first error of the writer, which is
+/// told once the whole tree is read, and the PDU whose message it is, if it is one.
+pub(super) struct Walk<'w, 'o> {
+    pub(super) types: &'static [Type],
+    pub(super) writer: &'w mut Writer<'o>,
+    pub(super) failed: &'w mut Option<Error>,
+    /// The writing of the message of a PDU, which writes its IEs and its transfers: none
+    /// for a value of a type alone.
+    pub(super) pdu: Option<&'w Written>,
 }
 
 impl Walk<'_, '_> {
     /// Keep the first error of the writer.
-    fn wrote(&mut self, written: Result<(), Error>) {
+    pub(super) fn wrote(&mut self, written: Result<(), Error>) {
         if let (Err(error), None) = (written, &self.failed) {
             *self.failed = Some(error);
         }
     }
 
     /// Write `value`, a tree of the type `ty`.
-    fn write_type(
+    pub(super) fn write_type(
         &mut self,
         ty: usize,
         value: &Value,
@@ -426,8 +431,9 @@ impl Walk<'_, '_> {
                 }
                 for (name, member) in names.iter().zip(*members) {
                     let before = self.failed.is_some();
-                    let mut write = |value: &Value, reading: &mut Reading| {
-                        self.write_field(&member.ty, value, reading)
+                    let mut write = |held: &Value, reading: &mut Reading| match self.pdu {
+                        Some(pdu) => pdu.member(self, ty, (name, &member.ty), value, held, reading),
+                        None => self.write_field(&member.ty, held, reading),
                     };
                     match member.optional {
                         true => {
@@ -495,7 +501,7 @@ impl Walk<'_, '_> {
     }
 
     /// Write `value`, a tree of a field.
-    fn write_field(
+    pub(super) fn write_field(
         &mut self,
         field: &Field,
         value: &Value,
@@ -577,7 +583,13 @@ impl Walk<'_, '_> {
                 let identifier: ObjectIdentifier = json::read_object_identifier(reading, value)?;
                 self.writer.object_identifier(&identifier);
             }
-            Field::Named(ty) => self.write_type(ty.into(), value, reading)?,
+            Field::Named(ty) => match self.pdu {
+                // An IE that a value holds alone, or as an entry of a list.
+                Some(pdu) if pdu.is_ie(ty) => {
+                    pdu.ie(self, ty.into(), value, reading, Within::Ie)?
+                }
+                _ => self.write_type(ty.into(), value, reading)?,
+            },
             Field::List(of, lower, upper) => {
                 let Some(entries) = value.as_array() else {
                     // As the reading of a list refuses it.

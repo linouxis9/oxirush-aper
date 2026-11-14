@@ -24,13 +24,13 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use oxirush_utils::tree::{Map, Value};
+use oxirush_utils::tree::{Map, Reading, Refused, Value};
 
 use super::paths::{extended, member_shape, of_a_transfer, written_ie};
-use super::schema::{self, Field};
+use super::schema::{self, Field, Walk};
 use super::{Protocol, Sent, Shape, Typed, foreign, same_name};
 use crate::json::{self, hex};
-use crate::{Direction, Error, ErrorKind, Reader};
+use crate::{Direction, Error, ErrorKind, Reader, Writer};
 
 /// How deep in a view an IE or a transfer is still decoded.
 const NESTING: usize = 64;
@@ -600,10 +600,23 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
     let message = match (member("ies"), member("octets")) {
         (Some(listed), None) if listed.is_array() => {
             let sent = name.and_then(|name| protocol.sent(|_, _, known| known == name));
-            let mut message = Map::new();
-            let entries = protocol.written(listed, Shape::Ies(sent), 0)?;
-            message.insert("protocolIEs".into(), entries);
-            message_octets(protocol, direction, code, Value::Object(message))?
+            // The message in one pass, where the tree writes it; otherwise through its
+            // view, which says why it does not.
+            let written = Written::message(protocol, direction, code, sent, listed);
+            let viewed = || {
+                let mut message = Map::new();
+                let entries = protocol.written(listed, Shape::Ies(sent), 0)?;
+                message.insert("protocolIEs".into(), entries);
+                message_octets(protocol, direction, code, Value::Object(message))
+            };
+            match written {
+                Some(octets) => {
+                    // The two ways write the same octets.
+                    debug_assert_eq!(viewed().ok().as_ref(), Some(&octets), "{tree}");
+                    octets
+                }
+                None => viewed()?,
+            }
         }
         (None, Some(octets)) => unhex(octets)?,
         _ => return Err(form()),
@@ -688,7 +701,7 @@ impl Containers {
 /// list, or the IEs of an extension container of the type that the bindings give this
 /// name.
 #[derive(Clone, Copy)]
-enum Within {
+pub(super) enum Within {
     Ies(Option<Sent>),
     Ie,
     Extensions(&'static str),
@@ -985,4 +998,389 @@ fn octets_alone(octets: &[u8]) -> Value {
     let mut alone = Map::with_capacity(1);
     alone.push("octets".into(), hex(octets).into());
     Value::Object(alone)
+}
+
+// ── The message of a tree in one pass ───────────────────────────────────────
+
+/// How deep the members of the values of a message are written in one pass: what is
+/// deeper is written through the view of the tree, which says how deep it goes.
+const ONE_PASS: usize = 64;
+
+/// The writing of the message of a PDU from its tree in one pass, with the table of the
+/// types: the IEs of each container by name, and each transfer as its decoded value. It
+/// writes the octets that the view of the tree writes, for a tree that its view writes
+/// as it is written; it refuses what else a tree may be, as a criticality that is not
+/// written as its name, and the view then writes it or says why it does not.
+pub(super) struct Written {
+    protocol: &'static Protocol,
+    rows: Containers,
+    /// The row of the type of the message, and the message whose IEs it holds.
+    message: (usize, Option<Sent>),
+    /// How deep the member that is being written is.
+    depth: core::cell::Cell<usize>,
+}
+
+impl Written {
+    /// The octets of the message of a direction and a procedure code of `protocol`,
+    /// `sent` where the tables have it, whose IEs are `listed` in a tree; `None` for a
+    /// tree that the view writes otherwise, or does not write.
+    fn message(
+        protocol: &'static Protocol,
+        direction: Direction,
+        code: u8,
+        sent: Option<Sent>,
+        listed: &Value,
+    ) -> Option<Vec<u8>> {
+        let types = protocol.schema;
+        let row = (protocol.message_typed(direction, code).row)();
+        // A message is a container of IEs, which a SEQUENCE has as its one member.
+        let schema::Kind::Sequence {
+            names: [name],
+            members: [member],
+            extensible,
+        } = &types.get(row)?.kind
+        else {
+            return None;
+        };
+        let written = Written {
+            protocol,
+            rows: Containers::of(types),
+            message: (row, sent),
+            depth: core::cell::Cell::new(0),
+        };
+        let mut octets = Vec::new();
+        let mut failed = None;
+        let mut writer = Writer::new(&mut octets);
+        let wrote = oxirush_utils::tree::read(listed, name, |listed, reading| {
+            let mut walk = Walk {
+                types,
+                writer: &mut writer,
+                failed: &mut failed,
+                pdu: Some(&written),
+            };
+            if *extensible {
+                walk.writer.bit(false);
+            }
+            // The tree has no member of the message: its IEs stand for it.
+            match member.optional {
+                true => Err(refused(reading)),
+                false => written.member(
+                    &mut walk,
+                    row,
+                    (name, &member.ty),
+                    &Value::Null,
+                    listed,
+                    reading,
+                ),
+            }
+        });
+        if wrote.is_err() || failed.is_some() {
+            return None;
+        }
+        if octets.is_empty() {
+            octets.push(0);
+        }
+        Some(octets)
+    }
+
+    /// Whether the row `row` is that of the field of an IE.
+    pub(super) fn is_ie(&self, row: u16) -> bool {
+        let row = Some(usize::from(row));
+        row == self.rows.field || row == self.rows.extension
+    }
+
+    /// Write `value`, the member `name` of `of_value`, a value of the row `of`, whose
+    /// field is `field`: the IEs of a container, a transfer, or the field as the table
+    /// has it.
+    pub(super) fn member(
+        &self,
+        walk: &mut Walk<'_, '_>,
+        of: usize,
+        (name, field): (&'static str, &Field),
+        of_value: &Value,
+        value: &Value,
+        reading: &mut Reading,
+    ) -> Result<(), Refused> {
+        let depth = self.depth.get();
+        if depth > ONE_PASS {
+            return Err(refused(reading));
+        }
+        self.depth.set(depth + 1);
+        let protocol = self.protocol;
+        let ty = &protocol.schema[of];
+        let rows = &self.rows;
+        let written = match *field {
+            Field::Named(row) if Some(usize::from(row)) == rows.ies => {
+                // The IEs of a message, or of a transfer by the name of its type.
+                let sent = match of == self.message.0 {
+                    true => self.message.1,
+                    false => None,
+                };
+                let sent = sent.or_else(|| protocol.transfer(ty.rust));
+                self.container(walk, row, value, reading, Within::Ies(sent))
+            }
+            Field::Named(row) if Some(usize::from(row)) == rows.extensions => {
+                let within = Within::Extensions(ty.rust);
+                self.container(walk, row, value, reading, within)
+            }
+            // A transfer that is written as the value that its octets contain, under the
+            // name of its member as the view has it.
+            Field::Octets(lower, upper, extensible)
+                if value.is_object()
+                    && protocol.transfer_fields.contains(&name)
+                    && of_value.as_object().is_some_and(|of| of.contains_key(name)) =>
+            {
+                self.transfer(walk, name, (lower, upper, extensible), value, reading)
+            }
+            _ => walk.write_field(field, value, reading),
+        };
+        self.depth.set(depth);
+        written
+    }
+
+    /// Write `value`, the IEs of a container of the row `row` that are within `within`.
+    fn container(
+        &self,
+        walk: &mut Walk<'_, '_>,
+        row: u16,
+        value: &Value,
+        reading: &mut Reading,
+        within: Within,
+    ) -> Result<(), Refused> {
+        let schema::Kind::Alias {
+            field: Field::List(Field::Named(field), lower, upper),
+            ..
+        } = self.protocol.schema[usize::from(row)].kind
+        else {
+            return Err(refused(reading));
+        };
+        let Some(entries) = value.as_array().filter(|_| upper < 65536) else {
+            return Err(refused(reading));
+        };
+        let written = walk.writer.size(entries.len(), lower, upper);
+        walk.wrote(written);
+        let row = usize::from(*field);
+        reading.list(value, |entry, reading| {
+            self.ie(walk, row, entry, reading, within)
+        })?;
+        Ok(())
+    }
+
+    /// Write `entry`, the IE of a field of the row `row` within `within`, as a tree
+    /// writes it: its name with its value, or with its `octets`, and its criticality
+    /// beside them when it is not the one that the tables assign.
+    pub(super) fn ie(
+        &self,
+        walk: &mut Walk<'_, '_>,
+        row: usize,
+        entry: &Value,
+        reading: &mut Reading,
+        within: Within,
+    ) -> Result<(), Refused> {
+        let protocol = self.protocol;
+        let types = protocol.schema;
+        let schema::Kind::Sequence {
+            members: [id_field, criticality_field, _],
+            extensible,
+            ..
+        } = &types[row].kind
+        else {
+            return Err(refused(reading));
+        };
+        let Some(written) = entry.as_object() else {
+            return Err(refused(reading));
+        };
+        // The IE, by its name or its identifier in digits, as `entry_of` reads it.
+        let mut members = written
+            .iter()
+            .filter(|(member, _)| *member != "criticality");
+        let (Some((name, value)), None) = (members.next(), members.next()) else {
+            return Err(refused(reading));
+        };
+        let id = match name.parse::<u16>() {
+            Ok(id) => Some(id),
+            Err(_) => (protocol.ie_id)(name),
+        };
+        let Some(id) = id else {
+            return Err(refused(reading));
+        };
+        if *extensible {
+            walk.writer.bit(false);
+        }
+        walk.write_field(&id_field.ty, &Value::from(id), reading)?;
+        match written.get("criticality") {
+            Some(criticality) => walk.write_field(&criticality_field.ty, criticality, reading)?,
+            None => {
+                let assigned = protocol.assigned(within.shape(), id);
+                let assigned = assigned.ok_or_else(|| refused(reading))?;
+                self.enumerated(walk, &criticality_field.ty, assigned, reading)?;
+            }
+        }
+        // The octets of the IE as they are sent.
+        let octets = value.as_object().filter(|value| value.len() == 1);
+        if let Some(octets) = octets.and_then(|value| value.get("octets")) {
+            return walk.write_field(&Field::Open, octets, reading);
+        }
+        let extended = match within {
+            Within::Extensions(extended) => extended,
+            _ => "",
+        };
+        let typed = match (protocol.extension_typed)(id, extended) {
+            Some(typed) => typed,
+            None => (protocol.ie_typed)(id).map_err(|_| refused(reading))?,
+        };
+        let row = (typed.row)();
+        // The octets of a value that the value of the IE contains, which its type writes.
+        let contained = match value.as_object() {
+            // Octets that are written as a type that they carry, by its name.
+            Some(carried) if protocol.carries(id) => {
+                Some(self.carried(walk, id, carried, reading)?)
+            }
+            // An OCTET STRING (CONTAINING ...), as the value that it contains.
+            Some(_) => match (protocol.ie_contents)(id) {
+                Some(contents) => Some(self.contained(walk, (contents.row)(), value, reading)?),
+                None => None,
+            },
+            None => None,
+        };
+        let contained = contained.map(|octets| Value::String(hex(&octets)));
+        let start = walk.writer.begin_open_type();
+        let written = walk.write_type(row, contained.as_ref().unwrap_or(value), reading);
+        walk.writer.end_open_type(start);
+        written
+    }
+
+    /// The octets of the IE `id` that `value` writes as a type that they may carry: one
+    /// member, the name of that type with its value, of this protocol or of another
+    /// that is registered.
+    fn carried(
+        &self,
+        walk: &mut Walk<'_, '_>,
+        id: u16,
+        value: &Map,
+        reading: &mut Reading,
+    ) -> Result<Vec<u8>, Refused> {
+        let protocol = self.protocol;
+        let mut members = value.iter();
+        let (Some((name, held)), None) = (members.next(), members.next()) else {
+            return Err(refused(reading));
+        };
+        let own = protocol
+            .carried
+            .iter()
+            .map(|(carrier, name, _)| (carrier, name));
+        let other = protocol
+            .foreign
+            .iter()
+            .map(|(carrier, name, _)| (carrier, name));
+        let mut names = own.chain(other).filter(|(carrier, _)| **carrier == id);
+        if !names.any(|(_, known)| same_name(known, name)) {
+            return Err(refused(reading));
+        }
+        if !held.is_object() {
+            return reading.octets(held);
+        }
+        if let Some(typed) = (protocol.carried_typed)(name) {
+            return self.contained(walk, (typed.row)(), held, reading);
+        }
+        // A type of another protocol, by its tables.
+        let other = protocol.foreign_type(name);
+        let other = other.and_then(|(name, of)| Some((name, foreign(name, of).ok()?)));
+        let Some((name, other)) = other else {
+            return Err(refused(reading));
+        };
+        let typed = (other.carried_typed)(name).ok_or_else(|| refused(reading))?;
+        let written = Written {
+            protocol: other,
+            rows: Containers::of(other.schema),
+            message: (usize::MAX, None),
+            depth: core::cell::Cell::new(self.depth.get()),
+        };
+        written.contained(walk, (typed.row)(), held, reading)
+    }
+
+    /// Write the octets of a transfer of the member `name`, an OCTET STRING of the
+    /// size constraint `size`, that `value` writes: the value that they contain, or
+    /// `{"octets": "…"}`.
+    fn transfer(
+        &self,
+        walk: &mut Walk<'_, '_>,
+        name: &str,
+        (lower, upper, extensible): (usize, usize, bool),
+        value: &Value,
+        reading: &mut Reading,
+    ) -> Result<(), Refused> {
+        let typed = (self.protocol.transfer_typed)(name).map_err(|_| refused(reading))?;
+        let octets = self.contained(walk, (typed.row)(), value, reading)?;
+        let written = walk.writer.octet_string(&octets, lower, upper, extensible);
+        walk.wrote(written);
+        Ok(())
+    }
+
+    /// The octets of a value of the row `row` that `value` writes, which another value
+    /// contains: the value itself, without a member of a transfer, or its `octets`.
+    fn contained(
+        &self,
+        walk: &mut Walk<'_, '_>,
+        row: usize,
+        value: &Value,
+        reading: &mut Reading,
+    ) -> Result<Vec<u8>, Refused> {
+        let Some(members) = value.as_object() else {
+            return Err(refused(reading));
+        };
+        if members.keys().any(|name| of_a_transfer(name)) {
+            let octets = members.get("octets").filter(|_| members.len() == 1);
+            return match octets {
+                Some(octets) => reading.octets(octets),
+                None => Err(refused(reading)),
+            };
+        }
+        let mut octets = Vec::new();
+        let mut writer = Writer::new(&mut octets);
+        let mut inner = Walk {
+            types: self.protocol.schema,
+            writer: &mut writer,
+            failed: &mut *walk.failed,
+            pdu: Some(self),
+        };
+        inner.write_type(row, value, reading)?;
+        if octets.is_empty() {
+            octets.push(0);
+        }
+        Ok(octets)
+    }
+
+    /// Write `name`, the name of a value of the ENUMERATED of `field`.
+    fn enumerated(
+        &self,
+        walk: &mut Walk<'_, '_>,
+        field: &Field,
+        name: &str,
+        reading: &mut Reading,
+    ) -> Result<(), Refused> {
+        let Field::Named(row) = *field else {
+            return Err(refused(reading));
+        };
+        let schema::Kind::Enumerated {
+            names,
+            root,
+            extensible,
+        } = &self.protocol.schema[usize::from(row)].kind
+        else {
+            return Err(refused(reading));
+        };
+        let index = names.iter().position(|known| *known == name);
+        let index = index.ok_or_else(|| refused(reading))?;
+        walk.writer.index(index as u64, *root, *extensible);
+        Ok(())
+    }
+}
+
+/// What the writing in one pass leaves to the view of the tree, which says why.
+fn refused(reading: &mut Reading) -> Refused {
+    reading.refuse(
+        oxirush_utils::tree::ErrorKind::Value,
+        "written through the view",
+    )
 }

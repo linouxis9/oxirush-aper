@@ -30,6 +30,12 @@ All notable changes to `oxirush-aper` are recorded here.
   SETUP REQUEST of 212 octets. A row of the table has the name of its type in the
   bindings, and `inspect::Typed` says whether octets are a value that writes them
   back (`shown`) and the row of its type (`row`).
+- The message of a tree is written in one pass with the table of the types, each
+  IE by name and each transfer as its decoded value, without the view that was
+  written and then encoded IE by IE: the same octets, in 7.0 µs in the place of
+  29 µs for an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets. A tree that the
+  one pass does not write, as one with an error, is written through the view,
+  which says why: the errors and their order are those of before.
 - `json` and the functions of `protocol` behind the methods that the bindings
   generate (`of_message`, `protocol_ies`, `set_protocol_ies`, `message_octets`,
   `holds_key`, `items_of_fields`) are hidden from the documentation: a program
