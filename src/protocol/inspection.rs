@@ -669,6 +669,29 @@ pub(crate) fn __encode_typed<T: AsnType>(value: &Value) -> Result<Vec<u8>, Error
     $crate::inspect::schema::write(crate::inspect_registry::SCHEMA, row::<T>(), value)
 }
 
+/// The tree of a value of a type of the bindings, as the tree of a PDU shows it where
+/// the value is: a value that is encoded, then read by the table of the types.
+///
+/// # Errors
+///
+/// A value that does not encode, outside a constraint of its type.
+pub fn value_tree<T: Encode + AsnType>(value: &T) -> Result<Value, Error> {
+    let octets = $crate::encode(value)?;
+    $crate::inspect::schema::tree(crate::inspect_registry::SCHEMA, row::<T>(), &octets)
+}
+
+/// The value of a type of the bindings that a tree writes, as [`value_tree`] shows it:
+/// the tree is written by the table of the types, then decoded.
+///
+/// # Errors
+///
+/// A tree that is not a value of the type, which says why and where, and a value
+/// outside a constraint of its type.
+pub fn value_from_tree<T: for<'a> Decode<'a> + AsnType>(tree: &Value) -> Result<T, Error> {
+    let octets = __encode_typed::<T>(tree)?;
+    $crate::decode(&octets)
+}
+
 /// How a tree shows the values of a well-known type.
 pub(crate) use $crate::inspect::Form;
 

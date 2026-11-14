@@ -125,3 +125,31 @@ fn the_name_of_the_ie_stays_after_its_position() {
     remove(&mut tree, &path("1")).unwrap();
     assert_eq!(select(&tree, &path("Cause")).unwrap(), [&value]);
 }
+
+#[test]
+fn a_value_of_a_type_of_the_bindings_has_the_tree_that_a_pdu_shows_it_with() {
+    use oxirush_toy::inspect::{value_from_tree, value_tree};
+    use oxirush_toy::toy::{AreaItem, BroadcastPLMNs, PLMNIdentity, TAC};
+    let item = AreaItem {
+        tac: TAC([0, 0, 1]),
+        broadcast_plmns: BroadcastPLMNs(vec![PLMNIdentity([0x02, 0xf8, 0x39])]),
+        ie_extensions: None,
+    };
+    let written = tree!({"tAC": 1, "broadcastPLMNs": ["208-93"]});
+    assert_eq!(value_tree(&item), Ok(written.clone()));
+    assert_eq!(value_from_tree::<AreaItem>(&written), Ok(item));
+    // A tree that is not a value of the type says why and where.
+    let wrong = tree!({"tAC": 1, "broadcastPLMNs": ["208"]});
+    let refused = value_from_tree::<AreaItem>(&wrong).unwrap_err();
+    assert_eq!(refused.kind(), ErrorKind::Value);
+    assert!(
+        refused
+            .to_string()
+            .starts_with("this is not a value of AreaItem"),
+        "{refused}"
+    );
+    // So does a value outside a constraint of its type, here a list without an entry.
+    let empty = tree!({"tAC": 1, "broadcastPLMNs": []});
+    let refused = value_from_tree::<AreaItem>(&empty).unwrap_err();
+    assert!(refused.to_string().contains("broadcast_plmns"), "{refused}");
+}

@@ -10,6 +10,9 @@ All notable changes to `oxirush-aper` are recorded here.
   table, and a walker that reads the octets of a value of a row as its tree and
   writes a tree as its octets, with the reader and the writer of the typed
   bindings and their errors.
+- `value_tree` and `value_from_tree` in the module `inspect` of a protocol crate: the
+  tree of a value of a type of the bindings, as the tree of a PDU shows it, and the
+  value that a tree writes, which take the place of `Tree` on each type.
 
 ### Changed
 
