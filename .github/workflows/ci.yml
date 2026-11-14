@@ -132,7 +132,7 @@ jobs:
         run: |
           CARGO="$(command -v cargo)" cargo run --locked --manifest-path build/Cargo.toml
           rustfmt --edition 2024 src/toy.rs src/registry.rs src/inspect_registry.rs
-          git diff --exit-code -- src
+          git diff --exit-code -- src fuzz/octets.dict fuzz/names.dict
 
   fuzz:
     name: Fuzz the fields (1 minute)
@@ -164,14 +164,14 @@ jobs:
           workspaces: protocols/toy/fuzz
       - run: cargo install cargo-fuzz --locked
       - run: ../fuzz/seed.sh
-      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
-      - run: cargo fuzz run json -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
-      - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096
-      - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
-      - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0
-      - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096 -dict=fuzz/octets.dict
+      - run: cargo fuzz run json -- -max_total_time=60 -max_len=4096 -dict=fuzz/octets.dict
+      - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096 -dict=fuzz/names.dict
+      - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/octets.dict
+      - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0 -dict=fuzz/names.dict
+      - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0 -dict=fuzz/names.dict
       - run: cargo fuzz run transfer -- -max_total_time=60 -max_len=1024 -len_control=0
-      - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0 -dict=fuzz/names.dict
       - run: cargo fuzz run walker -- -max_total_time=60 -max_len=1024 -len_control=0
 
 

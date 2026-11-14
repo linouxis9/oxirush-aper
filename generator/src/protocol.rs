@@ -177,6 +177,12 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
         bindings.schema
     );
     fs::write("src/inspect_registry.rs", inspection)?;
+    // The dictionaries of the fuzz targets, from the same tables.
+    fs::write("fuzz/octets.dict", crate::fuzzing::octets(&registry)?)?;
+    fs::write(
+        "fuzz/names.dict",
+        crate::fuzzing::names(&registry, &bindings.names)?,
+    )?;
     fs::write(path, for_rasn).context("write the bindings for rasn")?;
     let mut text = bindings.text;
     text.push_str(&support(protocol, &bindings.borrowing)?);

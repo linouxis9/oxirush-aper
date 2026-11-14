@@ -138,6 +138,9 @@ pub struct Written {
     /// The table of the types, which the walker of `oxirush_aper::inspect::schema` reads
     /// and writes trees with: `SCHEMA`, in the order of the names that ASN.1 gives them.
     pub schema: String,
+    /// The names that ASN.1 gives the members and the alternatives of the types and the
+    /// values of each ENUMERATED: names that a tree and a path write.
+    pub names: BTreeSet<String>,
     pub borrowing: BTreeSet<String>,
     /// The types that hold a key: the types of [`Keys::types`], and those that hold one.
     pub keys: BTreeSet<String>,
@@ -180,9 +183,21 @@ pub fn bindings(description: &str, keys: Keys<'_>, plmns: &[&str]) -> Result<Wri
     let bindings = Bindings::new(&modules, keys, plmns)?;
     let text = bindings.write(&modules)?;
     let schema = bindings.schema(&modules)?;
+    let definitions = modules.iter().flat_map(|module| &module.entries);
+    let members = definitions.flat_map(|entry| match entry {
+        Entry::Definition(definition) => match &definition.shape {
+            Shape::Sequence(members) | Shape::Choice(members) | Shape::Enumerated(members) => {
+                &members[..]
+            }
+            Shape::Alias(_) => &[],
+        },
+        _ => &[],
+    });
+    let names = members.map(|member| member.asn.clone()).collect();
     Ok(Written {
         text,
         schema,
+        names,
         borrowing: bindings.borrowing,
         keys: bindings.keys,
     })

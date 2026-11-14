@@ -38,31 +38,3 @@ grep -hv '^#' $files |
             > "fuzz/corpus/paths/$number"
     done
 
-# The dictionary of the targets that read octets, from the procedures of
-# src/registry.rs: the header of each message, its direction, its procedure code and
-# its criticality, and each IE of each message, its identifier and its criticality, as
-# aligned PER writes them, each once.
-awk '
-    function criticality(name) { return name == "reject" ? "00" : name == "ignore" ? "40" : "80" }
-    /^    [0-9]+ [A-Za-z]/ {
-        code = sprintf("%02x", $1)
-        procedure = criticality($3)
-        line = $0
-        while (match(line, /(InitiatingMessage|SuccessfulOutcome|UnsuccessfulOutcome) [^ ]+ "[^"]+"/)) {
-            part = substr(line, RSTART, RLENGTH)
-            split(part, words, " ")
-            choice = words[1] == "InitiatingMessage" ? "00" : words[1] == "SuccessfulOutcome" ? "20" : "40"
-            name = words[3]
-            gsub(/"/, "", name)
-            printf "%s=\"\\x%s\\x%s\\x%s\"\n", name, choice, code, procedure
-            line = substr(line, RSTART + RLENGTH)
-            if (match(line, /\[[^]]*\]/)) {
-                n = split(substr(line, RSTART + 1, RLENGTH - 2), ies, ", ")
-                for (i = 1; i <= n; i++) {
-                    split(ies[i], ie, " ")
-                    printf "%s_%s=\"\\x%02x\\x%02x\\x%s\"\n", name, ie[1], int(ie[1] / 256), ie[1] % 256, criticality(ie[2])
-                }
-            }
-        }
-    }
-' src/registry.rs | awk -F = '!seen[$2]++' > fuzz/corpus/protocol.dict

@@ -30,7 +30,8 @@
 //! - [`registry`] reads the procedures and the IEs from the ASN.1, and writes the list
 //!   that the macros of a protocol crate expand;
 //! - [`inspection`] writes what the `inspect` feature needs beside it, with the perfect
-//!   hashes of the names of the IEs and of the types that `hashing` computes;
+//!   hashes of the names of the IEs and of the types that `hashing` computes, and
+//!   `fuzzing` the dictionaries of the fuzz targets;
 //! - [`asn1`] reads the modules, each checked against the digest that is recorded
 //!   for it.
 //!
@@ -41,6 +42,7 @@
 pub mod asn1;
 pub mod bindings;
 pub mod containers;
+mod fuzzing;
 mod hashing;
 pub mod inspection;
 pub mod names;

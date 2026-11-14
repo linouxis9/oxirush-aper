@@ -213,17 +213,17 @@ jobs:
       # candidate found under an unknown procedure (tests/fixtures/null_paths.tsv), which
       # 30 minutes from the PDUs alone did not show, shows in 9 seconds from them.
       - run: ../oxirush-aper/protocols/fuzz/seed.sh
-      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
-      - run: cargo fuzz run json -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
-      - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096
-      - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/corpus/protocol.dict
+      - run: cargo fuzz run decode -- -max_total_time=60 -max_len=4096 -dict=fuzz/octets.dict
+      - run: cargo fuzz run json -- -max_total_time=60 -max_len=4096 -dict=fuzz/octets.dict
+      - run: cargo fuzz run paths -- -max_total_time=60 -max_len=4096 -dict=fuzz/names.dict
+      - run: cargo fuzz run exact -- -max_total_time=60 -max_len=4096 -dict=fuzz/octets.dict
       # These take the PDUs of tests/fixtures themselves, and edit them, write them from
       # their trees, give the fuzzer's octets a place in them or write them as another
       # implementation writes JER.
-      - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0
-      - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run edit -- -max_total_time=60 -max_len=1024 -len_control=0 -dict=fuzz/names.dict
+      - run: cargo fuzz run tree -- -max_total_time=60 -max_len=1024 -len_control=0 -dict=fuzz/names.dict
       - run: cargo fuzz run transfer -- -max_total_time=60 -max_len=1024 -len_control=0
-      - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0 -dict=fuzz/names.dict
       - run: cargo fuzz run walker -- -max_total_time=60 -max_len=1024 -len_control=0
 
   # The revisions of build/revisions wherever the repository names one, as

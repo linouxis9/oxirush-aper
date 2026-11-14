@@ -21,14 +21,14 @@ name: Crate fuzz
 # beside it; when oxirush-aper calls, the crate is at the head of its default branch, as
 # the CI of this repository checks it out, with this commit beside it. Their seeds are
 # those of seed.sh, the PDUs of tests/fixtures and of tests/wireshark/corpus.tsv of the
-# crate, and their dictionary.
+# crate, and their dictionaries those that the generator writes in fuzz/.
 on:
   workflow_call:
     inputs:
       targets:
         description: >-
           The targets, a JSON list of objects: `target`; and, as a target needs them,
-          `max_len`, `flags` (one option of libFuzzer), `features` (of the fuzz package),
+          `max_len`, `flags` (options of libFuzzer, separated by spaces), `features` (of the fuzz package),
           `seeds` (a directory of inputs copied into the corpus), `dir` (the directory of
           fuzz/, if not the root of the workspace) and `name` (a word put before the name
           of the target in its cache and its artifacts)
@@ -164,20 +164,22 @@ jobs:
             fi
           fi
           if [ -n "$PROTOCOL" ]; then
-            # The targets of protocols/fuzz/. Those that read octets take the dictionary
-            # that seed.sh writes: the header of each message and each IE of each
-            # message. Those that build their input with `arbitrary` try inputs of any
-            # length from the start.
-            dict=-dict=fuzz/corpus/protocol.dict
-            TARGETS=$(jq -cn --arg p "$PROTOCOL" --arg dict "$dict" '
-              [{target: "decode", max_len: 4096, flags: $dict},
-               {target: "json", max_len: 4096, flags: $dict},
-               {target: "paths", max_len: 4096},
-               {target: "exact", max_len: 4096, flags: $dict},
-               {target: "edit", max_len: 1024, flags: "-len_control=0"},
-               {target: "tree", max_len: 1024, flags: "-len_control=0"},
+            # The targets of protocols/fuzz/. Those that read octets take fuzz/octets.dict,
+            # which the generator writes: the header of each message and each IE of each
+            # message. Those that write paths and trees take fuzz/names.dict, the names
+            # that trees and paths write. Those that build their input with `arbitrary`
+            # try inputs of any length from the start.
+            octets=-dict=fuzz/octets.dict
+            names=-dict=fuzz/names.dict
+            TARGETS=$(jq -cn --arg p "$PROTOCOL" --arg octets "$octets" --arg names "$names" '
+              [{target: "decode", max_len: 4096, flags: $octets},
+               {target: "json", max_len: 4096, flags: $octets},
+               {target: "paths", max_len: 4096, flags: $names},
+               {target: "exact", max_len: 4096, flags: $octets},
+               {target: "edit", max_len: 1024, flags: "-len_control=0 \($names)"},
+               {target: "tree", max_len: 1024, flags: "-len_control=0 \($names)"},
                {target: "transfer", max_len: 1024, flags: "-len_control=0"},
-               {target: "jer", max_len: 1024, flags: "-len_control=0"},
+               {target: "jer", max_len: 1024, flags: "-len_control=0 \($names)"},
                {target: "walker", max_len: 1024, flags: "-len_control=0"}]
               | map(. + {dir: "oxirush-\($p)", name: $p})')
           fi
@@ -287,7 +289,7 @@ jobs:
           restore-keys: fuzz-corpus-${{ env.KEY }}-
       # The seeds of the target, copied into its corpus; those of a protocol: the PDUs of
       # tests/fixtures and of tests/wireshark/corpus.tsv, each also under a procedure code
-      # that the specification does not have, and the dictionary.
+      # that the specification does not have.
       - if: matrix.seeds
         env:
           SEEDS: ${{ matrix.seeds }}
@@ -305,9 +307,10 @@ jobs:
           FLAGS: ${{ matrix.flags }}
         run: |
           mkdir -p "fuzz/corpus/$TARGET"
-          # FLAGS is one option, or none
+          # FLAGS holds the options of the target, separated by spaces, or none
+          read -ra flags <<< "$FLAGS"
           cargo fuzz run ${FEATURES:+--features "$FEATURES"} "$TARGET" "fuzz/corpus/$TARGET" -- \
-            -max_total_time="$FUZZ_SECONDS" -timeout=30 ${MAX_LEN:+-max_len="$MAX_LEN"} ${FLAGS:+"$FLAGS"} 2>&1 |
+            -max_total_time="$FUZZ_SECONDS" -timeout=30 ${MAX_LEN:+-max_len="$MAX_LEN"} "${flags[@]}" 2>&1 |
             tee "$RUNNER_TEMP/fuzz.log"
       # On the weekly schedule: the inputs that reach nothing that the others do not are
       # dropped.

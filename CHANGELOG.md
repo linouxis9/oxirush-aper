@@ -79,6 +79,15 @@ All notable changes to `oxirush-aper` are recorded here.
   row. On an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets, `paths` takes 9.9 µs
   where it took 10.9 µs, `select` 2.0 µs (2.3 µs), and `from_tree` 6.8 µs (7.1 µs).
 
+- The generator writes the dictionaries of the fuzz targets of a protocol beside its
+  bindings: `fuzz/octets.dict`, the header of each message and each IE of each message
+  as aligned PER writes them, which `protocols/fuzz/seed.sh` wrote from
+  `src/registry.rs` before, and `fuzz/names.dict`, the names of the messages, of the
+  IEs, and of the members, the alternatives and the values of the types. The fuzz
+  workflows pass the first to `decode`, `json` and `exact`, and the second to `paths`,
+  `edit`, `tree` and `jer`; the Reproduce workflow and the TOY job compare both with
+  what the generator writes.
+
 ### Removed
 
 - `inspect::enumerations` and `inspect::forms`: the readable form and the values of

@@ -70,7 +70,7 @@ jobs:
           CARGO="$(command -v cargo)" cargo run --locked --manifest-path build/Cargo.toml
           rustfmt --edition 2024 "src/${{ inputs.protocol }}.rs" src/registry.rs \
             src/inspect_registry.rs rasn/src/bindings.rs
-          git diff --exit-code -- src rasn
+          git diff --exit-code -- src rasn fuzz/octets.dict fuzz/names.dict
       - name: The vectors, which pycrate writes as they are committed
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
