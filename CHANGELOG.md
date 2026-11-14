@@ -4,6 +4,13 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ## Unreleased
 
+### Added
+
+- `inspect::schema` (hidden, with `inspect`): the types of a protocol as one
+  table, and a walker that reads the octets of a value of a row as its tree and
+  writes a tree as its octets, with the reader and the writer of the typed
+  bindings and their errors.
+
 ### Changed
 
 - `json` and the functions of `protocol` behind the methods that the bindings

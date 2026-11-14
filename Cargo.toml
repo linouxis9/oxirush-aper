@@ -41,6 +41,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 oxirush-utils = { version = "0.2.2", optional = true, features = ["tree"] }
 
+# The revision of oxirush-utils that reads a tree with a function (`tree::read`) and
+# octets of a size that a table gives (`Reading::octets_sized`), which the walker of the
+# trees calls, until the release of oxirush-utils that has them.
+[patch.crates-io]
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "89606c26c44b70d11055882abdee99b22f564353" }
+
 
 [[test]]
 name = "json"

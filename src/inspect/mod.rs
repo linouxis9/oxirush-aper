@@ -33,6 +33,7 @@
 //! oxirush-s1ap, which are.
 
 mod paths;
+pub mod schema;
 mod trees;
 mod views;
 

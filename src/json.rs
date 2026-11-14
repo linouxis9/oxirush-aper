@@ -63,13 +63,16 @@ use crate::{BitString, Bits, Error, ErrorKind, ObjectIdentifier, Octets};
 /// have, which says why the value is not one of its type and where, by the names that
 /// ASN.1 gives on the way to it.
 pub fn from_value<T: Tree>(value: &Value) -> Result<T, Error> {
-    utils::from_value(value).map_err(|error| {
-        let kind = match error.kind() {
-            Fault::NoSuchMember => ErrorKind::Path,
-            _ => ErrorKind::Value,
-        };
-        Error::new(kind, error.to_string())
-    })
+    utils::from_value(value).map_err(refused)
+}
+
+/// The error of the crate for a tree that is refused as a value of its type.
+pub fn refused(error: utils::Error) -> Error {
+    let kind = match error.kind() {
+        Fault::NoSuchMember => ErrorKind::Path,
+        _ => ErrorKind::Value,
+    };
+    Error::new(kind, error.to_string())
 }
 
 // ── From a value to JSON ────────────────────────────────────────────────────
