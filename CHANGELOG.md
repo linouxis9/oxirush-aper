@@ -34,6 +34,13 @@ All notable changes to `oxirush-aper` are recorded here.
   SETUP REQUEST of 212 octets. A row of the table has the name of its type in the
   bindings, and `inspect::Typed` says whether octets are a value that writes them
   back (`shown`) and the row of its type (`row`).
+- The paths of a protocol read its types from the table of the types: `inspect::kinds`
+  and `inspect::enumerations` make, once, what the generator wrote as the list of the
+  types (`__types!` in `inspect_registry.rs`, with `__names!`, `__kind!`, `__shape!` and
+  `__optional!`), which is removed. `inspect::Protocol` has no `types` and no
+  `enumerations`, and has `enumerated`, the names of the values of an ENUMERATED. The
+  paths read the same types: oxirush-ngap has 1,182 generated lines fewer,
+  oxirush-s1ap 557.
 - The message of a tree is written in one pass with the table of the types, each
   IE by name and each transfer as its decoded value, without the view that was
   written and then encoded IE by IE: the same octets, in 7.0 µs in the place of

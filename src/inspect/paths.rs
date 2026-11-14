@@ -112,10 +112,7 @@ impl Protocol {
 
     /// The names of the values of the ENUMERATED that the bindings name `name`.
     pub fn enumeration(&self, name: &str) -> Option<&'static [&'static str]> {
-        let at = self
-            .enumerations
-            .binary_search_by(|(known, _)| (*known).cmp(name));
-        at.ok().map(|at| self.enumerations[at].1)
+        (self.enumerated)(name)
     }
 
     /// `shape`, or what the type that it names is.
@@ -571,7 +568,7 @@ pub fn of_a_transfer(name: &str) -> bool {
 
 /// The members that a value of a view can have, each with its shape.
 pub enum Members {
-    /// Those of a SEQUENCE or of a CHOICE, as the list of the types has them, and the
+    /// Those of a SEQUENCE or of a CHOICE, as `kinds` makes them, and the
     /// name of that type: an extension container among them extends it.
     Listed(&'static [Member], &'static str),
     /// Those of another value, as an IE or a transfer.

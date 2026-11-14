@@ -25,64 +25,6 @@ pub(crate) fn type_form(name: &str) -> Option<Form> {
         _ => return None,
     })
 }
-oxirush_aper::__types! {
-    types {
-        Algorithms = bits;
-        AnonymousPrivateMessagePrivateIEs sequence { "id": PrivateIEID, "criticality": Criticality, "value": _ };
-        AreaItem sequence { "tAC": TAC, "broadcastPLMNs": BroadcastPLMNs, "iE-Extensions"? extensions };
-        Areas = [AreaItem];
-        BroadcastPLMNs = [PLMNIdentity];
-        Cause choice { "radioNetwork": CauseRadioNetwork, "nas": CauseNas, "protocol": CauseProtocol, "misc": CauseMisc, "choice-Extensions": ie };
-        ConnectionItem sequence { "uE-Core-ID"? _, "uE-RAN-ID"? _, "iE-Extensions"? extensions };
-        Connections = [ConnectionItem];
-        ContainerBlob sequence { "tAC": TAC, "nodeName"? _, "message"? _, "kinds"? Kinds, "mixed"? Mixed, "iE-Extensions"? extensions };
-        Counts sequence { "countUL": _, "counts"? _, "countDL": _, "iE-Extensions"? extensions };
-        CriticalityDiagnostics sequence { "procedureCode"? _, "triggeringMessage"? TriggeringMessage, "procedureCriticality"? Criticality, "iEsCriticalityDiagnostics"? CriticalityDiagnosticsIEList, "iE-Extensions"? extensions };
-        CriticalityDiagnosticsIEItem sequence { "iECriticality": Criticality, "iE-ID": _, "typeOfError": TypeOfError, "iE-Extensions"? extensions };
-        CriticalityDiagnosticsIEList = [CriticalityDiagnosticsIEItem];
-        ErrorIndication sequence { "protocolIEs": ies };
-        FailureTransfer sequence { "cause": Cause, "iE-Extensions"? extensions };
-        GTPTunnel sequence { "transportLayerAddress": TransportLayerAddress, "gTP-TEID": GTPTEID, "iE-Extensions"? extensions };
-        InitiatingMessage sequence { "procedureCode": _, "criticality": Criticality, "value": _ };
-        Item sequence { "item-ID": _, "cause"? Cause, "iE-Extensions"? extensions };
-        Items = [ie];
-        KindOfTransfer = TransferKind;
-        Kinds sequence { "first": TransferKind, "second": KindOfTransfer };
-        Mixed sequence { "kind": TransferKind, "cause": CauseNas };
-        NodeID choice { "macro-NodeID": _, "home-NodeID": _, "unassigned": null, "choice-Extensions": ie };
-        Notification sequence { "protocolIEs": ies };
-        PrivateIEID choice { "local": _, "global": _ };
-        PrivateMessage sequence { "privateIEs": PrivateMessagePrivateIEs };
-        PrivateMessagePrivateIEs = [AnonymousPrivateMessagePrivateIEs];
-        ReleaseRequest sequence { "protocolIEs": ies };
-        SecurityContext sequence { "nextHopChainingCount": _, "nextHopNH": _, "iE-Extensions"? extensions };
-        SetupFailure sequence { "protocolIEs": ies };
-        SetupRequest sequence { "protocolIEs": ies };
-        SetupResponse sequence { "protocolIEs": ies };
-        SetupTransfer sequence { "protocolIEs": ies };
-        SuccessfulOutcome sequence { "procedureCode": _, "criticality": Criticality, "value": _ };
-        TOYPDU choice { "initiatingMessage": InitiatingMessage, "successfulOutcome": SuccessfulOutcome, "unsuccessfulOutcome": UnsuccessfulOutcome };
-        TransferItem sequence { "transfer-ID": _, "setupTransfer": (SetupTransfer), "failureTransfer"? (FailureTransfer), "iE-Extensions"? extensions };
-        TransferList = [TransferItem];
-        TransportLayerAddress = bits;
-        Tunnel choice { "gTPTunnel": GTPTunnel, "unassigned": null, "choice-Extensions": ie };
-        UEIDPair sequence { "uE-Core-ID": _, "uE-RAN-ID": _, "iE-Extensions"? extensions };
-        UEIDs choice { "uE-ID-pair": UEIDPair, "uE-Core-ID": _, "choice-Extensions": ie };
-        UnsuccessfulOutcome sequence { "procedureCode": _, "criticality": Criticality, "value": _ };
-    }
-    enumerations {
-        CauseMisc ["control-processing-overload", "unspecified"];
-        CauseNas ["normal-release", "deregister", "unspecified"];
-        CauseProtocol ["transfer-syntax-error", "abstract-syntax-error-reject", "abstract-syntax-error-ignore-and-notify", "message-not-compatible-with-receiver-state", "semantic-error", "abstract-syntax-error-falsely-constructed-message", "unspecified"];
-        CauseRadioNetwork ["unspecified", "user-inactivity", "release-due-to-ran-generated-reason"];
-        Criticality ["reject", "ignore", "notify"];
-        ExtendedCause ["congestion", "overload"];
-        Presence ["optional", "conditional", "mandatory"];
-        TransferKind ["ipv4", "ipv6", "ipv4v6"];
-        TriggeringMessage ["initiating-message", "successful-outcome", "unsuccessful-outcome"];
-        TypeOfError ["not-understood", "missing"];
-    }
-}
 use oxirush_aper::UNBOUNDED;
 #[allow(unused_imports)]
 use oxirush_aper::inspect::schema::{Field as F, Kind as K, Member as M, Text, Type as T};

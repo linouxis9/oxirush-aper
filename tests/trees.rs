@@ -225,7 +225,6 @@ static TOY: Protocol = Protocol {
     name: "TOY",
     root: "toy",
     schema: &[],
-    types: TYPES,
     messages: MESSAGES,
     ie_names: IE_NAMES,
     ie_types: &[
@@ -248,14 +247,15 @@ static TOY: Protocol = Protocol {
         (18, "Gauge", "SECOND"),
         (18, "GhostBlob", "GHOST"),
     ],
-    enumerations: &[
-        ("CauseNas", &["normal-release", "deregister"]),
-        ("CauseRadioNetwork", &["unspecified", "user-inactivity"]),
-    ],
     item_criticalities: &[(15, Ignore), (30, Reject)],
     transfers: &[("SetupTransfer", "SetupTransfer", &[(15, Ignore, Mandatory)])],
     ie_id,
     kind_of,
+    enumerated: |name| match name {
+        "CauseNas" => Some(&["normal-release", "deregister"]),
+        "CauseRadioNetwork" => Some(&["unspecified", "user-inactivity"]),
+        _ => None,
+    },
     ie_typed,
     extension_typed: |id, extended| (id == 17 && extended == "Holder").then(cause_typed),
     ie_contents: |id| matches!(id, 21 | 22).then(cause_typed),
@@ -832,7 +832,6 @@ mod another_protocol {
         name: "OTHER",
         root: "other",
         schema: &[],
-        types: &[("Wrapper", Kind::Sequence(CONTAINER_OF_IES))],
         messages: &[],
         ie_names: &[(15, "Speed"), (16, "Mode"), (40, "Blob")],
         ie_types: &[
@@ -843,7 +842,6 @@ mod another_protocol {
         extension_types: &[],
         carried: &[(40, "Wrapper", "crate::other::Wrapper")],
         foreign: &[],
-        enumerations: &[("Mode", &["slow", "fast"])],
         item_criticalities: &[],
         transfers: &[("Wrapper", "Wrapper", WRAPPER_IES)],
         ie_id: |name| match name {
@@ -853,6 +851,7 @@ mod another_protocol {
             _ => None,
         },
         kind_of: |name| (name == "Wrapper").then_some(&Kind::Sequence(CONTAINER_OF_IES)),
+        enumerated: |name| (name == "Mode").then_some(&["slow", "fast"]),
         ie_typed: |id| match id {
             15 => Ok(Typed {
                 decode: item_decode,
@@ -892,7 +891,6 @@ mod another_protocol {
         name: "SECOND",
         root: "second",
         schema: &[],
-        types: &[("Gauge", Kind::Sequence(CONTAINER_OF_IES))],
         carried: &[(40, "Gauge", "crate::second::Gauge")],
         transfers: &[("Gauge", "Gauge", WRAPPER_IES)],
         kind_of: |name| (name == "Gauge").then_some(&Kind::Sequence(CONTAINER_OF_IES)),

@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use anyhow::{Result, anyhow, bail, ensure};
+use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 
 use crate::registry::{Registry, alone, canonical};
@@ -55,73 +55,22 @@ const READABLE: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// The ASN.1 identifier that `rasn` has for a type, a field or an alternative, and
-/// whether the attributes of a type say that it is an ENUMERATED.
-fn rasn(attributes: &[syn::Attribute]) -> Result<(Option<String>, bool)> {
-    let (identifier, enumerated, _) = rasn_kind(attributes)?;
-    Ok((identifier, enumerated))
-}
-
-/// Whether the attributes of a string give it one size and no extension marker: a bit
-/// string of such a type is written as its octets alone, without its length.
-fn one_size(attributes: &[syn::Attribute]) -> Result<bool> {
+/// The ASN.1 identifier that `rasn` has for a type, a field or an alternative.
+fn rasn(attributes: &[syn::Attribute]) -> Result<Option<String>> {
     use syn::{Meta, Token, punctuated::Punctuated};
     for attribute in attributes.iter().filter(|a| a.path().is_ident("rasn")) {
         let metas = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
         for meta in metas {
-            if let Meta::List(list) = meta
-                && list.path.is_ident("size")
+            if let Meta::NameValue(pair) = meta
+                && pair.path.is_ident("identifier")
+                && let syn::Expr::Lit(literal) = pair.value
+                && let syn::Lit::Str(name) = literal.lit
             {
-                let size = list.tokens.to_string();
-                let mut parts = size.split(',').map(str::trim);
-                let digits = parts.next().unwrap_or_default().trim_matches('"');
-                let one = !digits.is_empty() && digits.bytes().all(|digit| digit.is_ascii_digit());
-                return Ok(one && !parts.any(|part| part == "extensible"));
+                return Ok(Some(name.value()));
             }
         }
     }
-    Ok(false)
-}
-
-/// Whether the attributes of a value of an ENUMERATED make it an extension addition.
-fn addition(attributes: &[syn::Attribute]) -> Result<bool> {
-    use syn::{Meta, Token, punctuated::Punctuated};
-    for attribute in attributes.iter().filter(|a| a.path().is_ident("rasn")) {
-        let metas = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
-        if metas
-            .iter()
-            .any(|meta| meta.path().is_ident("extension_addition"))
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// What [`rasn`] gives, and whether the attributes of a member give it a default value.
-fn rasn_kind(attributes: &[syn::Attribute]) -> Result<(Option<String>, bool, bool)> {
-    use syn::{Meta, Token, punctuated::Punctuated};
-    let (mut identifier, mut enumerated, mut default) = (None, false, false);
-    for attribute in attributes.iter().filter(|a| a.path().is_ident("rasn")) {
-        let metas = attribute.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
-        for meta in metas {
-            match meta {
-                Meta::Path(path) if path.is_ident("enumerated") => enumerated = true,
-                Meta::Path(path) if path.is_ident("default") => default = true,
-                Meta::NameValue(pair) if pair.path.is_ident("default") => default = true,
-                Meta::NameValue(pair) if pair.path.is_ident("identifier") => {
-                    let syn::Expr::Lit(literal) = pair.value else {
-                        continue;
-                    };
-                    if let syn::Lit::Str(name) = literal.lit {
-                        identifier = Some(name.value());
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    Ok((identifier, enumerated, default))
+    Ok(None)
 }
 
 /// The last segment of a type's path: its name and its generic arguments.
@@ -178,7 +127,7 @@ fn generate_readable(generated: &str, out: &mut String) -> Result<()> {
             && let syn::Fields::Unnamed(fields) = &item.fields
             && fields.unnamed.len() == 1
         {
-            let asn = rasn(&item.attrs)?.0;
+            let asn = rasn(&item.attrs)?;
             let asn = asn.unwrap_or_else(|| item.ident.to_string());
             wrapped.insert(item.ident.to_string(), (asn, &fields.unnamed[0].ty));
         }
@@ -211,205 +160,9 @@ fn generate_readable(generated: &str, out: &mut String) -> Result<()> {
     Ok(())
 }
 
-/// The containers of the protocol, which a tree shows as IEs, and how the list of the
-/// types writes each.
-pub(crate) const CONTAINERS: &[(&str, &str)] = &[
-    ("ProtocolIEContainer", "ies"),
-    ("ProtocolIEField", "ie"),
-    ("ProtocolExtensionContainer", "extensions"),
-    ("ProtocolExtensionField", "extension"),
-];
-
-/// How the list of the types writes a value of type `ty`, and whether a member of that
-/// type may be absent: `_` for a value without members, `null` for the one value of the
-/// type NULL, `bits` for a bit string whose size varies, the name of a SEQUENCE, of a
-/// CHOICE, of an ENUMERATED or of a type that is a list, a list in brackets and a
-/// container by its kind.
-fn shape(ty: &syn::Type, declared: &BTreeMap<String, &syn::Item>, depth: u8) -> (String, bool) {
-    let plain = || ("_".to_string(), false);
-    if let syn::Type::Tuple(tuple) = ty
-        && tuple.elems.is_empty()
-    {
-        return ("null".to_string(), false);
-    }
-    let Some((name, arguments)) = named(ty).filter(|_| depth < 16) else {
-        return plain();
-    };
-    let inner = arguments.iter().find_map(|argument| match argument {
-        syn::GenericArgument::Type(inner) => Some(inner),
-        _ => None,
-    });
-    if let Some((_, written)) = CONTAINERS.iter().find(|(container, _)| *container == name) {
-        return (written.to_string(), false);
-    }
-    match (name.as_str(), inner, declared.get(&name)) {
-        ("Option", Some(inner), _) => (shape(inner, declared, depth + 1).0, true),
-        ("Box", Some(inner), _) => shape(inner, declared, depth + 1),
-        ("SequenceOf" | "SetOf" | "Vec", Some(inner), _) => {
-            (format!("[{}]", shape(inner, declared, depth + 1).0), false)
-        }
-        ("BitString" | "SizedBitString", ..) => ("bits".to_string(), false),
-        // A well-known type has its name, which gives its readable form.
-        (_, _, Some(syn::Item::Struct(item)))
-            if rasn(&item.attrs)
-                .ok()
-                .and_then(|(asn, _)| well_known(&asn.unwrap_or_else(|| name.clone())))
-                .is_some() =>
-        {
-            (name.clone(), false)
-        }
-        // A type that only wraps another is what it wraps, when that has no members.
-        (_, _, Some(syn::Item::Struct(item))) => match &item.fields {
-            syn::Fields::Named(_) => (name.clone(), false),
-            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                match shape(&fields.unnamed[0].ty, declared, depth + 1).0.as_str() {
-                    "_" => plain(),
-                    "bits" if one_size(&item.attrs).unwrap_or(false) => plain(),
-                    _ => (name.clone(), false),
-                }
-            }
-            _ => plain(),
-        },
-        // A CHOICE has its alternatives, and an ENUMERATED its names.
-        (_, _, Some(syn::Item::Enum(_))) => (name.clone(), false),
-        _ => plain(),
-    }
-}
-
-/// The list of the types: one line for each SEQUENCE and each CHOICE, with its members
-/// or its alternatives by the names that ASN.1 gives them, and one for each type that is
-/// a list or a bit string; then one for each ENUMERATED, with the names of its values.
-/// A member that holds a transfer has the type that its octets contain in parentheses.
-fn generate_types(
-    generated: &str,
-    transfers: &BTreeMap<String, std::collections::BTreeSet<String>>,
-    out: &mut String,
-) -> Result<()> {
-    use syn::ext::IdentExt;
-    let syntax = syn::parse_file(generated)?;
-    let mut declarations = Vec::new();
-    items(&syntax.items, "", &mut declarations);
-    let mut declared = BTreeMap::new();
-    for (_, item) in &declarations {
-        let name = match item {
-            syn::Item::Struct(item) => &item.ident,
-            syn::Item::Enum(item) => &item.ident,
-            _ => unreachable!(),
-        };
-        ensure!(
-            declared.insert(name.to_string(), *item).is_none(),
-            "{name}: two types of the bindings have this name"
-        );
-    }
-    let member = |attributes: &[syn::Attribute], ident: &syn::Ident, ty: &syn::Type| {
-        let (name, _, default) = rasn_kind(attributes)?;
-        let name = name.unwrap_or_else(|| ident.unraw().to_string());
-        let (mut written, optional) = shape(ty, &declared, 0);
-        // The constraint of a member that may be absent is not that of its value, as
-        // rasn has it: a bit string has its length there, whatever its size.
-        if written == "bits" && one_size(attributes)? && !(optional || default) {
-            written = "_".to_string();
-        }
-        // The octets of a transfer are shown as the value that they contain.
-        if let Some(contained) = transfers.get(&name) {
-            ensure!(written == "_", "{name}: a transfer is a string of octets");
-            let contained = alone(contained).unwrap_or_default();
-            written = format!("({})", contained.rsplit("::").next().unwrap_or_default());
-        }
-        let presence = match optional || default {
-            true => '?',
-            false => ':',
-        };
-        Ok(format!("{name:?}{presence} {written}"))
-    };
-    // rustfmt leaves the lines of a macro called with braces as they are.
-    writeln!(out, "oxirush_aper::__types! {{\n    types {{")?;
-    // The names of the values of each ENUMERATED, in the order of its definition.
-    let mut enumerations = Vec::new();
-    for (name, item) in &declared {
-        if CONTAINERS.iter().any(|(container, _)| container == name) {
-            continue;
-        }
-        match item {
-            syn::Item::Struct(item) => match &item.fields {
-                syn::Fields::Named(fields) => {
-                    let members = fields.named.iter().map(|field| {
-                        member(
-                            &field.attrs,
-                            field.ident.as_ref().expect("a name"),
-                            &field.ty,
-                        )
-                    });
-                    let members = members.collect::<Result<Vec<_>>>()?;
-                    writeln!(out, "        {name} sequence {{ {} }};", members.join(", "))?;
-                }
-                syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                    let (written, _) = shape(&fields.unnamed[0].ty, &declared, 0);
-                    if written != "_" && !(written == "bits" && one_size(&item.attrs)?) {
-                        writeln!(out, "        {name} = {written};")?;
-                    }
-                }
-                _ => {}
-            },
-            syn::Item::Enum(item) if !rasn(&item.attrs)?.1 => {
-                let alternatives = item.variants.iter().map(|alternative| {
-                    match alternative.fields.iter().next() {
-                        Some(field) => member(&alternative.attrs, &alternative.ident, &field.ty),
-                        None => {
-                            let name = rasn(&alternative.attrs)?.0;
-                            let name =
-                                name.unwrap_or_else(|| alternative.ident.unraw().to_string());
-                            Ok(format!("{name:?}: _"))
-                        }
-                    }
-                });
-                let alternatives = alternatives.collect::<Result<Vec<_>>>()?;
-                writeln!(
-                    out,
-                    "        {name} choice {{ {} }};",
-                    alternatives.join(", ")
-                )?;
-            }
-            // The values in the order of their indexes in PER, which its tree reads them
-            // by: those of the root by their numbers, then the additions in their order
-            // (X.691 §14.1).
-            syn::Item::Enum(item) => {
-                let mut values = Vec::new();
-                for value in &item.variants {
-                    let written = rasn(&value.attrs)?.0;
-                    let written = written.unwrap_or_else(|| value.ident.unraw().to_string());
-                    let number = value.discriminant.as_ref().map(|(_, number)| {
-                        quote::ToTokens::to_token_stream(number)
-                            .to_string()
-                            .replace(' ', "")
-                    });
-                    let number = number.and_then(|number| number.parse::<i128>().ok());
-                    let number =
-                        number.ok_or_else(|| anyhow!("{name}: a value without a number"))?;
-                    let addition = addition(&value.attrs)?;
-                    values.push(((addition, if addition { 0 } else { number }), written));
-                }
-                values.sort_by_key(|(index, _)| *index);
-                let values: Vec<_> = values
-                    .iter()
-                    .map(|(_, written)| format!("{written:?}"))
-                    .collect();
-                enumerations.push(format!("        {name} [{}];", values.join(", ")));
-            }
-            _ => {}
-        }
-    }
-    writeln!(out, "    }}\n    enumerations {{")?;
-    for line in enumerations {
-        writeln!(out, "{line}")?;
-    }
-    writeln!(out, "    }}\n}}")?;
-    Ok(())
-}
-
-/// The tables that only the inspection has: the transfers, the readable forms, the
-/// members of the types and the open types. The messages and the IEs are those of the
-/// registry.
+/// The tables that only the inspection has: the transfers, the readable forms and the
+/// open types. The messages and the IEs are those of the registry; the members of the
+/// types are read from the table of the types.
 ///
 /// `carried` are the IEs whose octets ASN.1 leaves open and the specification gives a
 /// type of the protocol, each as the name of the IE after `id-` and the name of that
@@ -474,7 +227,6 @@ pub fn generate(
     }
     writeln!(out, "}}")?;
     generate_readable(generated, &mut out)?;
-    generate_types(generated, &transfers, &mut out)?;
     Ok(out)
 }
 
@@ -482,106 +234,20 @@ pub fn generate(
 mod tests {
     use super::*;
 
-    /// How the list of the types writes `ty` among the types of `items`.
-    fn shape_of(items: &str, ty: &str) -> (String, bool) {
-        let file = syn::parse_file(items).unwrap();
-        let mut declared = BTreeMap::new();
-        for item in &file.items {
-            match item {
-                syn::Item::Struct(declaration) => {
-                    declared.insert(declaration.ident.to_string(), item)
-                }
-                syn::Item::Enum(declaration) => {
-                    declared.insert(declaration.ident.to_string(), item)
-                }
-                _ => None,
-            };
-        }
-        shape(&syn::parse_str(ty).unwrap(), &declared, 0)
-    }
-
-    /// A member has a default value whether its attribute names one or not.
+    /// The identifier is what `identifier` names, and no other pair names one.
     #[test]
-    fn a_member_has_a_default_value_by_its_attribute() {
-        for (attribute, default) in [
-            (
-                r#"#[rasn(value("0..=10"), default = "count_default")]"#,
-                true,
-            ),
-            ("#[rasn(default)]", true),
-            (r#"#[rasn(identifier = "count")]"#, false),
-        ] {
-            let item: syn::ItemStruct =
-                syn::parse_str(&format!("struct Holder {{ {attribute} count: u8 }}")).unwrap();
-            let field = item.fields.iter().next().unwrap();
-            assert_eq!(rasn_kind(&field.attrs).unwrap().2, default, "{attribute}");
-        }
-        // The identifier is what `identifier` names, and no other pair names one
+    fn the_identifier_of_a_member_is_the_one_that_its_attribute_names() {
         let named = |attribute: &str| {
             let item: syn::ItemStruct =
                 syn::parse_str(&format!("struct Holder {{ {attribute} count: u8 }}")).unwrap();
             let field = item.fields.iter().next().unwrap();
-            rasn_kind(&field.attrs).unwrap().0
+            rasn(&field.attrs).unwrap()
         };
         assert_eq!(
             named(r#"#[rasn(identifier = "Count")]"#).as_deref(),
             Some("Count")
         );
         assert_eq!(named(r#"#[rasn(other = "Count")]"#), None);
-    }
-
-    /// A type is followed through 16 types that each wrap the next, an OPTIONAL or a box
-    /// among them, and no further: past them it has no members.
-    #[test]
-    fn a_type_is_followed_through_16_wrappers() {
-        let chain = |length: usize| {
-            let mut items = String::new();
-            for at in 0..length {
-                let next = match at + 1 == length {
-                    true => "BitString".to_string(),
-                    false => format!("W{}", at + 1),
-                };
-                items.push_str(&format!(
-                    "#[rasn(delegate)] pub struct W{at}(pub {next});\n"
-                ));
-            }
-            items
-        };
-        assert_eq!(shape_of(&chain(15), "W0"), ("W0".to_string(), false));
-        assert_eq!(shape_of(&chain(16), "W0"), ("_".to_string(), false));
-        assert_eq!(shape_of(&chain(14), "Option<W0>"), ("W0".to_string(), true));
-        assert_eq!(shape_of(&chain(15), "Option<W0>"), ("_".to_string(), true));
-        assert_eq!(shape_of(&chain(14), "Box<W0>"), ("W0".to_string(), false));
-        assert_eq!(shape_of(&chain(15), "Box<W0>"), ("_".to_string(), false));
-    }
-
-    /// A type that wraps a bit string of one size is written as its octets, and has no
-    /// members; one whose size varies has its length; one of two members has none.
-    #[test]
-    fn a_wrapper_of_a_bit_string_of_one_size_has_no_members() {
-        let items = r#"
-            #[rasn(delegate, size("256"))] pub struct Fixed(pub BitString);
-            #[rasn(delegate, size("1..=256"))] pub struct Varying(pub BitString);
-            pub struct Pair(pub BitString, pub u8);
-        "#;
-        assert_eq!(shape_of(items, "Fixed"), ("_".to_string(), false));
-        assert_eq!(shape_of(items, "Varying"), ("Varying".to_string(), false));
-        assert_eq!(shape_of(items, "Pair"), ("_".to_string(), false));
-    }
-
-    /// The list of the types has a type that wraps a bit string whose size varies, and
-    /// not one of a bit string of one size, which is written as its octets.
-    #[test]
-    fn the_list_of_the_types_has_bit_strings_whose_size_varies() {
-        let generated = r#"
-            #[rasn(delegate, size("256"))] pub struct Fixed(pub BitString);
-            #[rasn(delegate, size("1..=256"))] pub struct Varying(pub BitString);
-            pub struct Pair(pub BitString, pub u8);
-        "#;
-        let mut out = String::new();
-        generate_types(generated, &BTreeMap::new(), &mut out).unwrap();
-        assert!(!out.contains("Fixed"), "{out}");
-        assert!(!out.contains("Pair"), "{out}");
-        assert!(out.contains("Varying = bits;"), "{out}");
+        assert_eq!(named(r#"#[rasn(value("0..=10"), default = "count_default")]"#), None);
     }
 }

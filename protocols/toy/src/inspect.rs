@@ -52,3 +52,47 @@ impl TOYPDU<'_> {
         ))
     }
 }
+
+#[cfg(test)]
+mod kinds {
+    use super::*;
+
+    /// What a type is to the paths, as `inspect::kinds` makes it from the table of the
+    /// types: the shape of a member names its type, its list, its container or the type
+    /// that the octets of a transfer contain.
+    #[test]
+    fn the_paths_read_what_a_type_is_from_the_table_of_the_types() {
+        let members = |name: &str| match kind_of(name) {
+            Some(Kind::Sequence(members) | Kind::Choice(members)) => members.to_vec(),
+            other => panic!("{name}: {other:?}"),
+        };
+        let shape = |name: &str| match kind_of(name) {
+            Some(Kind::Is(shape)) => *shape,
+            other => panic!("{name}: {other:?}"),
+        };
+        // A bit string whose size varies has its length; one of one size has none.
+        assert_eq!(shape("Algorithms"), Shape::Bits);
+        let context = members("SecurityContext");
+        assert_eq!(context[1], ("nextHopNH", Shape::Plain, false));
+        assert_eq!(context[2], ("iE-Extensions", Shape::Extensions(""), true));
+        // A list, of a type or of the field of an IE.
+        assert_eq!(shape("Areas"), Shape::List(&Shape::Named("AreaItem")));
+        assert_eq!(shape("Items"), Shape::List(&Shape::Ie(None)));
+        // A transfer is the type that its octets contain; NULL is an alternative.
+        let transfer = members("TransferItem");
+        assert_eq!(
+            transfer[1],
+            ("setupTransfer", Shape::Transfer("SetupTransfer"), false)
+        );
+        assert_eq!(transfer[2].1, Shape::Transfer("FailureTransfer"));
+        assert_eq!(members("NodeID")[2], ("unassigned", Shape::Null, false));
+        assert_eq!(
+            members("SetupTransfer"),
+            [("protocolIEs", Shape::Ies(None), false)]
+        );
+        // An ENUMERATED has its names, in the order of their indexes, and no members.
+        assert!(kind_of("CauseNas").is_none());
+        let names = TABLES.enumeration("CauseNas").expect("an ENUMERATED");
+        assert!(names.len() > 1 && names.iter().all(|name| !name.is_empty()));
+    }
+}

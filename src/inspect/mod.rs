@@ -32,6 +32,7 @@
 //! number of this crate promises. A program calls the functions of oxirush-ngap and of
 //! oxirush-s1ap, which are.
 
+mod kinds;
 mod paths;
 pub mod schema;
 mod trees;
@@ -43,6 +44,7 @@ use oxirush_utils::tree::Value;
 use crate::{Error, ErrorKind};
 
 pub use crate::json::Form;
+pub use kinds::{enumerations, kinds};
 pub use paths::{listed_ies, named_ies};
 pub use trees::{check_path, enumerated_at, insert, open, paths, remove, select, set};
 pub use views::{Parts, tree, tree_of_jer, tree_parts};
@@ -92,10 +94,6 @@ pub struct Protocol {
     pub root: &'static str,
     /// The table of the types, which the trees are read and written with.
     pub schema: &'static [schema::Type],
-    /// Each SEQUENCE with its members and each CHOICE with its alternatives, by the
-    /// names that ASN.1 gives them, and each type that is a list or a bit string, in
-    /// the order of the names of the types.
-    pub types: &'static [(&'static str, Kind)],
     /// The messages.
     pub messages: &'static [Message],
     /// The identifier of each IE with the name that ASN.1 gives it after `id-`, in the
@@ -116,9 +114,6 @@ pub struct Protocol {
     /// the type, which it carries itself, and the name of that protocol. The tables of
     /// the other protocol read and write the type, once it is [registered](register).
     pub foreign: &'static [(u16, &'static str, &'static str)],
-    /// The names of the values of each ENUMERATED, as the specification spells them, in
-    /// the order of the names of the types.
-    pub enumerations: &'static [(&'static str, &'static [&'static str])],
     /// The criticality that ASN.1 assigns to each IE that a value holds alone, in a
     /// single container.
     pub item_criticalities: &'static [(u16, crate::Criticality)],
@@ -127,9 +122,15 @@ pub struct Protocol {
     /// The identifier of the IE of a name, however the name is written: the protocol
     /// keeps the index that it reads, made once.
     pub ie_id: fn(&str) -> Option<u16>,
-    /// What a type of [`types`](Self::types) is, by its name: the protocol keeps the
-    /// index that it reads, made once.
+    /// What a type is, by its name in the bindings: each SEQUENCE with its members and
+    /// each CHOICE with its alternatives, by the names that ASN.1 gives them, and each
+    /// type that is a list or a bit string whose size varies, as `kinds` makes them
+    /// from the table of the types. The protocol keeps the index that it reads, made
+    /// once.
     pub kind_of: fn(&str) -> Option<&'static Kind>,
+    /// The names of the values of the ENUMERATED that the bindings name so, as the
+    /// specification spells them, in the order of their indexes in PER.
+    pub enumerated: fn(&str) -> Option<&'static [&'static str]>,
     /// The functions of the type of each IE that has one type, by its identifier: an
     /// error that says why for one that has none.
     pub ie_typed: fn(u16) -> Result<Typed, Error>,
@@ -182,8 +183,8 @@ pub enum Shape {
     /// shows it as it is usually written.
     Bits,
     /// A SEQUENCE or a CHOICE, or a type that is a list or a bit string, by the name
-    /// that the bindings give it. A name that the list of the types does not have is
-    /// that of a value without members: an ENUMERATED, which has its names.
+    /// that the bindings give it. A name that `kind_of` does not know
+    /// is that of a value without members: an ENUMERATED, which has its names.
     Named(&'static str),
     /// A list.
     List(&'static Shape),
@@ -308,7 +309,8 @@ pub struct Sent {
 /// the shape of its value, and whether a value may be without it.
 pub type Member = (&'static str, Shape, bool);
 
-/// What a type of the list of the types is.
+/// What a type is, as the paths read it: what `kinds` makes of a row of the table of
+/// the types.
 #[derive(Debug)]
 pub enum Kind {
     /// A SEQUENCE, with its members.

@@ -136,7 +136,7 @@ struct Module {
 pub struct Written {
     pub text: String,
     /// The table of the types, which the walker of `oxirush_aper::inspect::schema` reads
-    /// and writes trees with: `TYPES`, in the order of the names that ASN.1 gives them.
+    /// and writes trees with: `SCHEMA`, in the order of the names that ASN.1 gives them.
     pub schema: String,
     pub borrowing: BTreeSet<String>,
     /// The types that hold a key: the types of [`Keys::types`], and those that hold one.

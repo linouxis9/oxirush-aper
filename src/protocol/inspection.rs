@@ -1,124 +1,6 @@
 //! The macros of the inspection of the protocol crates, written once: the tables of their
 //! trees, and the functions that read them.
 
-/// The shape that the list of the types of a protocol writes.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __shape {
-    (_) => {
-        $crate::inspect::Shape::Plain
-    };
-    (null) => {
-        $crate::inspect::Shape::Null
-    };
-    (bits) => {
-        $crate::inspect::Shape::Bits
-    };
-    (ies) => {
-        $crate::inspect::Shape::Ies(None)
-    };
-    (ie) => {
-        $crate::inspect::Shape::Ie(None)
-    };
-    (extensions) => {
-        $crate::inspect::Shape::Extensions("")
-    };
-    (extension) => {
-        $crate::inspect::Shape::Extension(None, "")
-    };
-    ([$of:tt]) => {
-        $crate::inspect::Shape::List(&$crate::__shape!($of))
-    };
-    (()) => {
-        $crate::inspect::Shape::Transfer("")
-    };
-    (($contained:ident)) => {
-        $crate::inspect::Shape::Transfer(stringify!($contained))
-    };
-    ($name:ident) => {
-        $crate::inspect::Shape::Named(stringify!($name))
-    };
-}
-
-/// Whether the list of the types writes a member as one that may be absent.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __optional {
-    (:) => {
-        false
-    };
-    (?) => {
-        true
-    };
-}
-
-/// What the list of the types says a type is.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __kind {
-    (= $is:tt) => {
-        $crate::inspect::Kind::Is($crate::__shape!($is))
-    };
-    (sequence { $($member:literal $presence:tt $shape:tt),* }) => {
-        $crate::inspect::Kind::Sequence(&[$((
-            $member,
-            $crate::__shape!($shape),
-            $crate::__optional!($presence),
-        )),*])
-    };
-    (choice { $($member:literal $presence:tt $shape:tt),* }) => {
-        $crate::inspect::Kind::Choice(&[$((
-            $member,
-            $crate::__shape!($shape),
-            $crate::__optional!($presence),
-        )),*])
-    };
-}
-
-/// The types of a protocol, which its `src/inspect_registry.rs` lists from the bindings in
-/// the order of their names: each SEQUENCE with its members and each CHOICE with its
-/// alternatives, by the names that ASN.1 gives them, and each type that is a list or a
-/// bit string; then each ENUMERATED with the names of its values. A member is written
-/// with `?` when a value may be without it, and its value as `_` when it has no members,
-/// `bits` for a bit string whose size varies, the name of its type, a list in brackets,
-/// a container by its kind, or in parentheses the type that the octets of a transfer
-/// contain.
-///
-/// The module `names` has the names of each SEQUENCE, CHOICE and ENUMERATED, by the
-/// name of its type: those that its tree writes, and that the paths read in `TYPES` and
-/// `ENUMERATIONS`.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __types {
-    (
-        types { $($name:ident $kind:tt $body:tt;)* }
-        enumerations { $($enumerated:ident [$($value:literal),*];)* }
-    ) => {
-        pub(crate) const TYPES: &[(&str, $crate::inspect::Kind)] = &[
-            $((stringify!($name), $crate::__kind!($kind $body)),)*
-        ];
-        pub(crate) const ENUMERATIONS: &[(&str, &[&str])] = &[
-            $((stringify!($enumerated), names::$enumerated),)*
-        ];
-        #[allow(non_upper_case_globals)]
-        pub(crate) mod names {
-            $($crate::__names!($name $kind $body);)*
-            $(pub(crate) const $enumerated: &[&str] = &[$($value),*];)*
-        }
-    };
-}
-
-/// The names of the members of a SEQUENCE or the alternatives of a CHOICE of
-/// [`__types!`], as a constant named after its type.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __names {
-    ($name:ident = $is:tt) => {};
-    ($name:ident $kind:ident { $($member:literal $presence:tt $shape:tt),* }) => {
-        pub(crate) const $name: &[&str] = &[$($member),*];
-    };
-}
-
 /// The functions of a type of the bindings of a protocol for its trees,
 /// which is written with the lifetime `'a` when it borrows, or without one in a function.
 #[doc(hidden)]
@@ -218,8 +100,8 @@ use crate::Error;
 // The name of the protocol, the first segment of the paths of the IEs of the message of
 // a PDU, and what the ASN.1 says of the messages, the IEs and the types.
 use crate::inspect_registry::{
-    CARRIED, ENUMERATIONS, FOREIGN, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGES, PROTOCOL,
-    ROOT, TRANSFER_FIELDS, TYPES,
+    CARRIED, FOREIGN, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGES, PROTOCOL, ROOT, SCHEMA,
+    TRANSFER_FIELDS,
 };
 // The type that an IE of an extension container has where its identifier alone does not
 // say it: the one that the type which the container extends gives it.
@@ -233,19 +115,18 @@ pub use $crate::json::Value;
 pub(crate) static TABLES: Protocol = Protocol {
     name: PROTOCOL,
     root: ROOT,
-    schema: crate::inspect_registry::SCHEMA,
-    types: TYPES,
+    schema: SCHEMA,
     messages: MESSAGES,
     ie_names: IE_NAMES,
     ie_types: IE_TYPES,
     extension_types: EXTENSION_TYPES,
     carried: CARRIED,
     foreign: FOREIGN,
-    enumerations: ENUMERATIONS,
     item_criticalities: ITEM_CRITICALITIES,
     transfers: TRANSFERS,
     ie_id,
     kind_of,
+    enumerated,
     ie_typed: crate::inspect_registry::ie,
     extension_typed: crate::registry::extension,
     ie_contents: crate::inspect_registry::ie_contents,
@@ -289,12 +170,22 @@ pub(crate) fn ie_id(name: &str) -> Option<u16> {
     IDS.get(&short[..length]).copied()
 }
 
-/// What a type of the list of the types is; `None` for a name that the list does not
-/// have, which is that of a value without members.
+/// What a type is, by its name in the bindings; `None` for a type of a value without
+/// members, as an ENUMERATED.
 fn kind_of(name: &str) -> Option<&'static Kind> {
-    static KINDS: LazyLock<HashMap<&'static str, &'static Kind>> =
-        LazyLock::new(|| TYPES.iter().map(|(name, kind)| (*name, kind)).collect());
-    KINDS.get(name).copied()
+    KINDS.get(name)
+}
+
+/// Each type that has members, or that is a list or a bit string whose size varies, by
+/// its name in the bindings, made once from the table of the types.
+static KINDS: LazyLock<HashMap<&'static str, Kind>> =
+    LazyLock::new(|| shared::kinds(&TABLES).into_iter().collect());
+
+/// The names of the values of the ENUMERATED that the bindings name `name`.
+fn enumerated(name: &str) -> Option<&'static [&'static str]> {
+    static NAMES: LazyLock<HashMap<&'static str, &'static [&'static str]>> =
+        LazyLock::new(|| shared::enumerations(SCHEMA).into_iter().collect());
+    NAMES.get(name).copied()
 }
 
 /// The values at `path` in `tree`, the tree of a PDU, in the order of the tree. See
@@ -409,10 +300,10 @@ mod tests {
     /// The member of a message or of a container that holds its IEs.
     const IES: &str = "protocolIEs";
 
-    /// Every member and every alternative of every type of the list.
+    /// Every member and every alternative of every type.
     fn all_members() -> impl Iterator<Item = (&'static str, &'static [Member])> {
-        TYPES.iter().filter_map(|(name, kind)| match kind {
-            Kind::Sequence(members) | Kind::Choice(members) => Some((*name, *members)),
+        KINDS.iter().filter_map(|(name, kind)| match kind {
+            Kind::Sequence(members) | Kind::Choice(members) => Some((*name, &members[..])),
             Kind::Is(_) => None,
         })
     }
@@ -424,8 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn the_types_are_listed_in_the_order_of_their_names_and_name_types_of_the_list() {
-        assert!(TYPES.windows(2).all(|pair| pair[0].0 < pair[1].0));
+    fn the_types_name_types_that_have_members_names_or_a_form() {
         fn check(of: &str, shape: Shape) {
             match shape {
                 // A name that the list does not have is that of an ENUMERATED, which
@@ -444,7 +334,7 @@ mod tests {
                 _ => {}
             }
         }
-        for (name, kind) in TYPES {
+        for (name, kind) in KINDS.iter() {
             match kind {
                 Kind::Is(shape) => check(name, *shape),
                 Kind::Sequence(members) | Kind::Choice(members) => {
@@ -463,11 +353,6 @@ mod tests {
         );
         // The identifiers of the IEs are in their order, which their names are read in.
         assert!(IE_NAMES.windows(2).all(|pair| pair[0].0 < pair[1].0));
-    }
-
-    #[test]
-    fn the_enumerations_are_listed_in_the_order_of_their_names() {
-        assert!(ENUMERATIONS.windows(2).all(|pair| pair[0].0 < pair[1].0));
     }
 
     #[test]
@@ -505,7 +390,7 @@ mod tests {
     fn no_two_names_of_an_enumerated_are_the_same() {
         // A name is read whatever its case and its separators: no two values of one
         // type are then one name.
-        for (ty, names) in ENUMERATIONS {
+        for (ty, names) in shared::enumerations(SCHEMA) {
             for (at, name) in names.iter().enumerate() {
                 let other = names[..at].iter().find(|other| same_name(other, name));
                 assert!(other.is_none(), "{ty}: {name} and {other:?}");
