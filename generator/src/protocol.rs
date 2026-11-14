@@ -166,13 +166,8 @@ fn post_process(protocol: &Protocol, path: &Path, asn_files: &[PathBuf]) -> Resu
         bindings.keys.clone(),
     )?;
     let list = registry.list()?;
-    let inspection = crate::inspection::generate(
-        name,
-        &asn,
-        &registry,
-        protocol.carried,
-        protocol.foreign,
-    )?;
+    let inspection =
+        crate::inspection::generate(name, &asn, &registry, protocol.carried, protocol.foreign)?;
     let module = protocol.module();
     fs::write("src/registry.rs", &list)?;
     let inspection = format!(

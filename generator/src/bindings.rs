@@ -1044,7 +1044,10 @@ impl Bindings {
         written.push((OCTETS.0, OCTETS.1, OCTETS.2.to_string()));
         written.sort_by(|a, b| a.0.cmp(b.0));
         for (at, (name, rust, kind)) in written.iter().enumerate() {
-            writeln!(out, "/* {at} */ T {{ name: {name:?}, rust: {rust:?}, kind: {kind} }},")?;
+            writeln!(
+                out,
+                "/* {at} */ T {{ name: {name:?}, rust: {rust:?}, kind: {kind} }},"
+            )?;
         }
         writeln!(out, "];")?;
         Ok(out)
