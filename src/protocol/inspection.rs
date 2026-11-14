@@ -183,16 +183,25 @@ static KINDS: LazyLock<HashMap<&'static str, Kind>> =
 
 /// The readable form of the well-known type that the bindings name `name`.
 fn type_form(name: &str) -> Option<Form> {
-    static FORMS: LazyLock<HashMap<&'static str, Form>> =
-        LazyLock::new(|| shared::forms(SCHEMA).collect());
-    FORMS.get(name).copied()
+    static FORMS: LazyLock<Vec<(&'static str, Form)>> = LazyLock::new(|| {
+        let mut forms: Vec<_> = shared::forms(SCHEMA).collect();
+        forms.sort_by_key(|(name, _)| *name);
+        forms
+    });
+    found(&FORMS, name).copied()
 }
 
 /// The names of the values of the ENUMERATED that the bindings name `name`.
 fn enumerated(name: &str) -> Option<&'static [&'static str]> {
-    static NAMES: LazyLock<HashMap<&'static str, &'static [&'static str]>> =
-        LazyLock::new(|| shared::enumerations(SCHEMA).into_iter().collect());
-    NAMES.get(name).copied()
+    static NAMES: LazyLock<Vec<(&'static str, &'static [&'static str])>> =
+        LazyLock::new(|| shared::enumerations(SCHEMA));
+    found(&NAMES, name).copied()
+}
+
+/// What `entries`, in the order of their names, have for `name`.
+fn found<T>(entries: &'static [(&'static str, T)], name: &str) -> Option<&'static T> {
+    let at = entries.binary_search_by(|(known, _)| (*known).cmp(name));
+    at.ok().map(|at| &entries[at].1)
 }
 
 /// The values at `path` in `tree`, the tree of a PDU, in the order of the tree. See
