@@ -89,7 +89,6 @@ macro_rules! __carried {
 #[allow(clippy::crate_in_macro_def)]
 macro_rules! __inspect {
     (bindings $bindings:ident, pdu $pdu:ident, any $any:ty) => {
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use $crate::inspect::{self as shared, Protocol};
@@ -100,8 +99,8 @@ use crate::Error;
 // The name of the protocol, the first segment of the paths of the IEs of the message of
 // a PDU, and what the ASN.1 says of the messages, the IEs and the types.
 use crate::inspect_registry::{
-    CARRIED, FOREIGN, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGES, PROTOCOL, ROOT, SCHEMA,
-    TRANSFER_FIELDS,
+    CARRIED, FOREIGN, IE_HASH, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGES, PROTOCOL, ROOT,
+    SCHEMA, TRANSFER_FIELDS, TYPE_HASH,
 };
 // The type that an IE of an extension container has where its identifier alone does not
 // say it: the one that the type which the container extends gives it.
@@ -143,18 +142,9 @@ fn letters(name: &str) -> impl Iterator<Item = u8> + '_ {
     letters.map(|letter| letter.to_ascii_lowercase())
 }
 
-/// The number of the IE that ASN.1 names `id-<name>`, however the name is written.
+/// The number of the IE that ASN.1 names `id-<name>`, however the name is written:
+/// the IE that the letters and the digits of the name find in `IE_HASH`.
 pub(crate) fn ie_id(name: &str) -> Option<u16> {
-    /// The identifier of each IE by the letters and the digits of its name, in lower
-    /// case, which is how two names are the same: the first IE of a name, as a search
-    /// of the names in their order finds it.
-    static IDS: LazyLock<HashMap<Vec<u8>, u16>> = LazyLock::new(|| {
-        let mut ids = HashMap::new();
-        for (id, name) in IE_NAMES {
-            ids.entry(letters(name).collect()).or_insert(*id);
-        }
-        ids
-    });
     // The letters of the name, on the stack for a name of the length that an IE has:
     // the longest has 51 of them.
     let mut short = [0; 64];
@@ -162,46 +152,48 @@ pub(crate) fn ie_id(name: &str) -> Option<u16> {
     for letter in letters(name) {
         let Some(place) = short.get_mut(length) else {
             let long: Vec<u8> = letters(name).collect();
-            return IDS.get(&long).copied();
+            return found_ie(&long);
         };
         *place = letter;
         length += 1;
     }
-    IDS.get(&short[..length]).copied()
+    found_ie(&short[..length])
+}
+
+/// The identifier of the IE whose name has the letters and the digits `letters`.
+fn found_ie(letters: &[u8]) -> Option<u16> {
+    IE_HASH.find(letters).map(|at| IE_NAMES[at].0)
+}
+
+/// The row of `SCHEMA` of the type that the bindings name `name`.
+fn row_of(name: &str) -> Option<usize> {
+    TYPE_HASH.find(name.as_bytes())
 }
 
 /// What a type is, by its name in the bindings; `None` for a type of a value without
 /// members, as an ENUMERATED.
 fn kind_of(name: &str) -> Option<&'static Kind> {
-    KINDS.get(name)
+    KINDS[row_of(name)?].as_ref()
 }
 
-/// Each type that has members, or that is a list or a bit string whose size varies, by
-/// its name in the bindings, made once from the table of the types.
-static KINDS: LazyLock<HashMap<&'static str, Kind>> =
-    LazyLock::new(|| shared::kinds(&TABLES).into_iter().collect());
+/// What each type that has members, or that is a list or a bit string whose size varies,
+/// is, by its row: made once from the table of the types.
+static KINDS: LazyLock<Vec<Option<Kind>>> = LazyLock::new(|| shared::kinds(&TABLES));
 
 /// The readable form of the well-known type that the bindings name `name`.
 fn type_form(name: &str) -> Option<Form> {
-    static FORMS: LazyLock<Vec<(&'static str, Form)>> = LazyLock::new(|| {
-        let mut forms: Vec<_> = shared::forms(SCHEMA).collect();
-        forms.sort_by_key(|(name, _)| *name);
-        forms
-    });
-    found(&FORMS, name).copied()
+    match SCHEMA[row_of(name)?].kind {
+        shared::schema::Kind::Alias { form, .. } => form,
+        _ => None,
+    }
 }
 
 /// The names of the values of the ENUMERATED that the bindings name `name`.
 fn enumerated(name: &str) -> Option<&'static [&'static str]> {
-    static NAMES: LazyLock<Vec<(&'static str, &'static [&'static str])>> =
-        LazyLock::new(|| shared::enumerations(SCHEMA));
-    found(&NAMES, name).copied()
-}
-
-/// What `entries`, in the order of their names, have for `name`.
-fn found<T>(entries: &'static [(&'static str, T)], name: &str) -> Option<&'static T> {
-    let at = entries.binary_search_by(|(known, _)| (*known).cmp(name));
-    at.ok().map(|at| &entries[at].1)
+    match SCHEMA[row_of(name)?].kind {
+        shared::schema::Kind::Enumerated { names, .. } => Some(names),
+        _ => None,
+    }
 }
 
 /// The values at `path` in `tree`, the tree of a PDU, in the order of the tree. See
@@ -316,9 +308,15 @@ mod tests {
     /// The member of a message or of a container that holds its IEs.
     const IES: &str = "protocolIEs";
 
+    /// Each type that `kind_of` knows, with its name in the bindings.
+    fn named_kinds() -> impl Iterator<Item = (&'static &'static str, &'static Kind)> {
+        let kinds = SCHEMA.iter().zip(KINDS.iter());
+        kinds.filter_map(|(ty, kind)| Some((&ty.rust, kind.as_ref()?)))
+    }
+
     /// Every member and every alternative of every type.
     fn all_members() -> impl Iterator<Item = (&'static str, &'static [Member])> {
-        KINDS.iter().filter_map(|(name, kind)| match kind {
+        named_kinds().filter_map(|(name, kind)| match kind {
             Kind::Sequence(members) | Kind::Choice(members) => Some((*name, &members[..])),
             Kind::Is(_) => None,
         })
@@ -350,7 +348,7 @@ mod tests {
                 _ => {}
             }
         }
-        for (name, kind) in KINDS.iter() {
+        for (name, kind) in named_kinds() {
             match kind {
                 Kind::Is(shape) => check(name, *shape),
                 Kind::Sequence(members) | Kind::Choice(members) => {
@@ -403,10 +401,46 @@ mod tests {
     }
 
     #[test]
+    fn a_name_finds_in_its_hash_what_a_search_of_the_names_finds() {
+        // Each name, and names that are close to it and are not it.
+        let near = |name: &str| {
+            let mut shorter = name.to_string();
+            shorter.pop();
+            [
+                name.to_string(),
+                name.to_uppercase(),
+                format!("{name}x"),
+                format!("x{name}"),
+                shorter,
+                String::new(),
+            ]
+        };
+        for (_, name) in IE_NAMES {
+            for name in near(name) {
+                let letters = |name: &str| -> Vec<u8> { super::letters(name).collect() };
+                let found = IE_NAMES.iter().find(|(_, known)| {
+                    !letters(&name).is_empty() && letters(known) == letters(&name)
+                });
+                assert_eq!(ie_id(&name), found.map(|(id, _)| *id), "{name}");
+            }
+        }
+        for ty in SCHEMA {
+            for name in near(ty.rust) {
+                let found = SCHEMA.iter().position(|known| known.rust == name);
+                assert_eq!(row_of(&name), found, "{name}");
+            }
+        }
+    }
+
+    #[test]
     fn no_two_names_of_an_enumerated_are_the_same() {
         // A name is read whatever its case and its separators: no two values of one
         // type are then one name.
-        for (ty, names) in shared::enumerations(SCHEMA) {
+        let enumerations = SCHEMA.iter().filter_map(|ty| match ty.kind {
+            shared::schema::Kind::Enumerated { names, .. } => Some((ty.rust, names)),
+            _ => None,
+        });
+        for (ty, names) in enumerations {
             for (at, name) in names.iter().enumerate() {
                 let other = names[..at].iter().find(|other| same_name(other, name));
                 assert!(other.is_none(), "{ty}: {name} and {other:?}");

@@ -32,6 +32,7 @@
 //! number of this crate promises. A program calls the functions of oxirush-ngap and of
 //! oxirush-s1ap, which are.
 
+pub mod hashed;
 mod kinds;
 mod paths;
 pub mod schema;
@@ -44,7 +45,8 @@ use oxirush_utils::tree::Value;
 use crate::{Error, ErrorKind};
 
 pub use crate::json::Form;
-pub use kinds::{enumerations, forms, kinds};
+pub use hashed::Hashed;
+pub use kinds::kinds;
 pub use paths::{listed_ies, named_ies};
 pub use trees::{check_path, enumerated_at, insert, open, paths, remove, select, set};
 pub use views::{Parts, tree, tree_of_jer, tree_parts};

@@ -16,15 +16,14 @@
 */
 
 //! What the paths of a protocol know of its types, made from its table of the types:
-//! each SEQUENCE and each CHOICE with the shape of each member, each type that is a list
-//! or a bit string whose size varies, the names of the values of each ENUMERATED, and
-//! the readable form of each well-known type.
+//! each SEQUENCE and each CHOICE with the shape of each member, and each type that is a
+//! list or a bit string whose size varies.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use super::schema::{self, Field};
-use super::{Form, Kind, Member, Protocol, Shape};
+use super::{Kind, Member, Protocol, Shape};
 
 /// The containers of IEs, by the names of their types in the bindings, and the shape of
 /// a value of each.
@@ -35,20 +34,19 @@ const CONTAINERS: [(&str, Shape); 4] = [
     ("ProtocolExtensionField", Shape::Extension(None, "")),
 ];
 
-/// Each SEQUENCE and each CHOICE of `protocol` with its members, and each type that is a
-/// list or a bit string whose size varies, by the names of the types in the bindings and
-/// in their order: what `Protocol::kind_of` reads. The members and the shapes of the
+/// What each type of `protocol` is, by its row: each SEQUENCE and each CHOICE with its
+/// members, and each type that is a list or a bit string whose size varies; `None` for
+/// the others, what `Protocol::kind_of` does not know. The members and the shapes of the
 /// lists are made once, for the life of the program, as a table of constants would be.
-pub fn kinds(protocol: &Protocol) -> Vec<(&'static str, Kind)> {
-    let mut kinds = Vec::new();
-    for ty in protocol.schema {
+pub fn kinds(protocol: &Protocol) -> Vec<Option<Kind>> {
+    let kind = |ty: &schema::Type| {
         if CONTAINERS
             .iter()
             .any(|(container, _)| *container == ty.rust)
         {
-            continue;
+            return None;
         }
-        let kind = match &ty.kind {
+        Some(match &ty.kind {
             schema::Kind::Sequence { names, members, .. } => {
                 let members = names.iter().zip(*members);
                 let members = members.map(|(name, member)| {
@@ -71,39 +69,13 @@ pub fn kinds(protocol: &Protocol) -> Vec<(&'static str, Kind)> {
             // A type that is another, where that one has members or is a bit string whose
             // size varies.
             schema::Kind::Alias { field, .. } => match inner(protocol, field) {
-                Inner::Plain => continue,
+                Inner::Plain => return None,
                 Inner::Other => Kind::Is(shape(protocol, field)),
             },
-            schema::Kind::Enumerated { .. } => continue,
-        };
-        kinds.push((ty.rust, kind));
-    }
-    kinds.sort_by_key(|(name, _)| *name);
-    kinds
-}
-
-/// The names of the values of each ENUMERATED of `types`, in the order of their indexes
-/// in PER, by the names of the types in the bindings and in their order.
-pub fn enumerations(
-    types: &'static [schema::Type],
-) -> Vec<(&'static str, &'static [&'static str])> {
-    let enumerated = types.iter().filter_map(|ty| match &ty.kind {
-        schema::Kind::Enumerated { names, .. } => Some((ty.rust, *names)),
-        _ => None,
-    });
-    let mut enumerations: Vec<_> = enumerated.collect();
-    enumerations.sort_by_key(|(name, _)| *name);
-    enumerations
-}
-
-/// The readable form of each well-known type of `types`, by its name in the bindings.
-pub fn forms(types: &'static [schema::Type]) -> impl Iterator<Item = (&'static str, Form)> {
-    types.iter().filter_map(|ty| match ty.kind {
-        schema::Kind::Alias {
-            form: Some(form), ..
-        } => Some((ty.rust, form)),
-        _ => None,
-    })
+            schema::Kind::Enumerated { .. } => return None,
+        })
+    };
+    protocol.schema.iter().map(kind).collect()
 }
 
 /// The members of a type, which are kept for the life of the program.

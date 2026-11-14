@@ -71,8 +71,18 @@ All notable changes to `oxirush-aper` are recorded here.
   their index in the pool, so existing corpus inputs still pick the same PDU. No
   API changes.
 
+- The generator writes a perfect hash of the names of the IEs (`IE_HASH`) and of
+  the types of the bindings (`TYPE_HASH`) beside `SCHEMA`: a name is found in one
+  probe of `inspect::Hashed` and one comparison, where a `HashMap` was searched for
+  the IEs and for the types that have members, and the forms and the values of an
+  ENUMERATED were found by a binary search. `inspect::kinds` gives the kind of each
+  row. On an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets, `paths` takes 9.9 µs
+  where it took 10.9 µs, `select` 2.0 µs (2.3 µs), and `from_tree` 6.8 µs (7.1 µs).
+
 ### Removed
 
+- `inspect::enumerations` and `inspect::forms`: the readable form and the values of
+  an ENUMERATED are read from the row of the type.
 - `Serialize` and `Deserialize` of `Criticality` and `Presence` with `inspect`,
   and the `impl_serde!` that the generator wrote after each type with the
   feature `serde` of a protocol crate: oxirush-ngap and oxirush-s1ap no longer

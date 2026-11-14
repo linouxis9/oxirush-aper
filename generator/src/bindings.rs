@@ -1050,6 +1050,23 @@ impl Bindings {
             )?;
         }
         writeln!(out, "];")?;
+        let names: Vec<String> = written
+            .iter()
+            .map(|(_, rust, _)| rust.to_string())
+            .collect();
+        let mut distinct = names.clone();
+        distinct.sort();
+        distinct.dedup();
+        ensure!(
+            distinct.len() == names.len(),
+            "two types of one name in the bindings"
+        );
+        crate::hashing::write(
+            &mut out,
+            "Each type of `SCHEMA` by its name in the bindings, as its row.",
+            "TYPE_HASH",
+            &names,
+        )?;
         Ok(out)
     }
 

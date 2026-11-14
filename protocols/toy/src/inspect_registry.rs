@@ -11,6 +11,13 @@ oxirush_aper::__transfers! {
 oxirush_aper::__carried! {
     25 "ContainerBlob" crate::toy::ContainerBlob;
 }
+/// Each IE by the letters and the digits of its name, in lower case, as an index of `IE_NAMES`.
+#[rustfmt::skip]
+pub(crate) static IE_HASH: oxirush_aper::inspect::Hashed = oxirush_aper::inspect::Hashed {
+    keys: &["uecoreid", "ueranid", "ueids", "cause", "criticalitydiagnostics", "nodename", "securitykey", "items", "item", "transferlist", "container", "areas", "algorithms", "counts", "tunnel", "naspdu", "transferkind", "nodeid", "securitycontext", "failuretransfer", "setuptransfer", "extensionindex", "extendedcause"],
+    displacements: &[289, 17, 2, 26, 14, 21],
+    slots: &[19, 16, 5, 9, 3, 12, 17, 0, 1, 22, 6, 65535, 8, 4, 20, 2, 18, 10, 11, 15, 65535, 14, 21, 7, 65535, 13, 65535],
+};
 use oxirush_aper::UNBOUNDED;
 #[allow(unused_imports)]
 use oxirush_aper::inspect::Form;
@@ -91,3 +98,10 @@ pub(crate) static SCHEMA: &[T] = &[
 /* 69 */ T { name: "UE-RAN-ID", rust: "UERANID", kind: K::Alias { field: F::Unsigned(0, 4294967295, false), form: None, secret: false } },
 /* 70 */ T { name: "UnsuccessfulOutcome", rust: "UnsuccessfulOutcome", kind: K::Sequence { names: &["procedureCode", "criticality", "value"], members: &[M { field: "procedure_code", ty: F::Named(41), optional: false }, M { field: "criticality", ty: F::Named(14), optional: false }, M { field: "value", ty: F::Open, optional: false }], extensible: false } },
 ];
+/// Each type of `SCHEMA` by its name in the bindings, as its row.
+#[rustfmt::skip]
+pub(crate) static TYPE_HASH: oxirush_aper::inspect::Hashed = oxirush_aper::inspect::Hashed {
+    keys: &["Algorithms", "AreaItem", "Areas", "BroadcastPLMNs", "Cause", "CauseMisc", "CauseNas", "CauseProtocol", "CauseRadioNetwork", "ConnectionItem", "Connections", "Container", "ContainerBlob", "Counts", "Criticality", "CriticalityDiagnostics", "CriticalityDiagnosticsIEItem", "CriticalityDiagnosticsIEList", "ErrorIndication", "ExtendedCause", "FailureTransfer", "GTPTEID", "GTPTunnel", "IndexOfItem", "IndexOfTransfer", "InitiatingMessage", "Item", "Items", "KindOfTransfer", "Kinds", "Mixed", "NASPDU", "NodeID", "NodeName", "Notification", "Octets", "PLMNIdentity", "Presence", "PrivateIEID", "PrivateMessage", "PrivateMessagePrivateIEs", "ProcedureCode", "ProtocolExtensionContainer", "ProtocolExtensionField", "ProtocolExtensionID", "ProtocolIEContainer", "ProtocolIEField", "ProtocolIEID", "ReleaseRequest", "AnonymousPrivateMessagePrivateIEs", "SecurityContext", "SecurityKey", "SetupFailure", "SetupRequest", "SetupResponse", "SetupTransfer", "SuccessfulOutcome", "TAC", "TOYPDU", "TransferItem", "TransferKind", "TransferList", "TransportLayerAddress", "TriggeringMessage", "Tunnel", "TypeOfError", "UECoreID", "UEIDPair", "UEIDs", "UERANID", "UnsuccessfulOutcome"],
+    displacements: &[31, 5, 0, 5, 26, 66, 5, 9, 43, 66, 3, 79, 47, 49, 11, 132, 7, 47],
+    slots: &[44, 68, 65535, 10, 42, 13, 65535, 8, 46, 61, 37, 41, 65535, 3, 43, 65535, 39, 4, 6, 65535, 21, 52, 57, 65535, 65535, 65535, 69, 65, 49, 51, 30, 65535, 1, 22, 45, 2, 65535, 5, 26, 65535, 38, 27, 62, 9, 67, 23, 56, 50, 33, 31, 15, 18, 48, 65535, 12, 17, 65535, 28, 35, 60, 34, 25, 63, 66, 11, 0, 47, 19, 14, 54, 20, 29, 59, 7, 24, 70, 32, 65535, 16, 53, 36, 64, 40, 58, 55],
+};

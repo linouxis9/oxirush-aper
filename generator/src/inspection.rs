@@ -115,5 +115,15 @@ pub fn generate(
         writeln!(out, "    of {other:?} {} {name:?};", id_of(ie)?)?;
     }
     writeln!(out, "}}")?;
+    // The IEs by the letters and the digits of their names, in lower case, which is how
+    // two names are the same, in the order of `IE_NAMES`.
+    let ies = registry.ies.values();
+    let names: Vec<String> = ies.map(|ie| canonical(&ie.name)).collect();
+    crate::hashing::write(
+        &mut out,
+        "Each IE by the letters and the digits of its name, in lower case, as an index of `IE_NAMES`.",
+        "IE_HASH",
+        &names,
+    )?;
     Ok(out)
 }
