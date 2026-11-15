@@ -13,13 +13,16 @@
 """The comparison with rasn: the crate and the derive of rasn 0.29, each decoding
 and encoding five values of NGAP with the same types (`src/bin/compare.rs`).
 
-    python3 benches/compare.py [--core N] [--perf COMMAND]
+    python3 benches/compare.py [--core N] [--perf COMMAND] [--rounds N]
 
 Run it from the root of the repository. It builds `compare` in benches/target, runs each
 operation on one core (--core, 2 by default), with --perf for the cycles and the
 instructions: `perf` by default, or `sudo -n perf` where perf_event_paranoid keeps them
-from a user, in which case the program runs as the user again under perf. It prints the
-tables of benches/README.md.
+from a user, in which case the program runs as the user again under perf. Each operation
+of the two crates runs once a round, in turns, --rounds rounds (10 by default), so that a
+busy moment of the machine falls on both: a figure is the median of the rounds, with the
+lowest and the highest time, and the ratio of the times is given only where the two
+spreads do not overlap. It prints the tables of benches/README.md.
 """
 
 import argparse
@@ -27,6 +30,7 @@ import json
 import os
 import pathlib
 import shutil
+import statistics
 import subprocess
 import sys
 
@@ -51,9 +55,13 @@ def once(program, codec, operation, value, iterations, core, perf):
     return json.loads(done.stdout.strip().splitlines()[-1]), counts
 
 
-def measure(program, codec, operation, value, core, perf):
+def iterations_of(program, codec, operation, value, core):
+    """The calls of a run of about 0.2 s."""
     probe, _ = once(program, codec, operation, value, 1000, core, [])
-    iterations = max(1000, int(2e8 / max(probe["ns"], 1.0)))
+    return max(1000, int(2e8 / max(probe["ns"], 1.0)))
+
+
+def measure(program, codec, operation, value, iterations, core, perf):
     figures, _ = once(program, codec, operation, value, iterations, core, [])
     if perf:
         _, first = once(program, codec, operation, value, iterations, core, perf)
@@ -62,6 +70,21 @@ def measure(program, codec, operation, value, core, perf):
         for name in ("cycles", "instructions"):
             if first.get(name) is not None and second.get(name) is not None:
                 figures[name] = (second[name] - first[name]) / (4 * iterations)
+    return figures
+
+
+def summary(runs):
+    """The median of each figure of the rounds, and the lowest and highest time."""
+    figures = {}
+    for name in runs[0]:
+        values = [run[name] for run in runs if name in run]
+        if len(set(values)) == 1:
+            figures[name] = values[0]
+        elif len(values) == len(runs) and all(isinstance(v, (int, float)) for v in values):
+            figures[name] = statistics.median(values)
+        else:
+            figures[name] = runs[0][name]
+    figures["low"], figures["high"] = min(r["ns"] for r in runs), max(r["ns"] for r in runs)
     return figures
 
 
@@ -82,6 +105,7 @@ def main():
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--core", type=int, default=2)
     arguments.add_argument("--perf", default="perf", help="the perf command, or ''")
+    arguments.add_argument("--rounds", type=int, default=10)
     arguments = arguments.parse_args()
     perf = arguments.perf.split()
     if perf and shutil.which(perf[-1]) is None:
@@ -95,18 +119,24 @@ def main():
                             check=True).stdout
     values = [line.split("\t") for line in listed.splitlines()]
     before = load()
+    calls = {(value, operation, codec): iterations_of(program, codec, operation, value, arguments.core)
+             for value, _ in values for operation in ("decode", "encode") for codec in ("aper", "rasn")}
+    runs = {key: [] for key in calls}
+    for _ in range(arguments.rounds):
+        for key, iterations in calls.items():
+            value, operation, codec = key
+            runs[key].append(measure(program, codec, operation, value, iterations, arguments.core, perf))
     results = {}
     for value, octets in values:
         results[value] = {"octets": len(octets) // 2}
         for operation in ("decode", "encode"):
-            ours = measure(program, "aper", operation, value, arguments.core, perf)
-            theirs = measure(program, "rasn", operation, value, arguments.core, perf)
-            results[value][operation] = {"aper": ours, "rasn": theirs}
-            print(value, operation, ours, theirs, file=sys.stderr)
-    print(json.dumps(results), file=sys.stderr)
+            results[value][operation] = {codec: summary(runs[(value, operation, codec)])
+                                         for codec in ("aper", "rasn")}
+    print(json.dumps({"runs": {"/".join(key): runs[key] for key in runs}, "results": results}),
+          file=sys.stderr)
 
     def cell(figures):
-        text = f"{figures['ns']:.0f} ns"
+        text = f"{figures['ns']:.0f} ns ({figures['low']:.0f} to {figures['high']:.0f})"
         for name in ("cycles", "instructions"):
             if name in figures:
                 text += f", {figures[name]:,.0f} {name}"
@@ -120,13 +150,14 @@ def main():
         print("|---|---|---|---|")
         for value, figures in results.items():
             ours, theirs = figures[operation]["aper"], figures[operation]["rasn"]
-            ratio = f"{theirs['ns'] / ours['ns']:.1f}x the time"
+            apart = theirs["low"] > ours["high"] or theirs["high"] < ours["low"]
+            ratio = f"{theirs['ns'] / ours['ns']:.1f}x the time" if apart else "about the same time"
             if "instructions" in ours and "instructions" in theirs:
                 ratio += f", {theirs['instructions'] / ours['instructions']:.1f}x the instructions"
             print(f"| {value} ({figures['octets']}) | {cell(ours)} | {cell(theirs)} | {ratio} |")
         print()
-    print(f"On {machine()}, core {arguments.core}, with a load average of {before} before "
-          f"and {load()} after.")
+    print(f"On {machine()}, core {arguments.core}, {arguments.rounds} rounds, with a load average "
+          f"of {before} before and {load()} after.")
 
 
 main()

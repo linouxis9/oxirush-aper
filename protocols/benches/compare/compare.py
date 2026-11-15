@@ -30,7 +30,11 @@ to results.md in the work directory, with every figure in results.json:
 - pycrate 0.8.1, in a virtual environment.
 
 It needs cargo, git, curl, a C compiler, meson, ninja and the libraries that Open5GS is
-built with, Go 1.26 for free5GC, and Python 3 with venv. Each run of an operation is on
+built with, Go 1.26 for free5GC, and Python 3 with venv. Every operation of every
+implementation runs once a round, in turns, --rounds rounds (10 by default), so that a
+busy moment of the machine falls on all of them: a figure is the median of the rounds,
+results.json has the lowest and the highest time beside it, and a ratio is given only
+where the times of the two do not overlap. Each run of an operation is on
 one core (--core, 2 by default), with --perf for the cycles and the instructions: `perf`
 by default, or `sudo -n perf` where perf_event_paranoid keeps them from a user, in which
 case the program runs as the user again under perf. The other implementations are not
@@ -43,6 +47,7 @@ import os
 import pathlib
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 
@@ -156,7 +161,7 @@ def build(work, protocol):
     return codecs
 
 
-def measure(codec, operation, octets, core, perf):
+def measure(codec, operation, octets, core, perf, iterations=None):
     """The figures of one operation of a codec on one PDU: a call in ns, cycles and
     instructions, the allocations and the octets that it asks for, and the most memory
     that the program holds."""
@@ -185,8 +190,9 @@ def measure(codec, operation, octets, core, perf):
         return figures, counts
 
     # About a fifth of a second for each of the four times that a program runs the call.
-    probe, _ = once(100, False)
-    iterations = max(100, int(2e8 / max(probe["ns"], 1.0)))
+    if iterations is None:
+        probe, _ = once(100, False)
+        return max(100, int(2e8 / max(probe["ns"], 1.0)))
     result, _ = once(iterations, False)
     if perf:
         try:
@@ -201,8 +207,26 @@ def measure(codec, operation, octets, core, perf):
     return result
 
 
-def ratio(theirs, ours):
-    return f"{theirs / ours:.1f}x" if theirs and ours else ""
+def summary(runs):
+    """The median of each figure of the rounds, and the lowest and highest time."""
+    figures = {}
+    for name in runs[0]:
+        values = [run[name] for run in runs if name in run]
+        if len(set(values)) == 1:
+            figures[name] = values[0]
+        elif len(values) == len(runs) and all(isinstance(v, (int, float)) for v in values):
+            figures[name] = statistics.median(values)
+    figures["low"], figures["high"] = min(r["ns"] for r in runs), max(r["ns"] for r in runs)
+    return figures
+
+
+def ratio(theirs, ours, key="ns"):
+    """The ratio of two figures; for times, only where the rounds do not overlap."""
+    if not theirs.get(key) or not ours.get(key):
+        return ""
+    if key == "ns" and not (theirs["low"] > ours["high"] or theirs["high"] < ours["low"]):
+        return "about the same"
+    return f"{theirs[key] / ours[key]:.1f}x"
 
 
 def tables(protocol, pdus, results, codecs):
@@ -219,14 +243,14 @@ def tables(protocol, pdus, results, codecs):
         lines.append("| " + " | ".join(header) + " |")
         lines.append("|" + "---|" * len(header))
         for name, octets in pdus:
-            ours = results[name]["ours"][operation]["ns"]
+            ours = results[name]["ours"][operation]
             row = [f"{name} ({len(octets) // 2})"]
             if operation == "decode":
                 row.append(f"{results[name]['ours']['envelope']['ns']:,.0f}")
-            row.append(f"{ours:,.0f}")
+            row.append(f"{ours['ns']:,.0f}")
             for other in others:
                 figures = results[name].get(other, {}).get(operation)
-                row.append(f"{figures['ns']:,.0f} ({ratio(figures['ns'], ours)})"
+                row.append(f"{figures['ns']:,.0f} ({ratio(figures, ours)})"
                            if figures else "does not take it")
             lines.append("| " + " | ".join(row) + " |")
         lines.append("")
@@ -246,7 +270,7 @@ def tables(protocol, pdus, results, codecs):
             return ""
         text = f"{value:,.0f}"
         if base is not None and base.get(key):
-            text += f" ({ratio(value, base[key])})"
+            text += f" ({ratio(figures, base, key)})"
         return text
 
     for other in ["ours", *others]:
@@ -283,6 +307,7 @@ def main():
     arguments.add_argument("--core", type=int, default=2)
     arguments.add_argument("--perf", default="perf",
                            help="the perf command, or '' for none")
+    arguments.add_argument("--rounds", type=int, default=10)
     arguments = arguments.parse_args()
     manifest = (ROOT / "Cargo.toml").read_text()
     protocol = re.search(r'^name = "oxirush-(\w+)"', manifest, re.M).group(1)
@@ -295,23 +320,35 @@ def main():
             if line and not line.startswith("#")]
     codecs = build(work, protocol)
     before = load()
-    results = {}
+    calls, runs = {}, {}
     for name, octets in pdus:
-        results[name] = {}
         for codec in codecs.values():
-            results[name][codec.name] = {}
             for operation in codec.operations:
                 try:
-                    figures = measure(codec, operation, octets, arguments.core, perf)
+                    calls[(name, codec.name, operation)] = measure(codec, operation, octets,
+                                                                   arguments.core, perf)
                 except RuntimeError as error:
                     print(error, file=sys.stderr)
-                    continue
-                results[name][codec.name][operation] = figures
-                print(f"{name} {codec.name} {operation}: {figures}", file=sys.stderr)
-    (work / "results.json").write_text(json.dumps(results, indent=1))
+    octets_of = dict(pdus)
+    for _ in range(arguments.rounds):
+        for key, iterations in calls.items():
+            name, codec, operation = key
+            try:
+                figures = measure(codecs[codec], operation, octets_of[name], arguments.core,
+                                  perf, iterations)
+            except RuntimeError as error:
+                print(error, file=sys.stderr)
+                continue
+            runs.setdefault(key, []).append(figures)
+            print(f"{name} {codec} {operation}: {figures}", file=sys.stderr)
+    results = {name: {} for name, _ in pdus}
+    for (name, codec, operation), done in runs.items():
+        results[name].setdefault(codec, {})[operation] = summary(done)
+    (work / "results.json").write_text(json.dumps({"results": results, "runs": {
+        "/".join(key): done for key, done in runs.items()}}, indent=1))
     text = tables(protocol, pdus, results, codecs)
-    text += (f"\nOn {machine()}, core {arguments.core}, with a load average of {before} "
-             f"before and {load()} after.\n")
+    text += (f"\nOn {machine()}, core {arguments.core}, {arguments.rounds} rounds, with a load "
+             f"average of {before} before and {load()} after.\n")
     (work / "results.md").write_text(text)
     print(text)
 
