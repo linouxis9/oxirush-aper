@@ -362,14 +362,16 @@ and write the same octets. A ratio is the time of rasn over this crate's:
 
 | Value (octets) | Decoding | rasn / this crate | Encoding | rasn / this crate |
 |---|---|---|---|---|
-| AMF-UE-NGAP-ID (2) | 11 ns | 2.9x | 21 ns | 2.7x |
-| NAS-PDU (61) | 11 ns | 4.6x | 60 ns | 1.3x |
-| AMFName (18) | 34 ns | 4.3x | 50 ns | 3.5x |
-| GUAMI (7) | 30 ns | 8.8x | 30 ns | 4.7x |
-| UserLocationInformationNR (19) | 35 ns | 8.1x | 71 ns | 3.6x |
+| AMF-UE-NGAP-ID (2) | 18 ns | 2.8x | 49 ns | 2.6x |
+| NAS-PDU (61) | 22 ns | 4.3x | 145 ns | 1.4x |
+| AMFName (18) | 74 ns | 4.9x | 116 ns | 3.4x |
+| GUAMI (7) | 47 ns | 11.4x | 59 ns | 5.1x |
+| UserLocationInformationNR (19) | 56 ns | 8.4x | 174 ns | 3.2x |
 
-Decoding these values allocates nothing. Measured at 65d0e09 on one core of
-an AMD Ryzen 7 5700G (Linux 7.0, Rust 1.98.1) on 2026-10-18.
+Decoding these values allocates nothing. Measured at 3ae0f3c on core 3 of
+an Intel Xeon E5-2680 v4 (Broadwell, a KVM guest, Linux 7.0, Rust 1.100.0)
+on 2026-11-15, the median of ten rounds, the two crates in turns; the ten
+times of the two do not overlap for any value.
 [`benches/`](benches/README.md) has the cycles, the instructions and the
 allocations of each, and the method. From the root of the repository:
 
