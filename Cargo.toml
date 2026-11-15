@@ -50,7 +50,7 @@ oxirush-utils = { version = "0.2.2", optional = true, features = ["tree"] }
 # trees calls, and whose trees hold the names of the tables without copying them, until
 # the release of oxirush-utils that has them.
 [patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "219336a848e65a19c80ef2e6bccd8feeb044844a" }
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "4eae6c700f102dbf134e47f758e96799bee3f537" }
 
 
 [[test]]
