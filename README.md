@@ -55,8 +55,8 @@ oxirush-aper = "0.4"
 
 | Feature | Adds |
 |---------|------|
-| `inspect` | What generated bindings need to write and read their values as trees of `oxirush_utils::tree`, in the form of the JSON Encoding Rules (X.697), with a readable form for a few 3GPP types, such as `"208-93"` for a PLMN identity; the paths of those trees, and the type at a path with what its tree takes (`inspect::at` of oxirush-ngap and oxirush-s1ap) |
-| `std` | With `inspect`, the register of the protocols whose tables a program registers, `inspect::register()` of oxirush-ngap and oxirush-s1ap: the handover containers of one protocol in the messages of the other. It is a lock of the standard library |
+| `inspect` | The JSON trees of generated bindings, as `oxirush_utils::tree` values in the form of the JSON Encoding Rules (X.697) with a readable form for some 3GPP types (`"208-93"` for a PLMN identity), their paths, and the type at a path (`inspect::at` of oxirush-ngap and oxirush-s1ap) |
+| `std` | With `inspect`, the register that reads the handover containers of one protocol in the messages of the other (`inspect::register()` of oxirush-ngap and oxirush-s1ap) |
 
 `check`, which says how a PDU deviates from the object set of its message,
 needs no feature.
@@ -355,10 +355,10 @@ outside its constraint, octets after a complete encoding.
 
 ## Performance
 
-The crate against the derive of [rasn](https://crates.io/crates/rasn) 0.29,
-on five values of NGAP with the same type in both: written by hand as the
-generated bindings of oxirush-ngap write it, and derived for rasn. Both read
-and write the same octets. A ratio is the time of rasn over this crate's:
+Five values of NGAP, written by hand as the generated bindings of
+oxirush-ngap write them, against the derive of
+[rasn](https://crates.io/crates/rasn) 0.29 on the same type. Both read and
+write the same octets.
 
 | Value (octets) | Decoding | rasn / this crate | Encoding | rasn / this crate |
 |---|---|---|---|---|
@@ -368,35 +368,27 @@ and write the same octets. A ratio is the time of rasn over this crate's:
 | GUAMI (7) | 47 ns | 11.4x | 59 ns | 5.1x |
 | UserLocationInformationNR (19) | 56 ns | 8.4x | 174 ns | 3.2x |
 
-Decoding these values allocates nothing. Measured at 3ae0f3c on core 3 of
-an Intel Xeon E5-2680 v4 (Broadwell, a KVM guest, Linux 7.0, Rust 1.100.0)
-on 2026-11-15, the median of ten rounds, the two crates in turns; the ten
-times of the two do not overlap for any value.
-[`benches/`](benches/README.md) has the cycles, the instructions and the
-allocations of each, and the method. From the root of the repository:
-
-```sh
-python3 benches/compare.py --core 3 --perf "sudo -n perf"
-```
+Medians of ten rounds, the two crates in turns, on one core of an Intel Xeon
+E5-2680 v4 (a KVM guest, Linux 7.0, Rust 1.100.0), at 3ae0f3c on
+2026-11-15; the ten times of the two do not overlap for any value. Decoding
+these values allocates nothing. [`benches/README.md`](benches/README.md) has
+the cycles, the instructions, the allocations, the method and the command.
 
 ## Tests and fuzzing
-
-The worked examples of X.691 Annex A are reproduced octet for octet, and
-each field is tested against its clause. `fuzz/` has a
-[cargo-fuzz](https://crates.io/crates/cargo-fuzz) target, `fields`, which
-reads fields and constraints that the octets choose and writes them back.
-The targets of `protocols/fuzz/` decode, edit and build the PDUs of
-oxirush-ngap, oxirush-s1ap and TOY, the protocol of the tests, through the
-trees of this crate. One of them, `generated`, writes a PDU of any message
-from the tables of its protocol, with the IEs and values that the fuzzer's
-octets choose, and checks that it encodes, decodes and reads back to the same
-tree. The Fuzz workflows of this crate, oxirush-ngap and oxirush-s1ap run
-them an hour each every day but Sunday, and longer once a week.
 
 ```sh
 cargo test --all-features
 cargo +nightly fuzz run fields -- -max_total_time=60 -max_len=512
 ```
+
+The worked examples of X.691 Annex A are reproduced octet for octet, and
+each field is tested against its clause. The fuzz target `fields` reads
+fields and constraints that the octets choose and writes them back. The
+targets of `protocols/fuzz/` decode, edit and build the PDUs of
+oxirush-ngap, oxirush-s1ap and TOY, the protocol of the tests; `generated`
+writes a PDU of any message from the tables of its protocol and checks that
+it reads back to the same tree. They run an hour each every day but Sunday,
+and longer once a week.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) says what else the repository holds.
 
