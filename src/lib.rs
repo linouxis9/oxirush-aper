@@ -84,7 +84,8 @@
 //! - [oxirush-security](https://docs.rs/oxirush-security): NAS security, AKA and the derivation of keys.
 //! - [oxirush-ngap](https://docs.rs/oxirush-ngap): NGAP, between a gNB and an AMF.
 //! - [oxirush-s1ap](https://docs.rs/oxirush-s1ap): S1AP, between an eNB and an MME.
-//! - [oxirush-gtp-u](https://docs.rs/oxirush-gtp-u): GTP-U tunnels, with a test UPF.
+//! - [oxirush-gtp-u](https://docs.rs/oxirush-gtp-u): GTP-U tunnels, with a user-plane test peer.
+//! - [oxirush-pfcp](https://docs.rs/oxirush-pfcp): PFCP, between the control plane and the user plane.
 //! - [oxirush-sctp](https://docs.rs/oxirush-sctp): SCTP sockets, which carry NGAP and S1AP.
 
 #![no_std]

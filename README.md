@@ -55,7 +55,7 @@ oxirush-aper = "0.4"
 
 | Feature | Adds |
 |---------|------|
-| `inspect` | What generated bindings need to write and read their values as trees of `oxirush_utils::tree`, in the form of the JSON Encoding Rules (X.697), with a readable form for a few 3GPP types, such as `"208-93"` for a PLMN identity |
+| `inspect` | What generated bindings need to write and read their values as trees of `oxirush_utils::tree`, in the form of the JSON Encoding Rules (X.697), with a readable form for a few 3GPP types, such as `"208-93"` for a PLMN identity; the paths of those trees, and the type at a path with what its tree takes (`inspect::at` of oxirush-ngap and oxirush-s1ap) |
 | `std` | With `inspect`, the register of the protocols whose tables a program registers, `inspect::register()` of oxirush-ngap and oxirush-s1ap: the handover containers of one protocol in the messages of the other. It is a lock of the standard library |
 
 `check`, which says how a PDU deviates from the object set of its message,
@@ -383,10 +383,13 @@ The worked examples of X.691 Annex A are reproduced octet for octet, and
 each field is tested against its clause. `fuzz/` has a
 [cargo-fuzz](https://crates.io/crates/cargo-fuzz) target, `fields`, which
 reads fields and constraints that the octets choose and writes them back.
-The Fuzz workflow runs it, and the targets of oxirush-ngap and oxirush-s1ap,
-which edit and build PDUs through the trees of this crate too, on both and on
-the protocol of the tests, an hour each day but Sunday and four hours on
-Monday.
+The targets of `protocols/fuzz/` decode, edit and build the PDUs of
+oxirush-ngap, oxirush-s1ap and TOY, the protocol of the tests, through the
+trees of this crate. One of them, `generated`, writes a PDU of any message
+from the tables of its protocol, with the IEs and values that the fuzzer's
+octets choose, and checks that it encodes, decodes and reads back to the same
+tree. The Fuzz workflows of this crate, oxirush-ngap and oxirush-s1ap run
+them an hour each every day but Sunday, and longer once a week.
 
 ```sh
 cargo test --all-features
@@ -408,7 +411,8 @@ says how to report a vulnerability.
 - [oxirush-security](https://github.com/linouxis9/oxirush-security): NAS security, AKA and the derivation of keys.
 - [oxirush-ngap](https://github.com/linouxis9/oxirush-ngap): NGAP, between a gNB and an AMF.
 - [oxirush-s1ap](https://github.com/linouxis9/oxirush-s1ap): S1AP, between an eNB and an MME.
-- [oxirush-gtp-u](https://github.com/linouxis9/oxirush-gtp-u): GTP-U tunnels, with a test UPF.
+- [oxirush-gtp-u](https://github.com/linouxis9/oxirush-gtp-u): GTP-U tunnels, with a user-plane test peer.
+- [oxirush-pfcp](https://github.com/linouxis9/oxirush-pfcp): PFCP, between the control plane and the user plane.
 - [oxirush-sctp](https://github.com/linouxis9/oxirush-sctp): SCTP sockets, which carry NGAP and S1AP.
 
 ## License

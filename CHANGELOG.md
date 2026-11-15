@@ -4,150 +4,133 @@ All notable changes to `oxirush-aper` are recorded here.
 
 ## 0.4.0 - unreleased
 
+The trees of a protocol crate are read and written by one walker over a table of the
+types that the generator writes, in the place of an `impl Tree` on each type: the same
+trees and errors, in less time, and with tens of thousands of generated lines fewer.
+oxirush-ngap 0.8 and oxirush-s1ap 0.6 take this version.
+
 ### Added
 
-- `encode_into` of a PDU of a protocol crate appends its octets to a buffer that the
-  caller keeps, beside `encode`, which now allocates the octets of the PDU once, at
-  their size.
-
-- `inspect::schema` (hidden, with `inspect`): the types of a protocol as one
-  table, and a walker that reads the octets of a value of a row as its tree and
-  writes a tree as its octets, with the reader and the writer of the typed
-  bindings and their errors.
-- `value_tree` and `value_from_tree` in the module `inspect` of a protocol crate: the
-  tree of a value of a type of the bindings, as the tree of a PDU shows it, and the
-  value that a tree writes, which take the place of `Tree` on each type.
-
-- `inspect::takes` says what the tree of a value of each type of the table takes, as an
+- `inspect::at` gives the type of the value at a path of the tree of a PDU, from an IE
+  of a message through members, alternatives, entries of lists, transfers and the IEs
+  that a transfer, an extension container or a value holds by name: the name of the
+  type, what its tree takes, and the IEs of the object set of a transfer or of an
+  extension container. `inspect::tree_at` reads octets of that type as the tree of a PDU
+  shows them. The `inspect` module of a protocol crate has `at(path)` and
+  `tree_at(path, octets)`.
+- `inspect::takes` says what the tree of a value of each type takes, as an
   `oxirush_utils::tree::Takes`: the members of a SEQUENCE, the alternatives of a CHOICE,
   the names of an ENUMERATED, the readable form of a well-known type, the bounds of a
-  number and the size of octets; the IEs of a container are a message, and a transfer is
+  number and the size of octets. The IEs of a container are a message, and a transfer is
   the value that its octets contain.
-- `inspect::at` gives the type of the value at a path of the tree of a PDU, from an IE of
-  a message through members, alternatives, entries of lists, transfers and the IEs that
-  a transfer, an extension container or a value holds by name: the name of the type,
-  what its tree takes, and the IEs of the object set of a transfer or of an extension
-  container. `inspect::tree_at` reads octets of that type as the tree of a PDU shows
-  them. The `inspect` module of a protocol crate has `at(path)` and
-  `tree_at(path, octets)`.
-- The generator writes the extension set of each type that has an extension container
-  (`__extension_sets!` in `inspect_registry.rs`), and `inspect::Protocol` has them
+- `value_tree` and `value_from_tree` in the `inspect` module of a protocol crate: the
+  tree of a value of a type of the bindings, as the tree of a PDU shows it, and the
+  value that a tree writes. They take the place of `Tree` on each type.
+- The extension set of each type that has an extension container: the generator writes
+  them (`__extension_sets!` in `inspect_registry.rs`), and `inspect::Protocol` has them
   (`extension_sets`, `extension_set`).
+- `encode_into` of a PDU of a protocol crate appends its octets to a buffer that the
+  caller keeps. `encode` now allocates the octets of the PDU once, at their size.
+- `inspect::schema` (hidden, with `inspect`): the types of a protocol as one table, and
+  a walker that reads the octets of a value of a row as its tree and writes a tree as
+  its octets, with the reader and the writer of the typed bindings and their errors.
 
 ### Changed
 
-- A tree holds the names that the table of the types gives (members,
-  alternatives, values of an ENUMERATED, IEs, messages) without copying them,
-  with oxirush-utils at 8f0b227: the tree of an NGAP INITIAL CONTEXT SETUP
-  REQUEST of 212 octets takes 119 allocations instead of 206.
-- The generator writes the table of the types of a protocol (`SCHEMA` in
-  `inspect_registry.rs`, one row for each type) in the place of an
-  `impl Tree` for each type: the trees of the IEs, the transfers and the
-  messages are read from their octets and written to octets by the walker of
-  `inspect::schema`, the same trees with the same errors. oxirush-ngap has
-  30,690 generated lines fewer, oxirush-s1ap 13,168. The typed decoder still
-  says whether a value is exact. A type of the bindings no longer implements
-  `json::Tree`.
-- The tree of a PDU is read from its octets in one pass with the table of the
-  types, each IE by name, without the view that was decoded and then named: the
-  same trees, in 11.6 µs in the place of 27.5 µs for an NGAP INITIAL CONTEXT
-  SETUP REQUEST of 212 octets. A row of the table has the name of its type in the
-  bindings, and `inspect::Typed` says whether octets are a value that writes them
-  back (`shown`) and the row of its type (`row`).
-- The paths of a protocol read its types from the table of the types: `inspect::kinds`
-  and `inspect::enumerations` make, once, what the generator wrote as the list of the
-  types (`__types!` in `inspect_registry.rs`, with `__names!`, `__kind!`, `__shape!` and
+- Breaking: a type of the bindings no longer implements `json::Tree`. The generator
+  writes the table of the types of a protocol (`SCHEMA` in `inspect_registry.rs`, one row
+  for each type), and the walker of `inspect::schema` reads and writes the trees of the
+  IEs, the transfers and the messages: the same trees with the same errors.
+  oxirush-ngap has 30,690 generated lines fewer, oxirush-s1ap 13,168. The typed decoder
+  still says whether a value is exact.
+- Breaking: `json` and the functions of `protocol` behind the methods that the bindings
+  generate (`of_message`, `protocol_ies`, `set_protocol_ies`, `message_octets`,
+  `holds_key`, `items_of_fields`) are hidden from the documentation: a program calls the
+  methods of the PDUs and messages of oxirush-ngap and oxirush-s1ap. `protocol::ie_name`
+  is private.
+- Breaking: the macros of a protocol crate no longer write the module `hooks` and its
+  `--cfg oxirush_<protocol>_hooks`. `__hooks!` is removed, and `__procedures!` and
+  `__inspect!` no longer take `hooks`. The fuzz targets of `protocols/fuzz/` find the
+  types of the protocol from the crate's `Deviation`, and call the public API alone.
+- Breaking: the paths of a protocol read its types from the table of the types.
+  `inspect::kinds` makes, once, what the generator wrote as the list of the types
+  (`__types!` in `inspect_registry.rs`, with `__names!`, `__kind!`, `__shape!` and
   `__optional!`), which is removed. `inspect::Protocol` has no `types` and no
   `enumerations`, and has `enumerated`, the names of the values of an ENUMERATED. The
-  paths read the same types: oxirush-ngap has 1,182 generated lines fewer,
-  oxirush-s1ap 557. So does the readable form of each well-known type
-  (`inspect::forms`): the generator no longer writes `type_form`.
-- The message of a tree is written in one pass with the table of the types, each
-  IE by name and each transfer as its decoded value, without the view that was
-  written and then encoded IE by IE: the same octets, in 7.0 µs in the place of
-  29 µs for an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets. A tree that the
-  one pass does not write, as one with an error, is written through the view,
-  which says why: the errors and their order are those of before.
-- `json` and the functions of `protocol` behind the methods that the bindings
-  generate (`of_message`, `protocol_ies`, `set_protocol_ies`, `message_octets`,
-  `holds_key`, `items_of_fields`) are hidden from the documentation: a program
-  calls the methods of the PDUs and messages of oxirush-ngap and oxirush-s1ap.
-  `protocol::ie_name` is private.
-- The macros of a protocol crate no longer write the module `hooks` and its
-  `--cfg oxirush_<protocol>_hooks`: the fuzz targets of `protocols/fuzz/` find
-  the types of the protocol from the crate's `Deviation`, and call the public
-  API alone. `__hooks!` is removed, and `__procedures!` and `__inspect!` no
-  longer take `hooks`.
-
-- The fuzz targets of `protocols/fuzz/` that start from a fixture PDU (`edit`,
-  `tree`, `transfer` and `jer`) skip PDUs whose tree has more than 32,768 values.
-  Each of these targets makes five or more passes over the tree, and an input
-  that picked the NG SETUP RESPONSE with 65,535 slices from the oxirush-ngap
-  vectors took 3 to 5 seconds per execution in a fuzz build. Skipped PDUs keep
-  their index in the pool, so existing corpus inputs still pick the same PDU. No
-  API changes.
-
-- The generator writes a perfect hash of the names of the IEs (`IE_HASH`) and of
-  the types of the bindings (`TYPE_HASH`) beside `SCHEMA`: a name is found in one
-  probe of `inspect::Hashed` and one comparison, where a `HashMap` was searched for
-  the IEs and for the types that have members, and the forms and the values of an
-  ENUMERATED were found by a binary search. `inspect::kinds` gives the kind of each
-  row. On an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets, `paths` takes 9.9 µs
-  where it took 10.9 µs, `select` 2.0 µs (2.3 µs), and `from_tree` 6.8 µs (7.1 µs).
-
-- The generator writes the dictionaries of the fuzz targets of a protocol beside its
-  bindings: `fuzz/octets.dict`, the header of each message and each IE of each message
-  as aligned PER writes them, which `protocols/fuzz/seed.sh` wrote from
-  `src/registry.rs` before, and `fuzz/names.dict`, the names of the messages, of the
-  IEs, and of the members, the alternatives and the values of the types. The fuzz
-  workflows pass the first to `decode`, `json` and `exact`, and the second to `paths`,
-  `edit`, `tree` and `jer`; the Reproduce workflow and the TOY job compare both with
-  what the generator writes.
-
+  paths read the same types: oxirush-ngap has 1,182 generated lines fewer, oxirush-s1ap
+  557. The generator no longer writes `type_form`.
+- oxirush-utils 0.3. A tree holds the names that the table of the types gives
+  (members, alternatives, values of an ENUMERATED, IEs, messages) without copying them:
+  the tree of an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets takes 119 allocations
+  instead of 206.
+- The tree of a PDU is read from its octets in one pass with the table of the types,
+  each IE by name, without decoding a view first: the same trees, in 11.6 µs in the
+  place of 27.5 µs for an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets. A row of the
+  table has the name of its type in the bindings, and `inspect::Typed` says whether
+  octets are a value that writes them back (`shown`) and the row of its type (`row`).
+- The message of a tree is written in one pass with the table of the types, each IE by
+  name and each transfer as its decoded value: the same octets, in 7.0 µs in the place
+  of 29 µs for an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets. A tree that the one
+  pass does not write, such as one with an error, is written through the view, which
+  says why: the errors and their order are those of before.
+- The generator writes a perfect hash of the names of the IEs (`IE_HASH`) and of the
+  types of the bindings (`TYPE_HASH`) beside `SCHEMA`: a name is found in one probe of
+  `inspect::Hashed` and one comparison. On an NGAP INITIAL CONTEXT SETUP REQUEST of 212
+  octets, `paths` takes 9.9 µs where it took 10.9 µs, `select` 2.0 µs (2.3 µs), and
+  `from_tree` 6.8 µs (7.1 µs).
 - `inspect::Protocol` has the rows of the containers of IEs (`containers`) and the index
-  of each IE in `ie_names` by its identifier (`ie_index`), which `schema::containers` and
-  `schema::ie_index` make when the tables are compiled: the tree of a PDU no longer
-  searches the table of the types for its containers, nor the IEs for the name of each.
-  The tree of an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets takes 7.8 µs where it
-  took 8.6 µs, and its PDU is written from it in 6.3 µs (6.8 µs).
-- The tree of a PDU writes a transport layer address from its bits, an IPv4 address
-  without the machinery of `fmt`, where it went through the hexadecimal digits of the
-  form of the JSON Encoding Rules and read its text back: the tree of an NGAP INITIAL
-  CONTEXT SETUP REQUEST of 212 octets takes 7.3 µs where it took 7.7 µs.
-- The tests of the tables that `__protocol!` and `__inspect!` wrote into each protocol
-  crate, as unit tests of its library, are the checks of `checks`, with the hidden
-  feature `__checks`: a protocol crate runs them from `tests/` with
-  `__registry_tests!` and `__inspect_tests!`, given its marker type and the tables that
-  its `inspect::__tables()` gives, and needs no test build of its library for them.
-- `checks::generated` makes the tree of a message of a protocol from its tables, with a
-  string of octets that says each choice: the IEs of its object set, each value within
-  the root of its constraints, in the form that the tree of the PDU has.
-  `__generated_tests!` writes a test that writes 16 such trees of each message as PDUs,
-  encodes and decodes each, and compares the tree read back with it and checks the PDU.
-  The fuzz target `generated` of `protocols/fuzz/` does the same with the octets that
-  the fuzzer gives, and with `GENERATED_SEEDS` writes each PDU into that directory, a
-  seed of the targets that read octets.
+  of each IE in `ie_names` by its identifier (`ie_index`), made when the tables are
+  compiled. The tree of an NGAP INITIAL CONTEXT SETUP REQUEST of 212 octets takes 7.8 µs
+  where it took 8.6 µs, and its PDU is written from it in 6.3 µs (6.8 µs).
+- The tree of a PDU writes a transport layer address from its bits, and an IPv4 address
+  without the machinery of `fmt`: the tree of an NGAP INITIAL CONTEXT SETUP REQUEST of
+  212 octets takes 7.3 µs where it took 7.7 µs.
 
 ### Removed
 
-- `inspect::enumerations` and `inspect::forms`: the readable form and the values of
-  an ENUMERATED are read from the row of the type.
-- `Serialize` and `Deserialize` of `Criticality` and `Presence` with `inspect`,
-  and the `impl_serde!` that the generator wrote after each type with the
-  feature `serde` of a protocol crate: oxirush-ngap and oxirush-s1ap no longer
-  have that feature. A value goes to JSON through its tree, `to_tree()`, which
-  any serde format serializes.
-- The section "The macros of a protocol crate" of the README, with the protocol
-  of two procedures written by hand for it in `tests/toy/`: the macros are shown
-  on NGAP and S1AP in the READMEs of oxirush-ngap and oxirush-s1ap, and tested
-  on TOY, the generated protocol of `protocols/toy/`.
-- The section "With oxirush-ngap" of the README, with `family/`, the package
-  that ran its one block. No API changes.
-- `tests/readme.rs` and `tests/readme/blocks.rs`, its copy of the blocks of the
-  README: the examples of the README and of the crate's documentation check what
-  they give with `assert_eq!`, and run as documentation tests. The same goes for
-  oxirush-ngap and oxirush-s1ap: `protocols/tests/readme.py`, the writer of their
-  README tests, and its check in `protocol.yml` are removed.
+- `inspect::enumerations` and `inspect::forms`: the readable form and the values of an
+  ENUMERATED are read from the row of the type.
+- `Serialize` and `Deserialize` of `Criticality` and `Presence` with `inspect`, and the
+  `impl_serde!` that the generator wrote after each type with the feature `serde` of a
+  protocol crate: oxirush-ngap and oxirush-s1ap no longer have that feature. A value goes
+  to JSON through its tree, `to_tree()`, which any serde format serializes.
+- From the repository: the README sections "The macros of a protocol crate" (with
+  `tests/toy/`) and "With oxirush-ngap" (with `family/`), and `tests/readme.rs` with
+  `protocols/tests/readme.py`. The macros are shown in the READMEs of oxirush-ngap and
+  oxirush-s1ap and tested on TOY (`protocols/toy/`); the README blocks run as
+  documentation tests.
+
+### Generator, tests and fuzzing
+
+- The generator writes the dictionaries of the fuzz targets of a protocol beside its
+  bindings: `fuzz/octets.dict`, the header of each message and each IE of each message
+  as aligned PER writes them, and `fuzz/names.dict`, the names of the messages, the IEs,
+  and the members, alternatives and values of the types. The fuzz workflows pass the
+  first to `decode`, `json` and `exact`, and the second to `paths`, `edit`, `tree` and
+  `jer`; the Reproduce workflow and the TOY job compare both with what the generator
+  writes.
+- The tests of the tables that `__protocol!` and `__inspect!` wrote into each protocol
+  crate are the checks of `checks`, behind the hidden feature `__checks`: a protocol
+  crate runs them from `tests/` with `__registry_tests!` and `__inspect_tests!`.
+- `checks::generated` makes the tree of a message from the tables of its protocol, with
+  octets that say each choice: the IEs of its object set, each value within the root of
+  its constraints. `__generated_tests!` writes a test that writes 16 such trees of each
+  message as PDUs, encodes and decodes each, compares the tree read back with it and
+  checks the PDU. The fuzz target `generated` of `protocols/fuzz/` does the same with
+  the fuzzer's octets, and with `GENERATED_SEEDS` writes each PDU into that directory as
+  a seed of the targets that read octets.
+- The fuzz targets that start from a fixture PDU (`edit`, `tree`, `transfer` and `jer`)
+  skip PDUs whose tree has more than 32,768 values, which took 3 to 5 seconds an
+  execution. Skipped PDUs keep their index, so existing corpus inputs pick the same PDU.
+
+### Migration from 0.3
+
+| 0.3 | 0.4 |
+|-----|-----|
+| `Tree::to_tree(&value)`, `T::from_tree(..)` on a type of oxirush-ngap or oxirush-s1ap | `inspect::value_tree(&value)?`, `inspect::value_from_tree::<T>(&tree)?` of that crate |
+| `serde_json::to_string(&criticality)`, `features = ["serde"]` of a protocol crate | `to_tree()` of the PDU, which any serde format serializes |
+| `inspect::enumerations`, `inspect::forms` | `inspect::at(path)` of the protocol crate, and what its `takes` says |
+| `__hooks!`, `hooks` in `__procedures!` and `__inspect!` | nothing |
 
 ## 0.3.0 - 2026-11-09
 
