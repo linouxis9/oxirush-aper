@@ -1,6 +1,6 @@
 [package]
 name = "oxirush-aper"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "Aligned PER (ITU-T X.691) in Rust: the runtime of the bindings that oxirush-ngap and oxirush-s1ap generate from the 3GPP ASN.1, and the macros they share. no_std, no unsafe code."
 license = "Apache-2.0"
@@ -43,14 +43,14 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-oxirush-utils = { version = "0.2.2", optional = true, features = ["tree"] }
+oxirush-utils = { version = "0.3.0", optional = true, features = ["tree"] }
 
 # The revision of oxirush-utils that reads a tree with a function (`tree::read`) and
 # octets of a size that a table gives (`Reading::octets_sized`), which the walker of the
 # trees calls, and whose trees hold the names of the tables without copying them, until
 # the release of oxirush-utils that has them.
 [patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "4eae6c700f102dbf134e47f758e96799bee3f537" }
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "922f5b4c2a33f05d1992632faa5efe605315d61e" }
 
 
 [[test]]

@@ -48,9 +48,9 @@ NGAP and S1AP use, and take the bounds of its constraint as arguments.
 
 ```toml
 [dependencies]
-oxirush-aper = "0.3"
+oxirush-aper = "0.4"
 # With what generated bindings write and read their JSON trees with:
-# oxirush-aper = { version = "0.3", features = ["inspect"] }
+# oxirush-aper = { version = "0.4", features = ["inspect"] }
 ```
 
 | Feature | Adds |

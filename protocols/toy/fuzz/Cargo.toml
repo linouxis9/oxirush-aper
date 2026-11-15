@@ -34,7 +34,7 @@ members = ["."]
 # The revision of oxirush-utils that the walker of the trees needs, as the crate takes
 # it, until its release.
 [patch.crates-io]
-oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "4eae6c700f102dbf134e47f758e96799bee3f537" }
+oxirush-utils = { git = "https://github.com/linouxis9/oxirush-utils", rev = "922f5b4c2a33f05d1992632faa5efe605315d61e" }
 
 [[bin]]
 name = "decode"

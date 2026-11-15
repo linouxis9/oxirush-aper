@@ -2,7 +2,7 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
-## Unreleased
+## 0.4.0 - unreleased
 
 ### Added
 
