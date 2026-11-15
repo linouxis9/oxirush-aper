@@ -115,6 +115,36 @@ pub fn generate(
         writeln!(out, "    of {other:?} {} {name:?};", id_of(ie)?)?;
     }
     writeln!(out, "}}")?;
+    // The IEs that the extension container of each type may hold, by the name of the type
+    // in the bindings, in the order of the names: those of its extension set, in its
+    // order, with their criticality and their presence.
+    let ids = crate::registry::identifiers(asn)?;
+    let (extended, extensions) = crate::registry::extensions(protocol, asn)?;
+    let rust = |asn: &str| {
+        let ty = registry.resolve(asn)?;
+        Some(ty.rsplit("::").next().expect("a path").to_string())
+    };
+    let mut sets: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for ty in extended.iter().filter_map(|ty| rust(ty)) {
+        sets.entry(ty).or_default();
+    }
+    for extension in extensions {
+        let Some(extended) = rust(&extension.extended) else {
+            continue;
+        };
+        let (id, _) = (ids.get(&extension.constant))
+            .ok_or_else(|| anyhow!("{} has no identifier", extension.constant))?;
+        let object = format!("{id} {} {}", extension.criticality, extension.presence);
+        let set = sets.entry(extended).or_default();
+        if !set.contains(&object) {
+            set.push(object);
+        }
+    }
+    writeln!(out, "oxirush_aper::__extension_sets! {{")?;
+    for (extended, objects) in &sets {
+        writeln!(out, "    {extended:?} [{}];", objects.join(", "))?;
+    }
+    writeln!(out, "}}")?;
     // The IEs by the letters and the digits of their names, in lower case, which is how
     // two names are the same, in the order of `IE_NAMES`.
     let ies = registry.ies.values();

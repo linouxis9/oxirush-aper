@@ -32,6 +32,7 @@
 //! number of this crate promises. A program calls the functions of oxirush-ngap and of
 //! oxirush-s1ap, which are.
 
+mod at;
 pub mod hashed;
 mod kinds;
 mod paths;
@@ -46,6 +47,7 @@ use oxirush_utils::tree::Value;
 use crate::{Error, ErrorKind};
 
 pub use crate::json::Form;
+pub use at::{At, Ies, at, tree_at};
 pub use hashed::Hashed;
 pub use kinds::kinds;
 pub use paths::{listed_ies, named_ies};
@@ -79,6 +81,14 @@ pub struct Typed {
 /// A message of a protocol, as its tables have it: its object set, the functions of its
 /// type, and the path of its type in the bindings.
 pub type Message = (&'static crate::ObjectSet, fn() -> Typed, &'static str);
+
+/// The IEs that the extension container of each type may hold: the name of the type in
+/// the bindings, and the identifier, the criticality and the presence of each IE of its
+/// extension set.
+pub type ExtensionSets = &'static [(
+    &'static str,
+    &'static [(u16, crate::Criticality, crate::Presence)],
+)];
 
 /// A transfer of protocol IEs of a protocol, as its tables have it: the name that ASN.1
 /// gives it, the name of its type in the bindings, and the IEs of its object set.
@@ -114,6 +124,9 @@ pub struct Protocol {
     /// extend gives them: the identifier, the name of the type that is extended and the
     /// path of the type that the IE has there.
     pub extension_types: &'static [(u16, &'static str, &'static str)],
+    /// The IEs that the extension container of each type may hold, by the name of the
+    /// type in the bindings, in the order of the names: its extension set.
+    pub extension_sets: ExtensionSets,
     /// The IEs whose octets may carry a type that the specification names and the
     /// ASN.1 does not: the identifier, the name that ASN.1 gives the type, and its path.
     pub carried: &'static [(u16, &'static str, &'static str)],

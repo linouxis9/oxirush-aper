@@ -247,6 +247,7 @@ static TOY: Protocol = Protocol {
         (17, "Holder", "crate::toy::Cause"),
         (19, "Holder", "crate::toy::Flags"),
     ],
+    extension_sets: &[],
     carried: &[(18, "LteBlob", "crate::toy::Holder")],
     foreign: &[
         (18, "Wrapper", "OTHER"),
@@ -851,6 +852,7 @@ mod another_protocol {
             (40, "crate::other::Blob<'a>", ""),
         ],
         extension_types: &[],
+        extension_sets: &[],
         carried: &[(40, "Wrapper", "crate::other::Wrapper")],
         foreign: &[],
         item_criticalities: &[],

@@ -59,6 +59,21 @@ macro_rules! __transfers {
     };
 }
 
+/// The IEs that the extension container of each type may hold: the name of the type in
+/// the bindings, in the order of the names, and the objects of its extension set, each
+/// the identifier of an IE with its criticality and its presence.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __extension_sets {
+    ($($extended:literal [$($ie:literal $criticality:ident $presence:ident),*];)*) => {
+        pub(crate) const EXTENSION_SETS: $crate::inspect::ExtensionSets = &[$(($extended, &[$((
+            $ie,
+            $crate::__criticality!($criticality),
+            $crate::__presence!($presence),
+        )),*])),*];
+    };
+}
+
 /// The IEs of a protocol whose octets may carry a type that the specification names and
 /// the ASN.1 does not: the identifier of each, the name that ASN.1 gives the type, and the
 /// type; then, after `of`, those whose octets may carry a type of another protocol, with
@@ -99,8 +114,8 @@ macro_rules! __inspect {
         // The name of the protocol, the first segment of the paths of the IEs of the message of
         // a PDU, and what the ASN.1 says of the messages, the IEs and the types.
         use crate::inspect_registry::{
-            CARRIED, FOREIGN, IE_HASH, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES, MESSAGES, PROTOCOL,
-            ROOT, SCHEMA, TRANSFER_FIELDS, TYPE_HASH,
+            CARRIED, EXTENSION_SETS, FOREIGN, IE_HASH, IE_NAMES, IE_TYPES, ITEM_CRITICALITIES,
+            MESSAGES, PROTOCOL, ROOT, SCHEMA, TRANSFER_FIELDS, TYPE_HASH,
         };
         // The type that an IE of an extension container has where its identifier alone does not
         // say it: the one that the type which the container extends gives it.
@@ -125,6 +140,7 @@ macro_rules! __inspect {
             containers: shared::schema::containers(SCHEMA),
             ie_types: IE_TYPES,
             extension_types: EXTENSION_TYPES,
+            extension_sets: EXTENSION_SETS,
             carried: CARRIED,
             foreign: FOREIGN,
             item_criticalities: ITEM_CRITICALITIES,
@@ -292,23 +308,26 @@ macro_rules! __inspect {
         static TAKES: LazyLock<Vec<&'static oxirush_utils::tree::Takes>> =
             LazyLock::new(|| shared::takes(&TABLES));
 
-        /// What the tree of the value of the IE `id` takes, as the tree of a PDU writes it:
-        /// its members, the alternatives or the names of its type, and what each takes.
-        /// `None` for an IE that has no one type.
-        pub fn ie_takes(id: u16) -> Option<&'static oxirush_utils::tree::Takes> {
-            let (_, ty, _) = IE_TYPES.iter().find(|(known, ..)| *known == id)?;
-            Some(TAKES[row_of(shared::type_name(ty))?])
-        }
-
-        /// The tree of the value of the IE `id` that `octets` are, its complete encoding,
-        /// as the tree of a PDU writes it.
+        /// The type of the value at `path` of the tree of a PDU, a path of an IE of a message
+        /// (`/ngap/NAME`) and of what its value holds: its name, what its tree takes, and the
+        /// IEs of the object set of a transfer and of an extension container.
         ///
         /// # Errors
         ///
-        /// An IE that has no one type, and octets that are no value of its type.
-        pub fn ie_tree(id: u16, octets: &[u8]) -> Result<Value, Error> {
-            let typed = crate::inspect_registry::ie(id)?;
-            $crate::inspect::schema::tree(SCHEMA, (typed.row)(), octets)
+        /// A path that does not start at an IE, and a segment that the value before it has
+        /// no place for.
+        pub fn at(path: &str) -> Result<shared::At, Error> {
+            shared::at(&TABLES, &TAKES, path)
+        }
+
+        /// The tree of the value at `path` that `octets` are, the complete encoding of a
+        /// value of its type, as the tree of a PDU shows it.
+        ///
+        /// # Errors
+        ///
+        /// What [`at`] refuses, and octets that are no value of the type.
+        pub fn tree_at(path: &str, octets: &[u8]) -> Result<Value, Error> {
+            shared::tree_at(&TABLES, &at(path)?, octets)
         }
 
         /// The tables of the protocol, which the tests of the crate check with

@@ -52,6 +52,16 @@ pub fn takes(protocol: &Protocol) -> Vec<&'static Takes> {
         .collect()
 }
 
+/// What a value of `field` of `protocol` takes, whose rows take `rows`. A list of a type of
+/// no name, and a string of bits whose size varies, are made for the call and kept.
+pub(super) fn field(protocol: &Protocol, rows: &[&'static Takes], field: &Field) -> Takes {
+    let mut made = Made {
+        protocol,
+        rows: rows.iter().map(|takes| Row::Made(takes)).collect(),
+    };
+    *made.field(field)
+}
+
 /// A row while the table is made.
 #[derive(Clone, Copy)]
 enum Row {

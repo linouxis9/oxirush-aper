@@ -514,7 +514,13 @@ impl Registry {
             }
         }
         // The type that an IE has where it extends each type.
-        for (constant, extended, ty) in extensions(protocol, asn)? {
+        for Extension {
+            constant,
+            extended,
+            ty,
+            ..
+        } in extensions(protocol, asn)?.1
+        {
             let id = ids.get(&constant).map(|(id, _)| id);
             let ie = id.and_then(|id| ies.get_mut(id));
             if let (Some(ie), Some(extended), Some(ty)) =
@@ -555,7 +561,7 @@ fn triggering(generated: &str) -> Result<Vec<String>> {
 }
 
 /// The identifier of each constant of an IE, and whether it is that of a protocol IE.
-fn identifiers(asn: &str) -> Result<BTreeMap<String, (u16, bool)>> {
+pub(crate) fn identifiers(asn: &str) -> Result<BTreeMap<String, (u16, bool)>> {
     let constant = Regex::new(
         r"(?m)^\s*(id-[A-Za-z][A-Za-z0-9-]*)\s+(ProtocolIE-ID|ProtocolExtensionID)\s+::=\s+(\d+)",
     )?;
@@ -565,15 +571,26 @@ fn identifiers(asn: &str) -> Result<BTreeMap<String, (u16, bool)>> {
         .collect()
 }
 
-/// The objects of the extension sets: the constant of the IE, the type that the set
-/// extends and the type that the object gives the IE there, each as ASN.1 names it. A
-/// set extends the type whose definition has it in its extension container.
-fn extensions(protocol: &str, asn: &str) -> Result<Vec<(String, String, String)>> {
+/// An object of an extension set: the constant of the IE, the type that the set extends
+/// and the type that the object gives the IE there, each as ASN.1 names it, and the
+/// criticality and the presence of the object.
+pub(crate) struct Extension {
+    pub(crate) constant: String,
+    pub(crate) extended: String,
+    pub(crate) ty: String,
+    pub(crate) criticality: String,
+    pub(crate) presence: String,
+}
+
+/// The types that have an extension container, by the names that ASN.1 gives them, and
+/// the objects of their extension sets, in the order of each set. A set extends the type
+/// whose definition has it in its extension container.
+pub(crate) fn extensions(protocol: &str, asn: &str) -> Result<(BTreeSet<String>, Vec<Extension>)> {
     let set = Regex::new(&format!(
         r"(?ms)^[\t ]*([A-Za-z][A-Za-z0-9-]*)\s+{protocol}-PROTOCOL-EXTENSION\s*::=\s*\{{(.*?)^[\t ]*\}}"
     ))?;
     let object = Regex::new(
-        r"\{\s*ID\s+(id-[A-Za-z][A-Za-z0-9-]*)\s+CRITICALITY\s+[A-Za-z-]+\s+EXTENSION\s+([A-Za-z][A-Za-z0-9-]*)\s+PRESENCE",
+        r"\{\s*ID\s+(id-[A-Za-z][A-Za-z0-9-]*)\s+CRITICALITY\s+(reject|ignore|notify)\s+EXTENSION\s+(OCTET\s+STRING(?:\s*\(CONTAINING\s+[A-Za-z][A-Za-z0-9-]*\s*\))?|[A-Za-z][A-Za-z0-9-]*)\s+PRESENCE\s+(mandatory|optional|conditional)\b",
     )?;
     // Each use of a set as an extension container, and each definition of a type: a
     // container is in the definition that starts last before it.
@@ -594,18 +611,29 @@ fn extensions(protocol: &str, asn: &str) -> Result<Vec<(String, String, String)>
         }
     }
     let mut found = Vec::new();
+    let mut types = BTreeSet::new();
     for set in set.captures_iter(asn) {
         for extended in extended.get(&set[1]).into_iter().flatten() {
+            types.insert(extended.to_string());
+            let mut objects = 0;
             for object in object.captures_iter(&set[2]) {
-                found.push((
-                    object[1].to_string(),
-                    extended.to_string(),
-                    object[2].to_string(),
-                ));
+                found.push(Extension {
+                    constant: object[1].to_string(),
+                    extended: extended.to_string(),
+                    ty: object[3].to_string(),
+                    criticality: object[2].to_string(),
+                    presence: object[4].to_string(),
+                });
+                objects += 1;
             }
+            ensure!(
+                set[2].matches("PRESENCE").count() == objects,
+                "{}: an object of the set was not read",
+                &set[1]
+            );
         }
     }
-    Ok(found)
+    Ok((types, found))
 }
 
 /// The criticalities that each IE has in the object sets of the single containers, by the

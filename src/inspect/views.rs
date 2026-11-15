@@ -681,7 +681,7 @@ pub fn tree_of_jer(protocol: &'static Protocol, view: &Value) -> Result<Value, E
 /// of a transfer, of this one when the tables have it, an IE alone or as an entry of a
 /// list, or the IEs of an extension container of the type that the bindings give this
 /// name.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum Within {
     Ies(Option<Sent>),
     Ie,
@@ -697,6 +697,21 @@ impl Within {
             Within::Extensions(extended) => Shape::Extension(None, extended),
         }
     }
+}
+
+/// The tree of a value of `field`, held `within` a container or not, read from `reader`
+/// as the tree of a PDU shows it.
+pub(super) fn field_tree(
+    protocol: &'static Protocol,
+    field: &Field,
+    within: Within,
+    reader: &mut Reader<'_>,
+) -> Result<Value, Error> {
+    let named = Named {
+        protocol,
+        rows: protocol.containers,
+    };
+    named.field(field, reader, 0, within)
 }
 
 /// The reading of the tree of a PDU from its octets in one pass, with the table of the

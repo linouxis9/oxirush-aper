@@ -22,9 +22,17 @@ All notable changes to `oxirush-aper` are recorded here.
   `oxirush_utils::tree::Takes`: the members of a SEQUENCE, the alternatives of a CHOICE,
   the names of an ENUMERATED, the readable form of a well-known type, the bounds of a
   number and the size of octets; the IEs of a container are a message, and a transfer is
-  the value that its octets contain. The `inspect` module of a protocol crate has
-  `ie_takes(id)`, made once from it, and `ie_tree(id, octets)`, the tree of the value of
-  an IE.
+  the value that its octets contain.
+- `inspect::at` gives the type of the value at a path of the tree of a PDU, from an IE of
+  a message through members, alternatives, entries of lists, transfers and the IEs that
+  a transfer, an extension container or a value holds by name: the name of the type,
+  what its tree takes, and the IEs of the object set of a transfer or of an extension
+  container. `inspect::tree_at` reads octets of that type as the tree of a PDU shows
+  them. The `inspect` module of a protocol crate has `at(path)` and
+  `tree_at(path, octets)`.
+- The generator writes the extension set of each type that has an extension container
+  (`__extension_sets!` in `inspect_registry.rs`), and `inspect::Protocol` has them
+  (`extension_sets`, `extension_set`).
 
 ### Changed
 

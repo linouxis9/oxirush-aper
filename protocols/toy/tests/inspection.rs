@@ -2301,9 +2301,10 @@ fn an_ie_says_what_its_tree_takes_and_its_octets_give_its_tree() {
     // The CHOICE of the IE Tunnel: each alternative by its name, a SEQUENCE by its
     // members, a transport layer address as an address or as its bits, an alternative
     // without content as `null`, and the IEs of a container as a message.
-    let takes = inspect::ie_takes(29).expect("Tunnel has one type");
-    let Takes::OneOf(alternatives) = takes else {
-        panic!("{takes:?}");
+    let at = inspect::at("/toy/Tunnel").unwrap();
+    assert_eq!((at.name, at.ie, at.ies), ("Tunnel", Some(29), None));
+    let Takes::OneOf(alternatives) = at.takes else {
+        panic!("{:?}", at.takes);
     };
     let names: Vec<&str> = alternatives
         .iter()
@@ -2332,16 +2333,97 @@ fn an_ie_says_what_its_tree_takes_and_its_octets_give_its_tree() {
         alternatives[2].member("choice-Extensions"),
         Some(&Takes::Message)
     );
-    // An ENUMERATED by its names; an IE of no one type has none.
-    assert_eq!(
-        inspect::ie_takes(31),
-        Some(&Takes::Named(&["ipv4", "ipv6", "ipv4v6"]))
-    );
-    assert_eq!(inspect::ie_takes(1000), None);
+    // An ENUMERATED by its names; a name of no IE is refused.
+    let kind = inspect::at("/toy/TransferKind").unwrap();
+    assert_eq!(kind.takes, Takes::Named(&["ipv4", "ipv6", "ipv4v6"]));
+    assert!(inspect::at("/toy/Nothing").is_err());
     // The octets of a value give the tree that the PDU shows.
     let deregister = tree!({"nas": "deregister"});
     let value: Cause = inspect::value_from_tree(&deregister).unwrap();
     let octets = oxirush_aper::encode(&value).unwrap();
-    assert_eq!(inspect::ie_tree(15, &octets), Ok(deregister));
-    assert!(inspect::ie_tree(1000, &octets).is_err());
+    assert_eq!(inspect::tree_at("/toy/Cause", &octets), Ok(deregister));
+    assert!(inspect::tree_at("/toy/Nothing", &octets).is_err());
+}
+
+#[test]
+fn a_path_through_lists_transfers_and_containers_names_its_type() {
+    use oxirush_toy::Presence;
+    use oxirush_utils::tree::Takes;
+    // A transfer, after the position of an entry of a list: the type that its octets
+    // contain, with the IEs of its object set.
+    let transfer = inspect::at(TRANSFER).unwrap();
+    assert_eq!((transfer.name, transfer.ie), ("SetupTransfer", None));
+    assert_eq!(
+        transfer.ies,
+        Some(
+            &[
+                (29, Criticality::Reject, Presence::Mandatory),
+                (31, Criticality::Reject, Presence::Optional)
+            ][..]
+        )
+    );
+    let any = inspect::at("/toy/TransferList/*/setupTransfer").unwrap();
+    assert_eq!(any.name, "SetupTransfer");
+    // An IE of the transfer goes by its name after it, and its members after it.
+    let ie = inspect::at(&format!("{TRANSFER}/Tunnel")).unwrap();
+    assert_eq!((ie.name, ie.ie), ("Tunnel", Some(29)));
+    let teid = inspect::at(&format!("{TRANSFER}/Tunnel/gTPTunnel/gTP-TEID")).unwrap();
+    assert_eq!(
+        (teid.name, teid.takes),
+        ("GTP-TEID", Takes::Number(4294967295))
+    );
+    // An IE that the transfer does not have is refused, with those that it has.
+    let refused = inspect::at(&format!("{TRANSFER}/Cause"))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("Tunnel, TransferKind"), "{refused}");
+    // A member of a type of no name says what it is.
+    let id = inspect::at("/toy/TransferList/0/transfer-ID").unwrap();
+    assert_eq!((id.name, id.takes), ("INTEGER", Takes::Number(255)));
+    // An extension container has the IEs of the extension set of its type, and an
+    // extension the type that its set gives it there.
+    let extensions = inspect::at("/toy/TransferList/0/iE-Extensions").unwrap();
+    assert_eq!(extensions.takes, Takes::Message);
+    assert_eq!(
+        extensions.ies,
+        Some(&[(40, Criticality::Ignore, Presence::Optional)][..])
+    );
+    let index = inspect::at("/toy/TransferList/0/iE-Extensions/ExtensionIndex").unwrap();
+    assert_eq!(
+        (index.name, index.takes),
+        ("IndexOfTransfer", Takes::Signed(1, 4))
+    );
+    let index = inspect::at("/toy/Items/0/Item/iE-Extensions/0/ExtensionIndex").unwrap();
+    assert_eq!(index.name, "IndexOfItem");
+    let none = inspect::at("/toy/Areas/0/iE-Extensions").unwrap();
+    assert_eq!(none.ies, Some(&[][..]));
+    // An IE that a value holds alone, by its name.
+    let extended = inspect::at("/toy/Cause/choice-Extensions/ExtendedCause").unwrap();
+    assert_eq!((extended.name, extended.ie), ("ExtendedCause", Some(41)));
+    // A segment that the value has no place for is refused, with what it has.
+    let refused = inspect::at("/toy/Tunnel/gTPTunnel/teid")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("transportLayerAddress, gTP-TEID"),
+        "{refused}"
+    );
+    let refused = inspect::at("/toy/TransferList/first")
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("no position"), "{refused}");
+    assert!(inspect::at("/toy/TransferKind/ipv4").is_err());
+    // The octets of a transfer give its tree, its IEs by name.
+    let pdu = TOYPDU::from_tree(&setup_request()).unwrap();
+    let ies = octets_of(&pdu);
+    let list: TransferList<'_> = oxirush_aper::decode(&ies[1]).unwrap();
+    let value = tree!({"protocolIEs": [{"Tunnel": tunnel()}, {"TransferKind": "ipv4"}]});
+    let octets = &list.0[0].setup_transfer;
+    assert_eq!(inspect::tree_at(TRANSFER, octets), Ok(value));
+    let teid = inspect::tree_at(
+        &format!("{TRANSFER}/Tunnel/gTPTunnel/gTP-TEID"),
+        &[0, 0, 0, 9],
+    );
+    assert_eq!(teid, Ok(tree!(9)));
+    assert!(inspect::tree_at(TRANSFER, &[0xff]).is_err());
 }

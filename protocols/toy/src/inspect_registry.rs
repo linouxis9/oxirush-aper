@@ -11,6 +11,20 @@ oxirush_aper::__transfers! {
 oxirush_aper::__carried! {
     25 "ContainerBlob" crate::toy::ContainerBlob;
 }
+oxirush_aper::__extension_sets! {
+    "AreaItem" [];
+    "ConnectionItem" [];
+    "ContainerBlob" [];
+    "Counts" [];
+    "CriticalityDiagnostics" [];
+    "CriticalityDiagnosticsIEItem" [];
+    "FailureTransfer" [];
+    "GTPTunnel" [];
+    "Item" [40 ignore optional];
+    "SecurityContext" [];
+    "TransferItem" [40 ignore optional];
+    "UEIDPair" [];
+}
 /// Each IE by the letters and the digits of its name, in lower case, as an index of `IE_NAMES`.
 #[rustfmt::skip]
 pub(crate) static IE_HASH: oxirush_aper::inspect::Hashed = oxirush_aper::inspect::Hashed {

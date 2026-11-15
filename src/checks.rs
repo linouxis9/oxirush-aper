@@ -332,6 +332,24 @@ mod inspect {
 
     /// Each type of the table says what its tree takes, and each IE of one type has the
     /// form of its type.
+    /// The extension sets are in the order of the names of the types that they extend,
+    /// and each IE of a set has a name and a type where it extends its type.
+    pub fn each_extension_of_a_set_has_a_name_and_a_type_there(p: &'static Protocol) {
+        let sets = p.extension_sets;
+        assert!(sets.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        for (extended, set) in sets {
+            for (id, ..) in *set {
+                assert!(
+                    p.ie_name_of(*id).is_some(),
+                    "IE {id} of {extended} has no name"
+                );
+                let typed =
+                    (p.extension_typed)(*id, extended).is_some() || (p.ie_typed)(*id).is_ok();
+                assert!(typed, "IE {id} has no type where it extends {extended}");
+            }
+        }
+    }
+
     pub fn each_type_says_what_its_tree_takes(p: &'static Protocol) {
         let takes = crate::inspect::takes(p);
         assert_eq!(takes.len(), p.schema.len());
@@ -403,7 +421,8 @@ macro_rules! __inspect_tests {
             the_ies_that_a_value_holds_are_written_by_name_and_read_back,
             the_octets_of_an_ie_carry_a_type_of_the_list_by_a_name_that_no_member_has,
             what_is_nested_deeper_than_a_path_goes_is_one_value,
-            each_type_says_what_its_tree_takes);
+            each_type_says_what_its_tree_takes,
+            each_extension_of_a_set_has_a_name_and_a_type_there);
     };
     (@each $tables:expr; $($check:ident),+) => {$(
         #[test]
