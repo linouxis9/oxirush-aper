@@ -2,7 +2,7 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
-## 0.4.0 - unreleased
+## 0.4.0 - 2026-11-16
 
 The trees of a protocol crate are read and written by one walker over a table of the
 types that the generator writes, in the place of an `impl Tree` on each type: the same
