@@ -308,7 +308,7 @@ the bit where it is.
 | `SmallNumberAsLarge` | A normally small number (≤ 63) in the long form | 11.6.1 |
 | `LongNumber` | A whole number with octets that only extend it, up to the octets that a number of 64 bits may have | 11.3.6, 11.4.6 |
 | `Padding` | Padding bits that are not zero | 11.1.4 |
-| `LongArc` | An arc of an object identifier that starts with an octet that holds nothing | X.690 8.19.2 |
+| `LongArc` | An arc of an object identifier with a leading octet 0x80, which adds no bits | X.690 8.19.2 |
 
 ```rust
 use oxirush_aper::{Octets, decode, decode_strict, decode_with_faults};
@@ -367,13 +367,14 @@ write the same octets.
 | AMF-UE-NGAP-ID (2) | 18 ns | 2.8× slower | 49 ns | 2.6× slower |
 | NAS-PDU (61) | 22 ns | 4.3× slower | 145 ns | 1.4× slower |
 | AMFName (18) | 74 ns | 4.9× slower | 116 ns | 3.4× slower |
-| GUAMI (7) | 47 ns | 11.4× slower | 59 ns | 5.1× slower |
+| GUAMI (7) | 47 ns | 11× slower | 59 ns | 5.1× slower |
 | UserLocationInformationNR (19) | 56 ns | 8.4× slower | 174 ns | 3.2× slower |
 
 Medians of ten rounds, the two crates in turns, on one core of an Intel Xeon
 E5-2680 v4 (a KVM guest, Linux 7.0, Rust 1.100.0), at 3ae0f3c on
 2026-11-15. The rasn cells say how much slower rasn is than this crate; the
-ten times of the two do not overlap for any value. Decoding these values
+medians differ by more than 10 % and the ten times do not overlap for any
+value. Decoding these values
 allocates nothing. [`benches/README.md`](benches/README.md) has
 the cycles, the instructions, the allocations, the method and the command.
 
