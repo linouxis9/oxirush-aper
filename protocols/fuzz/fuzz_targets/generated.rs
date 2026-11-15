@@ -18,3 +18,13 @@
 #![no_main]
 
 libfuzzer_sys::fuzz_target!(|octets: &[u8]| targets::generated(octets));
+
+/// What AddressSanitizer takes when ASAN_OPTIONS does not say otherwise: the stack of
+/// each allocation in 8 frames. It keeps each stack that it records for the life of the
+/// process, and the functions that make, write and read a tree call themselves as deep
+/// as the tree goes: with whole stacks, the memory of a run of NGAP grew to 2.7 GB in an
+/// hour, and the stacks took 700 MB of the 1.2 GB that one pass over its corpus took.
+#[unsafe(no_mangle)]
+pub extern "C" fn __asan_default_options() -> *const core::ffi::c_char {
+    c"malloc_context_size=8".as_ptr()
+}
