@@ -60,6 +60,9 @@ pub fn every_ie_of_an_object_set_has_a_name_and_is_there_once<P: Protocol>() {
 #[cfg(feature = "inspect")]
 pub use self::inspect::*;
 
+#[cfg(feature = "inspect")]
+pub mod generated;
+
 /// The checks of the tables of the trees and of the paths, which `Protocol` of
 /// `inspect` holds.
 #[cfg(feature = "inspect")]
@@ -408,4 +411,65 @@ macro_rules! __inspect_tests {
             $crate::checks::$check($tables);
         }
     )+};
+}
+
+/// Writes `$tree`, which the tables of `generated` made, as a PDU of the type `$pdu`,
+/// encodes it and decodes it: panics where one of them fails, where the PDU or the tree
+/// read back is not the one written, and where the check of the PDU reports a deviation.
+/// Its value is the octets of the PDU.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __written {
+    ($pdu:ty, $tree:expr) => {{
+        let tree: &$crate::json::Value = $tree;
+        let pdu = match <$pdu>::from_tree(tree) {
+            Ok(pdu) => pdu,
+            Err(error) => panic!("a tree that the tables made is not written: {error}: {tree}"),
+        };
+        let octets = match pdu.encode() {
+            Ok(octets) => octets,
+            Err(error) => panic!("a PDU that the tables made does not encode: {error}: {tree}"),
+        };
+        let decoded = match <$pdu>::decode(&octets) {
+            Ok(decoded) => decoded,
+            Err(error) => panic!("a PDU that the tables made does not decode: {error}: {tree}"),
+        };
+        assert_eq!(decoded, pdu, "{tree}");
+        let read = decoded.to_tree();
+        let difference = $crate::checks::generated::difference(&read, tree);
+        assert!(
+            difference.is_empty(),
+            "the tree read back differs at {difference}, of {tree}"
+        );
+        match decoded.check() {
+            Ok(deviations) => assert!(deviations.is_empty(), "{deviations:?}: {tree}"),
+            Err(error) => panic!("a PDU that the tables made is not checked: {error}: {tree}"),
+        }
+        octets
+    }};
+}
+
+/// A test that writes trees of each message that has an object set, which the tables
+/// that `$tables` gives make, as PDUs of the type `$pdu` ([`__written!`]).
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __generated_tests {
+    ($pdu:ty, $tables:expr) => {
+        #[test]
+        fn each_message_that_the_tables_make_is_written_and_read_back() {
+            use $crate::checks::generated::{Choices, octets, tree};
+            let tables = $tables;
+            for message in tables
+                .messages
+                .iter()
+                .filter(|message| message.0.ies.is_some())
+            {
+                for seed in 0..16 {
+                    let octets = octets(seed, 1024);
+                    let tree = tree(tables, message, &mut Choices::new(&octets));
+                    $crate::__written!($pdu, &tree);
+                }
+            }
+        }
+    };
 }

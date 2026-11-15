@@ -111,6 +111,14 @@ All notable changes to `oxirush-aper` are recorded here.
   feature `__checks`: a protocol crate runs them from `tests/` with
   `__registry_tests!` and `__inspect_tests!`, given its marker type and the tables that
   its `inspect::__tables()` gives, and needs no test build of its library for them.
+- `checks::generated` makes the tree of a message of a protocol from its tables, with a
+  string of octets that says each choice: the IEs of its object set, each value within
+  the root of its constraints, in the form that the tree of the PDU has.
+  `__generated_tests!` writes a test that writes 16 such trees of each message as PDUs,
+  encodes and decodes each, and compares the tree read back with it and checks the PDU.
+  The fuzz target `generated` of `protocols/fuzz/` does the same with the octets that
+  the fuzzer gives, and with `GENERATED_SEEDS` writes each PDU into that directory, a
+  seed of the targets that read octets.
 
 ### Removed
 
