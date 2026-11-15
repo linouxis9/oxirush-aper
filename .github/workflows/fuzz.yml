@@ -43,7 +43,7 @@ jobs:
   # The targets of TOY that read octets take fuzz/octets.dict, which the generator writes:
   # the header of each message and each IE of each message. Those that write paths and
   # trees take fuzz/names.dict, the names that trees and paths write. Those that build
-  # their input with `arbitrary` try inputs of any length from the start. Its seeds are
+  # their input with `arbitrary`, and `generated`, try inputs of any length from the start. Its seeds are
   # the PDUs of its tests/fixtures, each also under a procedure code that the protocol
   # does not have.
   fuzz:
@@ -65,4 +65,5 @@ jobs:
          {"target": "tree", "max_len": 1024, "flags": "-len_control=0 -dict=fuzz/names.dict", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
          {"target": "transfer", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
          {"target": "jer", "max_len": 1024, "flags": "-len_control=0 -dict=fuzz/names.dict", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
-         {"target": "walker", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"}]
+         {"target": "walker", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"},
+         {"target": "generated", "max_len": 1024, "flags": "-len_control=0", "dir": "oxirush-aper/protocols/toy", "name": "toy"}]

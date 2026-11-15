@@ -167,8 +167,9 @@ jobs:
             # The targets of protocols/fuzz/. Those that read octets take fuzz/octets.dict,
             # which the generator writes: the header of each message and each IE of each
             # message. Those that write paths and trees take fuzz/names.dict, the names
-            # that trees and paths write. Those that build their input with `arbitrary`
-            # try inputs of any length from the start.
+            # that trees and paths write. Those that build their input with `arbitrary`,
+            # and `generated`, whose octets say the choices of the tables that make a
+            # tree, try inputs of any length from the start.
             octets=-dict=fuzz/octets.dict
             names=-dict=fuzz/names.dict
             TARGETS=$(jq -cn --arg p "$PROTOCOL" --arg octets "$octets" --arg names "$names" '
@@ -180,7 +181,8 @@ jobs:
                {target: "tree", max_len: 1024, flags: "-len_control=0 \($names)"},
                {target: "transfer", max_len: 1024, flags: "-len_control=0"},
                {target: "jer", max_len: 1024, flags: "-len_control=0 \($names)"},
-               {target: "walker", max_len: 1024, flags: "-len_control=0"}]
+               {target: "walker", max_len: 1024, flags: "-len_control=0"},
+               {target: "generated", max_len: 1024, flags: "-len_control=0"}]
               | map(. + {dir: "oxirush-\($p)", name: $p})')
           fi
           if [ "$SCHEDULE" = "$WEEKLY" ] || [ "$REPORT" = true ]; then

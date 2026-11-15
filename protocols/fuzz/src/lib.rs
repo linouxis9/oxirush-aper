@@ -922,3 +922,25 @@ pub fn walker(input: Walk) {
     };
     written_pdu(&written);
 }
+
+/// The tree of a message that the tables of the protocol make from the octets, which
+/// say each choice (`oxirush_aper::checks::generated`): the PDU that it writes encodes
+/// and decodes to the same PDU, whose tree is the tree, and the check of the PDU
+/// reports nothing. With `GENERATED_SEEDS`, a directory, the octets of each PDU are a
+/// file there, a seed of the targets that read octets: a run of `-runs=N` writes them.
+pub fn generated(octets: &[u8]) {
+    static SEEDS: LazyLock<Option<std::path::PathBuf>> =
+        LazyLock::new(|| std::env::var_os("GENERATED_SEEDS").map(Into::into));
+    let tables = codec::inspect::__tables();
+    let choices = &mut aper::checks::generated::Choices::new(octets);
+    if let Some(tree) = aper::checks::generated::message(tables, choices) {
+        let written = aper::__written!(Borrowed<'_>, &tree);
+        if let Some(seeds) = &*SEEDS {
+            // The name of a file is the FNV-1a hash of its octets.
+            let hash = (written.iter()).fold(0xcbf2_9ce4_8422_2325u64, |hash, octet| {
+                (hash ^ u64::from(*octet)).wrapping_mul(0x0100_0000_01b3)
+            });
+            std::fs::write(seeds.join(format!("{hash:016x}")), &written).unwrap();
+        }
+    }
+}

@@ -173,6 +173,7 @@ jobs:
       - run: cargo fuzz run transfer -- -max_total_time=60 -max_len=1024 -len_control=0
       - run: cargo fuzz run jer -- -max_total_time=60 -max_len=1024 -len_control=0 -dict=fuzz/names.dict
       - run: cargo fuzz run walker -- -max_total_time=60 -max_len=1024 -len_control=0
+      - run: cargo fuzz run generated -- -max_total_time=60 -max_len=1024 -len_control=0
 
 
   fmt:
