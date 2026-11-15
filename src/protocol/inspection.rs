@@ -288,6 +288,29 @@ macro_rules! __inspect {
             shared::insert(&TABLES, tree, path, value)
         }
 
+        /// What the tree of a value of each type of the table takes, by its row, made once.
+        static TAKES: LazyLock<Vec<&'static oxirush_utils::tree::Takes>> =
+            LazyLock::new(|| shared::takes(&TABLES));
+
+        /// What the tree of the value of the IE `id` takes, as the tree of a PDU writes it:
+        /// its members, the alternatives or the names of its type, and what each takes.
+        /// `None` for an IE that has no one type.
+        pub fn ie_takes(id: u16) -> Option<&'static oxirush_utils::tree::Takes> {
+            let (_, ty, _) = IE_TYPES.iter().find(|(known, ..)| *known == id)?;
+            Some(TAKES[row_of(shared::type_name(ty))?])
+        }
+
+        /// The tree of the value of the IE `id` that `octets` are, its complete encoding,
+        /// as the tree of a PDU writes it.
+        ///
+        /// # Errors
+        ///
+        /// An IE that has no one type, and octets that are no value of its type.
+        pub fn ie_tree(id: u16, octets: &[u8]) -> Result<Value, Error> {
+            let typed = crate::inspect_registry::ie(id)?;
+            $crate::inspect::schema::tree(SCHEMA, (typed.row)(), octets)
+        }
+
         /// The tables of the protocol, which the tests of the crate check with
         /// `oxirush_aper::__inspect_tests!`.
         #[doc(hidden)]

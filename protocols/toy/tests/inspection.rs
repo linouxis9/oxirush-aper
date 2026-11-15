@@ -2294,3 +2294,54 @@ fn an_entry_that_holds_the_ie_whose_value_its_list_is_goes_by_its_position() {
         assert_eq!(select(&tree, &format!("{list}/{name}/0")), first);
     }
 }
+
+#[test]
+fn an_ie_says_what_its_tree_takes_and_its_octets_give_its_tree() {
+    use oxirush_utils::tree::Takes;
+    // The CHOICE of the IE Tunnel: each alternative by its name, a SEQUENCE by its
+    // members, a transport layer address as an address or as its bits, an alternative
+    // without content as `null`, and the IEs of a container as a message.
+    let takes = inspect::ie_takes(29).expect("Tunnel has one type");
+    let Takes::OneOf(alternatives) = takes else {
+        panic!("{takes:?}");
+    };
+    let names: Vec<&str> = alternatives
+        .iter()
+        .flat_map(|takes| takes.names())
+        .collect();
+    assert_eq!(names, ["gTPTunnel", "unassigned", "choice-Extensions"]);
+    assert_eq!(
+        alternatives[0]
+            .member("gTPTunnel")
+            .and_then(|tunnel| tunnel.member("gTP-TEID")),
+        Some(&Takes::Number(4294967295))
+    );
+    let address = alternatives[0]
+        .member("gTPTunnel")
+        .unwrap()
+        .member("transportLayerAddress");
+    assert!(matches!(
+        address,
+        Some(Takes::OneOf([Takes::Ipv4, Takes::Ipv6, _]))
+    ));
+    assert_eq!(
+        alternatives[1].member("unassigned"),
+        Some(&Takes::Named(&["null"]))
+    );
+    assert_eq!(
+        alternatives[2].member("choice-Extensions"),
+        Some(&Takes::Message)
+    );
+    // An ENUMERATED by its names; an IE of no one type has none.
+    assert_eq!(
+        inspect::ie_takes(31),
+        Some(&Takes::Named(&["ipv4", "ipv6", "ipv4v6"]))
+    );
+    assert_eq!(inspect::ie_takes(1000), None);
+    // The octets of a value give the tree that the PDU shows.
+    let deregister = tree!({"nas": "deregister"});
+    let value: Cause = inspect::value_from_tree(&deregister).unwrap();
+    let octets = oxirush_aper::encode(&value).unwrap();
+    assert_eq!(inspect::ie_tree(15, &octets), Ok(deregister));
+    assert!(inspect::ie_tree(1000, &octets).is_err());
+}

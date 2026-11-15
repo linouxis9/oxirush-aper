@@ -327,6 +327,20 @@ mod inspect {
         }
     }
 
+    /// Each type of the table says what its tree takes, and each IE of one type has the
+    /// form of its type.
+    pub fn each_type_says_what_its_tree_takes(p: &'static Protocol) {
+        let takes = crate::inspect::takes(p);
+        assert_eq!(takes.len(), p.schema.len());
+        for (id, ty, _) in p.ie_types {
+            let row = p
+                .schema
+                .iter()
+                .position(|known| known.rust == type_name(ty));
+            assert!(row.is_some(), "IE {id}: {ty}");
+        }
+    }
+
     /// What is nested deeper than a path goes is one value.
     pub fn what_is_nested_deeper_than_a_path_goes_is_one_value(p: &'static Protocol) {
         // Lists in lists, ten levels deeper than a path goes: the path of the one value
@@ -385,7 +399,8 @@ macro_rules! __inspect_tests {
             an_extension_has_the_type_that_the_type_it_extends_gives_it,
             the_ies_that_a_value_holds_are_written_by_name_and_read_back,
             the_octets_of_an_ie_carry_a_type_of_the_list_by_a_name_that_no_member_has,
-            what_is_nested_deeper_than_a_path_goes_is_one_value);
+            what_is_nested_deeper_than_a_path_goes_is_one_value,
+            each_type_says_what_its_tree_takes);
     };
     (@each $tables:expr; $($check:ident),+) => {$(
         #[test]

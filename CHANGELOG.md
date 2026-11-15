@@ -18,6 +18,14 @@ All notable changes to `oxirush-aper` are recorded here.
   tree of a value of a type of the bindings, as the tree of a PDU shows it, and the
   value that a tree writes, which take the place of `Tree` on each type.
 
+- `inspect::takes` says what the tree of a value of each type of the table takes, as an
+  `oxirush_utils::tree::Takes`: the members of a SEQUENCE, the alternatives of a CHOICE,
+  the names of an ENUMERATED, the readable form of a well-known type, the bounds of a
+  number and the size of octets; the IEs of a container are a message, and a transfer is
+  the value that its octets contain. The `inspect` module of a protocol crate has
+  `ie_takes(id)`, made once from it, and `ie_tree(id, octets)`, the tree of the value of
+  an IE.
+
 ### Changed
 
 - A tree holds the names that the table of the types gives (members,
