@@ -4,9 +4,12 @@
 [![Documentation](https://docs.rs/oxirush-aper/badge.svg)](https://docs.rs/oxirush-aper)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Aligned PER (ITU-T X.691) in Rust, for bindings generated from 3GPP ASN.1:
-a reader and a writer of the fields, and the types of the values, in
-`no_std` and with no dependency unless a feature asks for one.
+Aligned PER (ITU-T X.691), the encoding of NGAP and S1AP, in Rust: a reader
+and a writer for each kind of field, and the Rust types of the values. Most
+programs get it through oxirush-ngap or oxirush-s1ap, which re-export the
+version they are released with as `oxirush_ngap::aper`; use it directly to
+write the codec of another protocol. It is `no_std` with `alloc`, and has no
+`unsafe` code.
 
 ```rust
 use oxirush_aper::{Reader, Writer};
@@ -14,18 +17,23 @@ use oxirush_aper::{Reader, Writer};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut octets = Vec::new();
     let mut writer = Writer::new(&mut octets);
+    // unsigned(value, lower, upper, extensible)
     // INTEGER (0..7): three bits
     writer.unsigned(5, 0, 7, false)?;
     // INTEGER (0..255, ...): the extension bit, then one octet, aligned
     writer.unsigned(200, 0, 255, true)?;
-    // ENUMERATED with 6 root values and an extension marker: the fourth
+    // index(index, values of the root, extensible): the fourth value of an
+    // ENUMERATED with 6 root values and an extension marker
     writer.index(3, 6, true);
-    // SIZE (1..256) of a SEQUENCE OF: its count, then its items
+    // size(count, lower, upper): the count of a SEQUENCE (SIZE (1..256)) OF,
+    // then its items
     writer.size(2, 1, 256)?;
     writer.unsigned(1, 0, 1, false)?;
     writer.unsigned(0, 0, 1, false)?;
     assert_eq!(octets, [0xa0, 0xc8, 0x30, 0x01, 0x80]);
 
+    // A reader takes the same bounds, without the value. Its index takes the
+    // values of the root, then the number of additions it knows
     let mut reader = Reader::new(&octets);
     assert_eq!(reader.unsigned(0, 7, false)?, 5);
     assert_eq!(reader.unsigned(0, 255, true)?, 200);
@@ -34,39 +42,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!((reader.bit()?, reader.bit()?), (true, false));
 
     let error = Writer::new(&mut Vec::new()).unsigned(8, 0, 7, false).unwrap_err();
-    assert_eq!(error.to_string(), "the value does not encode: 8 is outside its constraint (0..7)");
+    let refused = "the value does not encode: 8 is outside its constraint (0..7)";
+    assert_eq!(error.to_string(), refused);
     Ok(())
 }
 ```
-
-Each example shows what it gives with `assert_eq!`, and runs as a test of the crate.
-
-A `Reader` and a `Writer` have a method for each kind of field of X.691 that
-NGAP and S1AP use, and take the bounds of its constraint as arguments.
 
 ## Installation
 
 ```toml
 [dependencies]
 oxirush-aper = "0.4"
-# With what generated bindings write and read their JSON trees with:
-# oxirush-aper = { version = "0.4", features = ["inspect"] }
 ```
 
-| Feature | Adds |
-|---------|------|
-| `inspect` | The JSON trees of generated bindings, as `oxirush_utils::tree` values in the form of the JSON Encoding Rules (X.697) with a readable form for some 3GPP types (`"208-93"` for a PLMN identity), their paths, and the type at a path (`inspect::at` of oxirush-ngap and oxirush-s1ap) |
-| `std` | With `inspect`, the register that reads the handover containers of one protocol in the messages of the other (`inspect::register()` of oxirush-ngap and oxirush-s1ap) |
+| Feature | Adds | Needs |
+|---------|------|-------|
+| `inspect` | JSON trees and paths for generated bindings, as oxirush-ngap and oxirush-s1ap use them | `oxirush-utils` |
+| `std` | With `inspect`, the register that reads one protocol's handover containers in the other's messages | The standard library |
 
-`check`, which says how a PDU deviates from the object set of its message,
-needs no feature.
+The minimum supported Rust version is 1.88.
 
-The minimum supported Rust version is 1.88. The crate needs `alloc`, and has
-no `unsafe` code. oxirush-ngap and oxirush-s1ap depend on one exact version
-of it and are released with it: a program that uses them takes it through
-them, as `oxirush_ngap::aper`.
-
-## A protocol of its own
+## Write the codec of a type
 
 A codec writes and reads the fields of a type in order, each with the
 bounds of its constraint, as the generated bindings of oxirush-ngap and
@@ -156,7 +152,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let octets = oxirush_aper::encode(&cell)?;
     assert_eq!(
         octets,
-        [0x40, 0x01, 0x23, 0x41, 0x40, 0x63, 0x65, 0x6c, 0x6c, 0x2d, 0x31, 0x20, 0x01, 0x24, 0x01, 0x25],
+        [
+            0x40, 0x01, 0x23, 0x41, 0x40, 0x63, 0x65, 0x6c, // "cell-1" starts at 0x63
+            0x6c, 0x2d, 0x31, 0x20, 0x01, 0x24, 0x01, 0x25,
+        ],
     );
 
     // The name of what is decoded is a slice of the octets
@@ -178,7 +177,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## The types of the values
+## Map ASN.1 types to Rust
 
 | ASN.1 | Rust |
 | --- | --- |
@@ -211,7 +210,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Bit strings
+## Hold a bit string
 
 `Bits` is a number with a length, for the identifiers of 3GPP: it is `Copy`,
 and compares as a value. `BitString` holds a string of any length.
@@ -236,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## An open type
+## Read and write an open type
 
 An open type is read as its octets, which borrow from the input, and is
 decoded once its type is known. A writer writes it in place, without a
@@ -264,7 +263,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 `Octets::as_borrowed` gives the octets of an open type for as long as the
 input lives, to decode a value that borrows from them.
 
-## Extension additions
+## Read extension additions
 
 ```rust
 use oxirush_aper::{Reader, Writer};
@@ -295,7 +294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## What the reader accepts
+## Accept what other encoders write
 
 A writer gives a value its one encoding. A reader also reads a complete
 value in another form, as a peer's encoder may write it. A reader made with
@@ -306,7 +305,7 @@ the bit where it is.
 |---------|--------------|-------|
 | `LengthInTwoOctets` | A length of 127 or less in two octets | 11.9.3.6 |
 | `SmallFragment` | A fragment before another that is not the largest | 11.9.3.8.1 |
-| `SmallNumberAsLarge` | A normally small number of 63 or less in the form of 64 and more | 11.6.1 |
+| `SmallNumberAsLarge` | A normally small number (≤ 63) in the long form | 11.6.1 |
 | `LongNumber` | A whole number with octets that only extend it, up to the octets that a number of 64 bits may have | 11.3.6, 11.4.6 |
 | `Padding` | Padding bits that are not zero | 11.1.4 |
 | `LongArc` | An arc of an object identifier that starts with an octet that holds nothing | X.690 8.19.2 |
@@ -326,19 +325,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // And a receiver that takes the one encoding alone
     let error = decode_strict::<Octets>(&octets).unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        format!("these octets do not decode as OCTET STRING: {fault}: the value is read, and a sender by the clause writes it otherwise"),
+    let refused = format!(
+        "these octets do not decode as OCTET STRING: {fault}: the value is read, \
+         and a sender by the clause writes it otherwise"
     );
+    assert_eq!(error.to_string(), refused);
     Ok(())
 }
 ```
 
 `decode` and a reader of `Reader::new` note nothing, and `Reader::faults`
-has what a noting reader noted. Every reader refuses an encoding that
-announces something that is not there, or holds no value: an extension bit
-with no addition present, a number of no octet, a number, size or index
-outside its constraint, octets after a complete encoding.
+has what a noting reader noted. Every reader refuses:
+
+- an extension bit with no addition present;
+- a number of no octet;
+- a number, size or index outside its constraint;
+- octets after a complete encoding;
+- any other encoding that announces something that is not there.
 
 ## Limits
 
@@ -349,9 +352,8 @@ outside its constraint, octets after a complete encoding.
 - `DEFAULT` members and extension addition groups have no method of their
   own: the caller writes the bits of the preamble.
 - An `INTEGER` beyond 64 bits is a decoding error.
-- It does not parse ASN.1: the generator in `generator/`, which is in this
-  repository but not published, writes the bindings of oxirush-ngap and
-  oxirush-s1ap ahead of time.
+- It does not parse ASN.1: the bindings of oxirush-ngap and oxirush-s1ap are
+  generated ahead of time ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Performance
 
@@ -360,42 +362,36 @@ oxirush-ngap write them, against the derive of
 [rasn](https://crates.io/crates/rasn) 0.29 on the same type. Both read and
 write the same octets.
 
-| Value (octets) | Decoding | rasn / this crate | Encoding | rasn / this crate |
+| Value (octets) | Decoding | rasn 0.29 | Encoding | rasn 0.29 |
 |---|---|---|---|---|
-| AMF-UE-NGAP-ID (2) | 18 ns | 2.8x | 49 ns | 2.6x |
-| NAS-PDU (61) | 22 ns | 4.3x | 145 ns | 1.4x |
-| AMFName (18) | 74 ns | 4.9x | 116 ns | 3.4x |
-| GUAMI (7) | 47 ns | 11.4x | 59 ns | 5.1x |
-| UserLocationInformationNR (19) | 56 ns | 8.4x | 174 ns | 3.2x |
+| AMF-UE-NGAP-ID (2) | 18 ns | 2.8× slower | 49 ns | 2.6× slower |
+| NAS-PDU (61) | 22 ns | 4.3× slower | 145 ns | 1.4× slower |
+| AMFName (18) | 74 ns | 4.9× slower | 116 ns | 3.4× slower |
+| GUAMI (7) | 47 ns | 11.4× slower | 59 ns | 5.1× slower |
+| UserLocationInformationNR (19) | 56 ns | 8.4× slower | 174 ns | 3.2× slower |
 
 Medians of ten rounds, the two crates in turns, on one core of an Intel Xeon
 E5-2680 v4 (a KVM guest, Linux 7.0, Rust 1.100.0), at 3ae0f3c on
-2026-11-15; the ten times of the two do not overlap for any value. Decoding
-these values allocates nothing. [`benches/README.md`](benches/README.md) has
+2026-11-15. The rasn cells say how much slower rasn is than this crate; the
+ten times of the two do not overlap for any value. Decoding these values
+allocates nothing. [`benches/README.md`](benches/README.md) has
 the cycles, the instructions, the allocations, the method and the command.
 
 ## Tests and fuzzing
 
 ```sh
 cargo test --all-features
-cargo +nightly fuzz run fields -- -max_total_time=60 -max_len=512
 ```
 
-The worked examples of X.691 Annex A are reproduced octet for octet, and
-each field is tested against its clause. The fuzz target `fields` reads
-fields and constraints that the octets choose and writes them back. The
-targets of `protocols/fuzz/` decode, edit and build the PDUs of
-oxirush-ngap, oxirush-s1ap and TOY, the protocol of the tests; `generated`
-writes a PDU of any message from the tables of its protocol and checks that
-it reads back to the same tree. They run an hour each every day but Sunday,
-and longer once a week.
+Each example of this page checks what it gives with `assert_eq!`, and runs
+as a documentation test. The worked examples of X.691 Annex A are reproduced
+octet for octet, and each field is tested against its clause. Fuzz targets
+read fields that the octets choose, and decode, edit and build the PDUs of
+oxirush-ngap, oxirush-s1ap and TOY, the protocol of the tests.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) says what else the repository holds.
-
-A pull request comes with a test for what it changes. Sign off your commits
-(`git commit -s`): by contributing you agree to the [Developer Certificate
-of Origin](https://developercertificate.org/). [SECURITY.md](SECURITY.md)
-says how to report a vulnerability.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the generator, the fuzz targets and
+how to contribute. [SECURITY.md](SECURITY.md) says how to report a
+vulnerability.
 
 ## The OxiRush family
 

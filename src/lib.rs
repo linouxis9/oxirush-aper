@@ -57,11 +57,11 @@
 //! | Task | Items |
 //! |------|-------|
 //! | Write the codec of a type | [`AsnType`], [`Decode`], [`Encode`], [`decode`], [`encode`], [`encode_into`] |
-//! | Read and write the fields | [`Reader`], [`Writer`], [`UNBOUNDED`] |
-//! | Bit strings | [`Bits`], [`BitString`] |
-//! | An open type | [`Reader::open_type`], [`Writer::begin_open_type`], [`Writer::end_open_type`], [`Octets`] |
-//! | Extension additions | [`Reader::additions`], [`Additions`], [`Writer::additions`], [`Reader::skip_additions`] |
-//! | What the reader accepts | [`decode_with_faults`], [`decode_strict`], [`Fault`], [`Reader::noting`] |
+//! | Read and write the fields, and map ASN.1 types to Rust | [`Reader`], [`Writer`], [`UNBOUNDED`] |
+//! | Hold a bit string | [`Bits`], [`BitString`] |
+//! | Read and write an open type | [`Reader::open_type`], [`Writer::begin_open_type`], [`Writer::end_open_type`], [`Octets`] |
+//! | Read extension additions | [`Reader::additions`], [`Additions`], [`Writer::additions`], [`Reader::skip_additions`] |
+//! | Accept what other encoders write | [`decode_with_faults`], [`decode_strict`], [`Fault`], [`Reader::noting`] |
 //! | Check a PDU against the object set of its message | [`check`] |
 //! | The macros and the readers of a protocol crate | [`protocol`] |
 //!

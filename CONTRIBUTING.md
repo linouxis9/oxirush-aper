@@ -60,6 +60,20 @@ checks: write it again after a change of a module, with
 generator writes the bindings for rasn of the benchmarks too, in `rasn/`,
 which TOY, which has no benchmarks, does not keep.
 
+## Fuzzing
+
+```sh
+cargo +nightly fuzz run fields -- -max_total_time=60 -max_len=512
+```
+
+`fuzz/` has `fields`, which reads fields and constraints that the octets
+choose and writes them back. The targets of `protocols/fuzz/` decode, edit
+and build the PDUs of oxirush-ngap, oxirush-s1ap and TOY; `generated` writes a
+PDU of any message from the tables of its protocol and checks that it reads
+back to the same tree. The Fuzz workflows of this crate, oxirush-ngap and
+oxirush-s1ap run them an hour each every day but Sunday, and longer once a
+week.
+
 ## The README
 
 The Rust blocks of the README and of the documentation of `src/lib.rs` are
