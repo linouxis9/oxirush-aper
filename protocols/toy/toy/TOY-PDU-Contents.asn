@@ -13,6 +13,7 @@ IMPORTS
 	Algorithms,
 	Areas,
 	Cause,
+	Connections,
 	Container,
 	Counts,
 	CriticalityDiagnostics,
@@ -24,6 +25,7 @@ IMPORTS
 	SecurityContext,
 	SecurityKey,
 	SetupTransfer,
+	Tagged,
 	TransferList,
 	Tunnel,
 	UE-Core-ID,
@@ -40,6 +42,7 @@ FROM TOY-Containers
 	id-Algorithms,
 	id-Areas,
 	id-Cause,
+	id-Connections,
 	id-Container,
 	id-Counts,
 	id-CriticalityDiagnostics,
@@ -51,6 +54,7 @@ FROM TOY-Containers
 	id-SecurityContext,
 	id-SecurityKey,
 	id-SetupTransfer,
+	id-Tagged,
 	id-TransferList,
 	id-Tunnel,
 	id-UE-Core-ID,
@@ -135,7 +139,9 @@ Notification ::= SEQUENCE {
 
 NotificationIEs TOY-PROTOCOL-IES ::= {
 	{ ID id-UE-IDs				CRITICALITY reject	TYPE UE-IDs					PRESENCE mandatory	}|
-	{ ID id-Cause				CRITICALITY ignore	TYPE Cause					PRESENCE optional	},
+	{ ID id-Cause				CRITICALITY ignore	TYPE Cause					PRESENCE optional	}|
+	{ ID id-Tagged				CRITICALITY ignore	TYPE Tagged					PRESENCE optional	}|
+	{ ID id-Connections			CRITICALITY ignore	TYPE Connections			PRESENCE optional	},
 	...
 }
 

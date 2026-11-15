@@ -51,5 +51,7 @@ id-FailureTransfer							ProtocolIE-ID ::= 34
 id-SetupTransfer							ProtocolIE-ID ::= 35
 id-ExtensionIndex							ProtocolIE-ID ::= 40
 id-ExtendedCause							ProtocolIE-ID ::= 41
+id-Tagged									ProtocolIE-ID ::= 42
+id-Connections								ProtocolIE-ID ::= 43
 
 END

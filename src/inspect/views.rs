@@ -629,6 +629,26 @@ pub fn tree_parts(protocol: &'static Protocol, tree: &Value) -> Result<Parts, Er
     })
 }
 
+/// The octets of the message that the tree of a PDU of `protocol` names, written in one
+/// pass with the table of the types: `None` for a tree that it does not write, which the
+/// view of the tree then writes. For the checks of the tables.
+#[doc(hidden)]
+pub fn message_in_one_pass(protocol: &'static Protocol, tree: &Value) -> Option<Vec<u8>> {
+    let name = tree.get("message")?.as_str()?;
+    let (set, ..) = protocol
+        .messages
+        .iter()
+        .find(|(set, ..)| same_name(set.name, name))?;
+    let sent = protocol.sent(|_, _, known| known == set.name);
+    Written::message(
+        protocol,
+        set.direction,
+        set.procedure_code,
+        sent,
+        tree.get("ies")?,
+    )
+}
+
 /// The tree of a view of a PDU of `protocol` whose values another implementation wrote in
 /// the JSON Encoding Rules (ITU-T X.697), as pycrate writes them: the IEs of its message
 /// with the values that [`Protocol::from_jer`] makes of theirs, or the octets of a message

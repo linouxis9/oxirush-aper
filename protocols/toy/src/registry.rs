@@ -6,7 +6,7 @@ oxirush_aper::__procedures! {
     2 Release ignore { InitiatingMessage ReleaseRequest "ReleaseRequest" [10 reject mandatory, 11 reject mandatory, 15 ignore mandatory, 30 reject optional]; }
     3 ErrorIndication ignore { InitiatingMessage ErrorIndication "ErrorIndication" [10 ignore optional, 11 ignore optional, 15 ignore optional, 16 ignore optional]; }
     4 PrivateMessage ignore { InitiatingMessage PrivateMessage "PrivateMessage"; }
-    5 Notification ignore { InitiatingMessage Notification "Notification" [12 reject mandatory, 15 ignore optional]; }
+    5 Notification ignore { InitiatingMessage Notification "Notification" [12 reject mandatory, 15 ignore optional, 42 ignore optional, 43 ignore optional]; }
 }
 oxirush_aper::__ies! {
     protocol Toy "TOY";
@@ -33,6 +33,8 @@ oxirush_aper::__ies! {
     35 "SetupTransfer" oxirush_aper::Octets<'a>, crate::toy::SetupTransfer<'a> => SetupTransfer;
     40 "ExtensionIndex" where [crate::toy::IndexOfItem: Item, crate::toy::IndexOfTransfer: TransferItem];
     41 ignore "ExtendedCause" crate::toy::ExtendedCause => ExtendedCause;
+    42 "Tagged" crate::toy::Tagged => Tagged;
+    43 "Connections" crate::toy::Connections => Connections;
 }
 oxirush_aper::__lists! {
     Items Item 1 16;

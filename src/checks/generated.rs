@@ -424,6 +424,80 @@ impl Made<'_, '_> {
     }
 }
 
+/// Checks each IE of a PDU of `protocol` alone, `ies` by their identifiers and octets in
+/// the order of the message, whose tree `shown` shows them: the walker of the table of
+/// its type reads the octets of each as a value that writes them back, exactly. A value
+/// that holds no container of IEs, which the walker writes by their identifiers, is the
+/// one that the tree shows. An IE of octets that contain a type is the value that they
+/// contain in the tree, and is left to the PDU.
+pub fn each_ie_by_its_type(protocol: &'static Protocol, ies: &[(u16, &[u8])], shown: &Value) {
+    let entries = shown.get("ies").and_then(Value::as_array);
+    for (nth, (id, octets)) in ies.iter().enumerate() {
+        let Ok(typed) = (protocol.ie_typed)(*id) else {
+            continue;
+        };
+        let decoded = (typed.decode)(octets);
+        let Ok((value, exact, refused)) = decoded else {
+            panic!("IE {id} does not read alone: {decoded:?}");
+        };
+        assert!(exact && refused.is_none(), "IE {id} is not exact: {value}");
+        let again = (typed.encode)(&value);
+        assert_eq!(again.as_deref(), Ok(*octets), "IE {id} from {value}");
+        if (protocol.ie_contents)(*id).is_some() || holds_ies(protocol, (typed.row)()) {
+            continue;
+        }
+        let entry = entries.and_then(|entries| entries.get(nth));
+        let view = entry.and_then(|entry| entry.as_object()?.iter().next().map(|(_, value)| value));
+        if let Some(view) = view {
+            assert_eq!(view, &value, "IE {id}");
+        }
+    }
+}
+
+/// Whether a value of the type of `row` may hold a container of IEs, or a transfer.
+fn holds_ies(protocol: &'static Protocol, row: usize) -> bool {
+    let containers = protocol.containers;
+    let ies = [
+        containers.ies,
+        containers.field,
+        containers.extensions,
+        containers.extension,
+    ];
+    let mut seen = alloc::vec![false; protocol.schema.len()];
+    let mut rows = alloc::vec![row];
+    while let Some(row) = rows.pop() {
+        if core::mem::replace(&mut seen[row], true) {
+            continue;
+        }
+        if ies.contains(&Some(row)) {
+            return true;
+        }
+        let mut fields: Vec<&Field> = Vec::new();
+        match &protocol.schema[row].kind {
+            Kind::Sequence { names, members, .. } => {
+                if names
+                    .iter()
+                    .any(|name| protocol.transfer_fields.contains(name))
+                {
+                    return true;
+                }
+                fields.extend(members.iter().map(|member| &member.ty));
+            }
+            Kind::Choice { alternatives, .. } => fields.extend(alternatives.iter()),
+            Kind::Alias { field, .. } => fields.push(field),
+            Kind::Enumerated { .. } => {}
+        }
+        while let Some(field) = fields.pop() {
+            match field {
+                Field::Named(at) => rows.push(usize::from(*at)),
+                Field::List(of, ..) => fields.push(of),
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 /// Whether a value of a type of this kind holds no other value.
 fn flat(kind: &Kind) -> bool {
     match kind {

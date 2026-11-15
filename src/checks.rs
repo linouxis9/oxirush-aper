@@ -439,7 +439,7 @@ macro_rules! __inspect_tests {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __written {
-    ($pdu:ty, $tree:expr) => {{
+    ($pdu:ty, $tables:expr, $tree:expr) => {{
         let tree: &$crate::json::Value = $tree;
         let pdu = match <$pdu>::from_tree(tree) {
             Ok(pdu) => pdu,
@@ -464,6 +464,22 @@ macro_rules! __written {
             Ok(deviations) => assert!(deviations.is_empty(), "{deviations:?}: {tree}"),
             Err(error) => panic!("a PDU that the tables made is not checked: {error}: {tree}"),
         }
+        // The message is written in one pass, without the view.
+        let message = $crate::inspect::message_in_one_pass($tables, tree);
+        assert_eq!(
+            message.as_deref(),
+            Some($crate::protocol::Pdu::value(&decoded).as_ref()),
+            "the message is not written in one pass: {tree}"
+        );
+        // Each IE alone, by the walker of the table of its type.
+        if let Ok(ies) = decoded.protocol_ies() {
+            let ies: ::std::vec::Vec<(u16, &[u8])> = ies
+                .0
+                .iter()
+                .map(|field| (field.id.0, &field.value[..]))
+                .collect();
+            $crate::checks::generated::each_ie_by_its_type($tables, &ies, &read);
+        }
         octets
     }};
 }
@@ -486,7 +502,7 @@ macro_rules! __generated_tests {
                 for seed in 0..16 {
                     let octets = octets(seed, 1024);
                     let tree = tree(tables, message, &mut Choices::new(&octets));
-                    $crate::__written!($pdu, &tree);
+                    $crate::__written!($pdu, tables, &tree);
                 }
             }
         }

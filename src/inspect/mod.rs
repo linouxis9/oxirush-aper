@@ -53,7 +53,7 @@ pub use kinds::kinds;
 pub use paths::{listed_ies, named_ies};
 pub use takes::takes;
 pub use trees::{check_path, enumerated_at, insert, open, paths, remove, select, set};
-pub use views::{Parts, tree, tree_of_jer, tree_parts};
+pub use views::{Parts, message_in_one_pass, tree, tree_of_jer, tree_parts};
 
 /// What a type of a protocol makes of octets: the JSON form of their value, whether that
 /// value encodes back to them, and why a reader that takes the one encoding of X.691

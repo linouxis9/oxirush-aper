@@ -102,6 +102,12 @@ CauseRadioNetwork ::= ENUMERATED {
 	...
 }
 
+-- A number of 28 bits, the leftmost of its octets, in its readable form.
+CellIdentity ::= BIT STRING (SIZE(28))
+
+-- Two octets, which PER does not align.
+Code ::= OCTET STRING (SIZE(2))
+
 ConnectionItem ::= SEQUENCE {
 	uE-Core-ID			UE-Core-ID													OPTIONAL,
 	uE-RAN-ID			UE-RAN-ID													OPTIONAL,
@@ -130,6 +136,9 @@ ContainerBlob ::= SEQUENCE {
 ContainerBlob-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
 	...
 }
+
+-- A type that is another, which is a number.
+CoreID ::= UE-Core-ID
 
 Counts ::= SEQUENCE {
 	countUL				INTEGER (0..18446744073709551615),
@@ -199,6 +208,9 @@ GTPTunnel-ExtIEs TOY-PROTOCOL-EXTENSION ::= {
 	...
 }
 
+-- The digits of an identity, in TBCD.
+IMSI ::= OCTET STRING (SIZE(3..8))
+
 IndexOfItem ::= INTEGER (1..8, ...)
 
 IndexOfTransfer ::= INTEGER (1..4, ...)
@@ -234,6 +246,21 @@ ItemIEs TOY-PROTOCOL-IES ::= {
 
 Items ::= SEQUENCE (SIZE(1..maxnoofItems)) OF ProtocolIE-SingleContainer { {ItemIEs} }
 
+-- A value of an ENUMERATED and of a CHOICE that a later version adds.
+Level ::= ENUMERATED {
+	low,
+	high,
+	...,
+	top
+}
+
+Mode ::= CHOICE {
+	first		INTEGER (0..7),
+	second		NULL,
+	...,
+	third		BOOLEAN
+}
+
 NAS-PDU ::= OCTET STRING
 
 NodeID ::= CHOICE {
@@ -250,6 +277,9 @@ NodeID-ExtIEs TOY-PROTOCOL-IES ::= {
 NodeName ::= PrintableString (SIZE(1..150, ...))
 
 PLMNIdentity ::= OCTET STRING (SIZE(3))
+
+-- A number of one octet, in its readable form.
+RAC ::= OCTET STRING (SIZE(1))
 
 SecurityContext ::= SEQUENCE {
 	nextHopChainingCount	INTEGER (0..7),
@@ -276,6 +306,19 @@ SetupTransferIEs TOY-PROTOCOL-IES ::= {
 }
 
 TAC ::= OCTET STRING (SIZE(3))
+
+-- Values that PER does not align, after a flag of one bit.
+Tagged ::= SEQUENCE {
+	flag		BOOLEAN,
+	rac			RAC,
+	code		Code,
+	cell		CellIdentity,
+	level		Level,
+	mode		Mode,
+	octet		BIT STRING (SIZE(8)),
+	maybe		BIT STRING (SIZE(8))			OPTIONAL,
+	some		BIT STRING (SIZE(1..16))
+}
 
 TransferItem ::= SEQUENCE {
 	transfer-ID			INTEGER (0..255),

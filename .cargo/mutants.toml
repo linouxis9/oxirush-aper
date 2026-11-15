@@ -17,6 +17,11 @@ all_features = true
 # whose tests are those of what the generated crates share (protocols/toy/).
 test_workspace = true
 
+# The checks that the tests of the protocol crates run on their tables (`checks`, the
+# feature `__checks`): the code of those tests, whose assertions hold on every table that
+# the generator writes, and which no test of a table that breaks them runs.
+exclude_globs = ["src/checks.rs", "src/checks/*.rs"]
+
 # Mutants that no test can tell from the code, each with why, named by their function. A
 # column tells apart the mutants of the same name in one function.
 exclude_re = [
@@ -92,4 +97,20 @@ exclude_re = [
     # The index of an IE of the set after the last one seen is never that one: that IE was
     # seen, and its first place is known.
     'src/check\.rs:.*: replace < with <= in compared$',
+    # A transport layer address, the one type of the readable form Address, has two sizes
+    # (SIZE(1..160, ...)): the octets alone, of a string of one size, are never what the
+    # tree shows of it, whatever the condition says, and an address of one bit has no text.
+    'src/inspect/schema\.rs:\d+:(35|44|60|70|73): (replace (==|&&|\|\|) with (!=|\|\||&&)|delete !) in read_type$',
+    # The octets of a number are shifted by eight bits before the next one is joined: | and
+    # ^ join them alike.
+    'src/inspect/schema\.rs:\d+:\d+: replace \| with \^ in number$',
+    # The size of a list in fragments is checked after its last fragment: a check after an
+    # earlier one only refuses sooner, with the same error.
+    'src/inspect/schema\.rs:\d+:(44|57|65): replace (!= with ==|&& with \|\||> with (==|<|>=)) in read_field$',
+    # The last bytes of a name, fewer than eight, are shifted by eight bits before the next
+    # one is joined: | and ^ join them alike.
+    'src/inspect/hashed\.rs:\d+:\d+: replace \| with \^ in hash$',
+    # An OCTET STRING of one size below 64K is an OctetArray in the table: no type of the
+    # protocols has one of more, which this guard alone would take.
+    'src/inspect/takes\.rs:\d+:51: replace match guard lower == upper with false in Made<.*>::field$',
 ]

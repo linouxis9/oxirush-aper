@@ -2379,7 +2379,13 @@ fn a_path_through_lists_transfers_and_containers_names_its_type() {
     assert!(refused.contains("Tunnel, TransferKind"), "{refused}");
     // A member of a type of no name says what it is.
     let id = inspect::at("/toy/TransferList/0/transfer-ID").unwrap();
-    assert_eq!((id.name, id.takes), ("INTEGER", Takes::Number(255)));
+    assert_eq!(
+        (id.name, id.takes, id.ies),
+        ("INTEGER", Takes::Number(255), None)
+    );
+    // The container of the transfer, by the name of its member, has its IEs too.
+    let container = inspect::at(&format!("{TRANSFER}/protocolIEs")).unwrap();
+    assert_eq!(container.ies, transfer.ies);
     // An extension container has the IEs of the extension set of its type, and an
     // extension the type that its set gives it there.
     let extensions = inspect::at("/toy/TransferList/0/iE-Extensions").unwrap();
@@ -2426,4 +2432,50 @@ fn a_path_through_lists_transfers_and_containers_names_its_type() {
     );
     assert_eq!(teid, Ok(tree!(9)));
     assert!(inspect::tree_at(TRANSFER, &[0xff]).is_err());
+}
+
+/// A transfer that a tree writes as its octets has them as its member, and one written as
+/// its value has the members of that value.
+#[test]
+fn a_transfer_written_as_its_octets_has_them_at_its_path() {
+    let mut tree = setup_request();
+    let octets = tree!({"octets": "0000"});
+    tree["ies"][1]["TransferList"][0]["setupTransfer"] = octets;
+    assert_eq!(
+        select(&tree, &format!("{TRANSFER}/octets")),
+        [tree!("0000")]
+    );
+    let tree = setup_request();
+    assert_eq!(
+        select(&tree, &format!("{TRANSFER}/TransferKind")),
+        [tree!("ipv4")]
+    );
+    assert!(inspect::select(&tree, &format!("{TRANSFER}/octets")).is_err());
+}
+
+/// A SETUP REQUEST whose Tunnel holds `levels` transfers, each in the extension of the
+/// Tunnel of the one before.
+fn nested(levels: usize) -> Value {
+    let mut tunnel = tree!({"unassigned": null});
+    for _ in 0..levels {
+        tunnel = tree!({"choice-Extensions": {"SetupTransfer": {"protocolIEs": [{"Tunnel": tunnel}]}, "criticality": "ignore"}});
+    }
+    tree!({"message": "SetupRequest", "ies": [{"Areas": areas()}, {"Tunnel": tunnel}]})
+}
+
+/// The tree of a PDU decodes the values of IEs and of transfers 64 deep in its view: eleven
+/// transfers, each in the IE of the one before, and the IE of the eleventh is its octets,
+/// which the tree writes back as they are.
+#[test]
+fn what_is_nested_deeper_than_a_view_goes_is_its_octets() {
+    let ten = nested(10);
+    assert_eq!(TOYPDU::from_tree(&ten).unwrap().to_tree(), ten);
+    let eleven = nested(11);
+    let pdu = TOYPDU::from_tree(&eleven).unwrap();
+    let tree = pdu.to_tree();
+    let deep = "/toy/Tunnel".to_string() + &"/choice-Extensions/SetupTransfer/Tunnel".repeat(10);
+    let held = select(&tree, &format!("{deep}/choice-Extensions"));
+    let ie = &held[0]["SetupTransfer"]["protocolIEs"][0];
+    assert_eq!(ie, &tree!({"Tunnel": {"octets": "40"}}), "{held:?}");
+    assert_eq!(TOYPDU::from_tree(&tree).unwrap().encode(), pdu.encode());
 }

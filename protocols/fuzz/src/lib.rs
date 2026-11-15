@@ -934,7 +934,7 @@ pub fn generated(octets: &[u8]) {
     let tables = codec::inspect::__tables();
     let choices = &mut aper::checks::generated::Choices::new(octets);
     if let Some(tree) = aper::checks::generated::message(tables, choices) {
-        let written = aper::__written!(Borrowed<'_>, &tree);
+        let written = aper::__written!(Borrowed<'_>, tables, &tree);
         if let Some(seeds) = &*SEEDS {
             // The name of a file is the FNV-1a hash of its octets.
             let hash = (written.iter()).fold(0xcbf2_9ce4_8422_2325u64, |hash, octet| {

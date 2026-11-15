@@ -209,6 +209,7 @@ pub mod toy_constants {
     pub const ID_ALGORITHMS: ProtocolIEID = ProtocolIEID(27);
     pub const ID_AREAS: ProtocolIEID = ProtocolIEID(26);
     pub const ID_CAUSE: ProtocolIEID = ProtocolIEID(15);
+    pub const ID_CONNECTIONS: ProtocolIEID = ProtocolIEID(43);
     pub const ID_CONTAINER: ProtocolIEID = ProtocolIEID(25);
     pub const ID_COUNTS: ProtocolIEID = ProtocolIEID(28);
     pub const ID_CRITICALITY_DIAGNOSTICS: ProtocolIEID = ProtocolIEID(16);
@@ -228,6 +229,7 @@ pub mod toy_constants {
     pub const ID_SECURITY_KEY: ProtocolIEID = ProtocolIEID(21);
     pub const ID_SETUP: ProcedureCode = ProcedureCode(1);
     pub const ID_SETUP_TRANSFER: ProtocolIEID = ProtocolIEID(35);
+    pub const ID_TAGGED: ProtocolIEID = ProtocolIEID(42);
     pub const ID_TRANSFER_KIND: ProtocolIEID = ProtocolIEID(31);
     pub const ID_TRANSFER_LIST: ProtocolIEID = ProtocolIEID(24);
     pub const ID_TUNNEL: ProtocolIEID = ProtocolIEID(29);
@@ -881,6 +883,91 @@ pub mod toy_ies {
             Ok(())
         }
     }
+    /// `CellIdentity ::= BIT STRING (SIZE (28))`.
+    #[doc = " A number of 28 bits, the leftmost of its octets, in its readable form."]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+    pub struct CellIdentity(pub Bits);
+    impl From<CellIdentity> for Bits {
+        #[inline]
+        fn from(value: CellIdentity) -> Self {
+            value.0
+        }
+    }
+    impl From<Bits> for CellIdentity {
+        fn from(value: Bits) -> Self {
+            Self(value)
+        }
+    }
+    impl CellIdentity {
+        /// The string of the 28 bits of `value`, the most significant first.
+        ///
+        /// # Errors
+        ///
+        /// An error of the kind `Argument` for a value that 28 bits do not hold.
+        pub fn new(value: u64) -> Result<Self, Error> {
+            Bits::new(value, 28).map(Self)
+        }
+    }
+    impl AsnType for CellIdentity {
+        const NAME: &'static str = "CellIdentity";
+    }
+    impl<'a> Decode<'a> for CellIdentity {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self(reader.bits_sized(28, 28)?))
+        }
+    }
+    impl Encode for CellIdentity {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.bits_sized(self.0, 28, 28)?;
+            Ok(())
+        }
+    }
+    /// The octets, in hexadecimal.
+    impl core::fmt::Display for Code {
+        fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            self.0
+                .iter()
+                .try_for_each(|octet| write!(formatter, "{octet:02x}"))
+        }
+    }
+    impl core::fmt::Debug for Code {
+        fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(formatter, "Code({self})")
+        }
+    }
+    /// `Code ::= OCTET STRING (SIZE (2))`.
+    #[doc = " Two octets, which PER does not align."]
+    #[derive(Clone, PartialEq, Eq, Hash, Copy)]
+    pub struct Code(pub [u8; 2]);
+    impl From<Code> for [u8; 2] {
+        #[inline]
+        fn from(value: Code) -> Self {
+            value.0
+        }
+    }
+    impl From<[u8; 2]> for Code {
+        fn from(value: [u8; 2]) -> Self {
+            Self(value)
+        }
+    }
+    impl AsnType for Code {
+        const NAME: &'static str = "Code";
+    }
+    impl<'a> Decode<'a> for Code {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self(reader.octet_array::<2>()?))
+        }
+    }
+    impl Encode for Code {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.octet_array(&self.0);
+            Ok(())
+        }
+    }
     /// `ConnectionItem ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct ConnectionItem {
@@ -1150,6 +1237,37 @@ pub mod toy_ies {
             if let Some(value) = &self.ie_extensions {
                 value.encode(writer).map_err(in_field("ie_extensions"))?;
             }
+            Ok(())
+        }
+    }
+    /// `CoreID ::= UECoreID`.
+    #[doc = " A type that is another, which is a number."]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+    pub struct CoreID(pub UECoreID);
+    impl From<CoreID> for UECoreID {
+        #[inline]
+        fn from(value: CoreID) -> Self {
+            value.0
+        }
+    }
+    impl From<UECoreID> for CoreID {
+        fn from(value: UECoreID) -> Self {
+            Self(value)
+        }
+    }
+    impl AsnType for CoreID {
+        const NAME: &'static str = "CoreID";
+    }
+    impl<'a> Decode<'a> for CoreID {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self(UECoreID::decode(reader)?))
+        }
+    }
+    impl Encode for CoreID {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            self.0.encode(writer)?;
             Ok(())
         }
     }
@@ -1585,6 +1703,55 @@ pub mod toy_ies {
             Ok(())
         }
     }
+    /// `IMSI ::= OCTET STRING (SIZE (3..8))`.
+    #[doc = " The digits of an identity, in TBCD."]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct IMSI<'a>(pub Octets<'a>);
+    impl<'a> From<IMSI<'a>> for Octets<'a> {
+        #[inline]
+        fn from(value: IMSI<'a>) -> Self {
+            value.0
+        }
+    }
+    impl<'a> IMSI<'a> {
+        /// The same value, which borrows nothing and is kept as long as it is needed: a `IMSI<'static>`, which is the type to write in a struct. What the value borrowed from the octets that it was decoded from is copied.
+        #[doc(alias("to_owned", "owned", "keep"))]
+        #[inline]
+        pub fn into_owned(self) -> IMSI<'static> {
+            IMSI(self.0.into_owned())
+        }
+    }
+    impl<'a> From<Octets<'a>> for IMSI<'a> {
+        fn from(value: Octets<'a>) -> Self {
+            Self(value)
+        }
+    }
+    impl<'a> From<Vec<u8>> for IMSI<'a> {
+        fn from(value: Vec<u8>) -> Self {
+            Self(Octets::from(value))
+        }
+    }
+    impl<'a> From<&'a [u8]> for IMSI<'a> {
+        fn from(value: &'a [u8]) -> Self {
+            Self(Octets::from(value))
+        }
+    }
+    impl AsnType for IMSI<'_> {
+        const NAME: &'static str = "IMSI";
+    }
+    impl<'a> Decode<'a> for IMSI<'a> {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self(reader.octet_string(3, 8, false)?))
+        }
+    }
+    impl Encode for IMSI<'_> {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.octet_string(&self.0, 3, 8, false)?;
+            Ok(())
+        }
+    }
     /// `IndexOfItem ::= INTEGER (1..8, ...)`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
     pub struct IndexOfItem(pub u64);
@@ -1803,6 +1970,40 @@ pub mod toy_ies {
             Ok(())
         }
     }
+    /// `Level ::= ENUMERATED`, with an extension marker.
+    #[doc = " A value of an ENUMERATED and of a CHOICE that a later version adds."]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+    #[non_exhaustive]
+    pub enum Level {
+        low = 0,
+        high = 1,
+        top = 2,
+    }
+    impl AsnType for Level {
+        const NAME: &'static str = "Level";
+    }
+    impl Level {
+        /// The values in the order of their indexes in PER.
+        pub(crate) const VALUES: [Self; 3] = [Self::low, Self::high, Self::top];
+        /// The index of the value in PER.
+        #[inline]
+        fn index(&self) -> u64 {
+            *self as u64
+        }
+    }
+    impl<'a> Decode<'a> for Level {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self::VALUES[reader.index(2, 1, true)? as usize])
+        }
+    }
+    impl Encode for Level {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.index(self.index(), 2, true);
+            Ok(())
+        }
+    }
     /// `Mixed ::= SEQUENCE`.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct Mixed {
@@ -1825,6 +2026,67 @@ pub mod toy_ies {
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             self.kind.encode(writer).map_err(in_field("kind"))?;
             self.cause.encode(writer).map_err(in_field("cause"))?;
+            Ok(())
+        }
+    }
+    /// `Mode ::= CHOICE`, with an extension marker.
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
+    pub enum Mode {
+        first(u8),
+        second(()),
+        third(bool),
+    }
+    impl From<u8> for Mode {
+        fn from(value: u8) -> Self {
+            Self::first(value)
+        }
+    }
+    impl From<()> for Mode {
+        fn from(value: ()) -> Self {
+            Self::second(value)
+        }
+    }
+    impl From<bool> for Mode {
+        fn from(value: bool) -> Self {
+            Self::third(value)
+        }
+    }
+    impl AsnType for Mode {
+        const NAME: &'static str = "Mode";
+    }
+    impl<'a> Decode<'a> for Mode {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(match reader.index(2, 1, true)? {
+                0 => Self::first(reader.unsigned(0, 7, false)? as u8),
+                1 => Self::second(()),
+                _ => {
+                    let octets = reader.open_type()?;
+                    let reader = &mut Reader::new(&octets);
+                    Self::third(reader.bit()?)
+                }
+            })
+        }
+    }
+    impl Encode for Mode {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            match self {
+                Self::first(value) => {
+                    writer.index(0, 2, true);
+                    writer.unsigned(u64::from(*value), 0, 7, false)?;
+                }
+                Self::second(value) => {
+                    writer.index(1, 2, true);
+                }
+                Self::third(value) => {
+                    writer.index(2, 2, true);
+                    let start = writer.begin_open_type();
+                    writer.bit(*value);
+                    writer.end_open_type(start);
+                }
+            }
             Ok(())
         }
     }
@@ -2039,6 +2301,50 @@ pub mod toy_ies {
             Ok(())
         }
     }
+    /// The octets, in hexadecimal.
+    impl core::fmt::Display for RAC {
+        fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            self.0
+                .iter()
+                .try_for_each(|octet| write!(formatter, "{octet:02x}"))
+        }
+    }
+    impl core::fmt::Debug for RAC {
+        fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(formatter, "RAC({self})")
+        }
+    }
+    /// `RAC ::= OCTET STRING (SIZE (1))`.
+    #[doc = " A number of one octet, in its readable form."]
+    #[derive(Clone, PartialEq, Eq, Hash, Copy)]
+    pub struct RAC(pub [u8; 1]);
+    impl From<RAC> for [u8; 1] {
+        #[inline]
+        fn from(value: RAC) -> Self {
+            value.0
+        }
+    }
+    impl From<[u8; 1]> for RAC {
+        fn from(value: [u8; 1]) -> Self {
+            Self(value)
+        }
+    }
+    impl AsnType for RAC {
+        const NAME: &'static str = "RAC";
+    }
+    impl<'a> Decode<'a> for RAC {
+        #[inline]
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            Ok(Self(reader.octet_array::<1>()?))
+        }
+    }
+    impl Encode for RAC {
+        #[inline]
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.octet_array(&self.0);
+            Ok(())
+        }
+    }
     /// `SecurityContext ::= SEQUENCE`, with an extension marker.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SecurityContext<'a> {
@@ -2229,6 +2535,73 @@ pub mod toy_ies {
         #[inline]
         fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
             writer.octet_array(&self.0);
+            Ok(())
+        }
+    }
+    /// `Tagged ::= SEQUENCE`.
+    #[doc = " Values that PER does not align, after a flag of one bit."]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct Tagged {
+        pub flag: bool,
+        pub rac: RAC,
+        pub code: Code,
+        pub cell: CellIdentity,
+        pub level: Level,
+        pub mode: Mode,
+        pub octet: Bits,
+        pub maybe: Option<Bits>,
+        pub some: Bits,
+    }
+    impl AsnType for Tagged {
+        const NAME: &'static str = "Tagged";
+    }
+    impl<'a> Decode<'a> for Tagged {
+        fn decode(reader: &mut Reader<'a>) -> Result<Self, Error> {
+            let present = reader.bits(1)?;
+            let flag = reader.bit().map_err(in_field("flag"))?;
+            let rac = RAC::decode(reader).map_err(in_field("rac"))?;
+            let code = Code::decode(reader).map_err(in_field("code"))?;
+            let cell = CellIdentity::decode(reader).map_err(in_field("cell"))?;
+            let level = Level::decode(reader).map_err(in_field("level"))?;
+            let mode = Mode::decode(reader).map_err(in_field("mode"))?;
+            let octet = reader.bits_sized(8, 8).map_err(in_field("octet"))?;
+            let maybe = if present & 1 != 0 {
+                Some(reader.bits_sized(8, 8).map_err(in_field("maybe"))?)
+            } else {
+                None
+            };
+            let some = reader.bits_sized(1, 16).map_err(in_field("some"))?;
+            Ok(Self {
+                flag,
+                rac,
+                code,
+                cell,
+                level,
+                mode,
+                octet,
+                maybe,
+                some,
+            })
+        }
+    }
+    impl Encode for Tagged {
+        fn encode(&self, writer: &mut Writer<'_>) -> Result<(), Error> {
+            writer.bit(self.maybe.is_some());
+            writer.bit(self.flag);
+            self.rac.encode(writer).map_err(in_field("rac"))?;
+            self.code.encode(writer).map_err(in_field("code"))?;
+            self.cell.encode(writer).map_err(in_field("cell"))?;
+            self.level.encode(writer).map_err(in_field("level"))?;
+            self.mode.encode(writer).map_err(in_field("mode"))?;
+            writer
+                .bits_sized(self.octet, 8, 8)
+                .map_err(in_field("octet"))?;
+            if let Some(value) = &self.maybe {
+                writer.bits_sized(*value, 8, 8).map_err(in_field("maybe"))?;
+            }
+            writer
+                .bits_sized(self.some, 1, 16)
+                .map_err(in_field("some"))?;
             Ok(())
         }
     }
