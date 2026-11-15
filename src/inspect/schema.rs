@@ -293,11 +293,12 @@ fn read_type(types: &'static [Type], ty: usize, reader: &mut Reader<'_>) -> Resu
                 let mut octets = [0; 3];
                 octets.copy_from_slice(reader.octets(3)?);
                 let plmn = oxirush_utils::identity::Plmn::from_ap_octets(octets);
+                // The octets that a PLMN is read from are the ones that it writes.
                 Ok(match plmn {
-                    Ok(plmn) if plmn.to_ap_octets() == octets => {
+                    Ok(plmn) => {
                         Value::String(alloc::format!("{}-{}", plmn.mcc(), plmn.mnc()).into())
                     }
-                    _ => utils::octets(&octets),
+                    Err(_) => utils::octets(&octets),
                 })
             }
             // A transport layer address from its bits, without their hexadecimal digits:
