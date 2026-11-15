@@ -70,7 +70,7 @@ impl Protocol {
 }
 
 /// The type of the value at `path` of the tree of a PDU of `protocol`, whose rows take
-/// `rows` ([`takes`](super::takes)). A member of a type of no name that is a list of a
+/// `rows` (`inspect::takes`). A member of a type of no name that is a list of a
 /// type of no name, or a string of bits whose size varies, says what it takes in values
 /// that are made for the call and kept.
 ///
