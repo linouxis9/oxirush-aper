@@ -57,6 +57,21 @@ macro_rules! __procedures {
                     Self::Other { procedure_code, .. } => *procedure_code,
                 }
             }
+
+            /// The initiating message of the procedure of a successful or an unsuccessful
+            /// outcome, which the outcome answers. `None` for an initiating message, which
+            /// answers none, and for a procedure that the specification does not have.
+            pub const fn initiating(&self) -> Option<Self> {
+                let procedure_code = match self {
+                    $($(Self::$successful => $code,)?)*
+                    $($(Self::$unsuccessful => $code,)?)*
+                    _ => return None,
+                };
+                match procedure_code {
+                    $($($code => Some(Self::$initiating),)?)*
+                    _ => None,
+                }
+            }
         }
 
         // The type of each message is a message, and no other type is one.

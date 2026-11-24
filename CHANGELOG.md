@@ -2,6 +2,16 @@
 
 All notable changes to `oxirush-aper` are recorded here.
 
+## Unreleased
+
+### Added
+
+- `initiating()` of the kind of a PDU that `__procedures!` writes (`NgapPduKind` of
+  oxirush-ngap, `S1apPduKind` of oxirush-s1ap): the initiating message of the procedure
+  of a successful or an unsuccessful outcome, which the outcome answers. It is `None`
+  for an initiating message and for a procedure that the specification does not have.
+  The protocol crates have it with no change of their generated files.
+
 ## 0.4.0 - 2026-11-16
 
 The trees of a protocol crate are read and written by one walker over a table of the
