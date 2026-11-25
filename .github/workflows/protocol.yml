@@ -86,7 +86,8 @@ jobs:
 
   # What crates.io would hold of the crate: cargo makes the package, and its tests
   # are built and run from it alone, outside the repository, with every feature and
-  # with none.
+  # with none. oxirush-aper is the checkout of the revision that build/revisions
+  # records, which crates.io does not have while that revision is not a release.
   package:
     name: The tests of the package, from the package alone
     needs: revisions
@@ -105,6 +106,8 @@ jobs:
           path: oxirush-aper
       - uses: dtolnay/rust-toolchain@stable
       - run: ../oxirush-aper/protocols/tests/package.sh "$RUNNER_TEMP/package"
+        env:
+          APER: ../oxirush-aper
 
   clippy:
     name: Clippy
@@ -134,7 +137,7 @@ jobs:
 
   # A product that keeps the crate beside its own crates has it as a member of its
   # workspace: cargo loads such a workspace, and clippy and rustdoc accept its
-  # members.
+  # members. oxirush-aper is the checkout of the revision that build/revisions records.
   workspace:
     name: A member of a larger workspace
     needs: revisions
@@ -155,6 +158,8 @@ jobs:
         with:
           components: clippy
       - run: ../oxirush-aper/protocols/tests/workspace_member.sh "$RUNNER_TEMP/workspace"
+        env:
+          APER: ../oxirush-aper
 
   benches:
     name: Benchmarks build

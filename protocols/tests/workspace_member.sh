@@ -11,7 +11,7 @@
 # the script makes, becomes a workspace whose members are this crate and each other
 # CRATE, the directory of one: they are links, and nothing is written into them. A
 # member named oxirush-aper or oxirush-utils is the one of the others. Without one it
-# comes from crates.io.
+# comes from the directory that APER or UTILS names, and without from crates.io.
 set -eu
 directory=$1
 shift
@@ -28,6 +28,16 @@ for crate in "$here" "$@"; do
     if [ "$name" = oxirush-aper ] || [ "$name" = oxirush-utils ]; then
         patches="$patches
 $name = { path = \"$name\" }"
+    fi
+done
+for crate in oxirush-aper oxirush-utils; do
+    case "$crate" in
+        oxirush-aper) directory_of=${APER:-} ;;
+        *) directory_of=${UTILS:-} ;;
+    esac
+    if [ -n "$directory_of" ] && [ ! -e "$directory/$crate" ]; then
+        patches="$patches
+$crate = { path = \"$(cd "$directory_of" && pwd)\" }"
     fi
 done
 cat > "$directory/Cargo.toml" <<MANIFEST
